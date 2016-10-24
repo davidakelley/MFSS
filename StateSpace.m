@@ -20,9 +20,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   % David Kelley, 2016
   %
   % Questions I need to answer:
-  %     For the gradient:
-  %         Missing data?
-  %         Time varrying parameters?
+  %     For the gradient: Missing data? Time varrying parameters?
   %     Is there any easy way to package the class file with the mex files?
   
   properties
@@ -34,17 +32,22 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   end
   
   properties(Hidden = true)
+    % Dimensions
     p         % Number of observed series
     m         % Number of states
     g         % Number of shocks
     n         % Time periods
     
-    timeInvariant
-    
+    % General options
+    useMex = true;    % Use mex versions. Set to false if no mex compiled.
     systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'};
-    useMex = true;
-    filterUni
     kappa = 1e6;
+    
+    % Object specific properties
+    timeInvariant     % Indicator for TVP
+    filterUni         % Use univarite filter if appropriate (H is diagonal)
+    
+    % ML Estimation parameters
     thetaMap
     useGrad = false;
     tol = 1e-6;
@@ -172,7 +175,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function obj = em_estimate(obj, y, ss0, varargin)
       % Estimate parameters through pseudo-maximum likelihood EM algoritm
-      assert(obj.timeInvariant, 'EM Algorithm only developed for time-invariant cases.');
+      assert(obj.timeInvariant, ...
+        'EM Algorithm only developed for time-invariant cases.');
       
       [obj, ss0] = obj.checkConformingSystem(y, ss0, varargin{:});
       iter = 0; logli0 = nan; gap = nan;
@@ -194,8 +198,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         % Measurement equation
         [ss0.Z, ss0.d, ss0.H] = obj.restrictedOLS(y', alpha', V, J, Fobs, Gobs);
         % State equation
-        [ss0.T, ss0.c, RQR] = obj.restrictedOLS(alpha(:, 2:end)', alpha(:, 1:end-1)', ...
-          V, J, Fstate, Gstate);
+        [ss0.T, ss0.c, RQR] = obj.restrictedOLS(...
+          alpha(:, 2:end)', alpha(:, 1:end-1)', V, J, Fstate, Gstate);
         
         % Report
         if obj.verbose
@@ -223,7 +227,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       L       = zeros(obj.m, obj.m, obj.n);
       
       a(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0 + obj.c(:,obj.tau.c(1));
-      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * obj.P0 * obj.T(:,:,obj.tau.T(1))'...
+      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * obj.P0 * obj.T(:,:,obj.tau.T(1))' ...
         + obj.R(:,:,obj.tau.R(1)) * obj.Q(:,:,obj.tau.Q(1)) * obj.R(:,:,obj.tau.R(1))';
       
       for ii = 1:obj.n
@@ -589,15 +593,16 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         assert(all(tauDims == obj.n));
       end
       
-      % p - number of observables
-      % m - number of state variables
-      % g - number of shocks
+      % Set dimensions:
+      %   p - number of observables
+      %   m - number of state variables
+      %   g - number of shocks
       obj.p = size(obj.Z(:,:,end), 1);
       [obj.m, obj.g] = size(obj.R(:,:,end));
       
       validateKFilter(obj);
       
-      % Check if we can use the univariate filter all the time
+      % Check if we can use the univariate filter
       diagH = true;
       for iH = 1:size(obj.H, 3)
         if ~isdiag(obj.H(:,:,iH))
@@ -645,10 +650,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       % Augment Standard State Space with Harvey Accumulator
       % $\xi$  - $\xi_{h}$ indice vector of each series accumulated
       % $A$    - selection matrix
-      % $\psi$ - full history of accumulator indicator variable (for each series)
+      % $\psi$ - full history of accumulator indicator (for each series)
       % $\tau$ - number of unique accumulator types
       %        - Two Cases:'flow'    = 1 Standard Flow variable;
       %                    'average' = 0 Time-averaged stock variable
+      
+      % Andrew Butters, 2013
+      
       if isempty(Harvey)
         return
       else
@@ -662,7 +670,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       type = any((psi==0),2);
       [s,r] = find((any((obj.Z(xi,:,:)~=0),3))');
       
-      % ====================================================================
+      % ===================================================================
       % Horizon
       %  Checking have the correct number of lags of the states
       %  that need accunulation, to be compatible with Horizon
@@ -675,8 +683,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       mnew = obj.m;
       for jj=1:length(states)
         mHor = max(maxHor(r(states(jj)==s)));
-        [numlagsjj,lagposjj] = ...
-          LagsInState(states(jj), obj.T(:,:, obj.tau.T(1)), obj.R(:,:,obj.tau.T(1))); % FIXME: tau.R
+        [numlagsjj,lagposjj] = LagsInState(states(jj), ...
+          obj.T(:,:, obj.tau.T(1)), obj.R(:,:,obj.tau.R(1))); 
+        
         AddLags(jj) = max(mHor-1-numlagsjj-1,0);
         RowPos(jj,1:numlagsjj+1) = [states(jj) lagposjj'];
         if AddLags(jj) > 0
@@ -706,7 +715,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         newR0(1:size(Rt,1),:,:) = Rt;
         obj.m = mnew;
       end
-      % ====================================================================
+      % ===================================================================
       
       nonZeroZpos = zeros(length(xi), obj.m);
       
@@ -805,6 +814,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       if ~obj.timeInvariant
         assert(size(y, 2) == obj.n);
       else
+        % FIXME: obj.tau shouldn't be set if it's already defined
         obj.n = size(y, 2);
         taus = [repmat({ones([1 obj.n])}, [3 1]); ...
           repmat({ones([1 obj.n+1])}, [4 1])];
@@ -863,7 +873,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
     end
     
-    function sOut = compileStruct(obj, varargin)
+    function sOut = compileStruct(obj, varargin) %#ok<INUSL>
       % Combines variables passed as arguments into a struct
       % struct = compileStruct(a, b, c) will place the variables a, b, & c
       % in the output variable using the variable names as the field names.
@@ -873,7 +883,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
     end
     
-    function [Finv, logDetF] = pseudoinv(obj, F, tol)
+    function [Finv, logDetF] = pseudoinv(obj, F, tol) %#ok<INUSL>
       tempF = 0.5 * (F + F');
       
       [PSVD, DSDV, PSVDinv] = svd(tempF);
@@ -1020,7 +1030,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Restricted OLS estimator
       beta = betaOLS - (betaOLS * F - G) / (F' / xxT * F) * (F' / xxT);
-      sigma = (sigmaOLS + (betaOLS * F - G) / (F' / xxT * F) * (betaOLS * F - G)') / T_dim;
+      sigma = (sigmaOLS + (betaOLS * F - G) / ...
+        (F' / xxT * F) * (betaOLS * F - G)') / T_dim;
     end
   end
   
