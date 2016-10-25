@@ -4,12 +4,13 @@
 
 % David Kelley, 2016
 
-classdef mex_univarite_test < matlab.unittest.TestCase
+classdef mex_multivarite_test < matlab.unittest.TestCase
   
   properties
     Y
     ssM
     ssMex
+    allowedError = 5e-9;
   end
   
   methods
@@ -19,7 +20,8 @@ classdef mex_univarite_test < matlab.unittest.TestCase
       % Observation equation
       Z = rand(p, m);
       d = zeros(p, 1) * 0.3;
-      H = diag(rand(p, 1));
+      baseH = (rand(p, p) + (diag(3 + rand(p, 1)))) ./ 10;
+      H = baseH * baseH' ./ 2;
       
       % State equation
       weightsAR = 2 * rand(1, m-1) - 1;
@@ -69,16 +71,16 @@ classdef mex_univarite_test < matlab.unittest.TestCase
       [a, logl, fOut] = testCase.ssMex.filter(testCase.Y);
       
       % Assertions
-      allowedError = 1e-13;
-
-      testCase.verifyEqual(logl, logl_m, 'RelTol', allowedError);
-      testCase.verifyEqual(a, a_m, 'RelTol', allowedError);
-      testCase.verifyEqual(fOut.P, fOut_m.P, 'RelTol', allowedError);
-      testCase.verifyEqual(fOut.v, fOut_m.v, 'RelTol', allowedError);
-      testCase.verifyEqual(fOut.F, fOut_m.F, 'RelTol', allowedError);
-      testCase.verifyEqual(fOut.M, fOut_m.M, 'RelTol', allowedError);
-      testCase.verifyEqual(fOut.K, fOut_m.K, 'RelTol', allowedError);
-      testCase.verifyEqual(fOut.L, fOut_m.L, 'RelTol', allowedError);      
+      testCase.verifyEqual(logl, logl_m, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(a, a_m, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(fOut.P, fOut_m.P, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(fOut.v, fOut_m.v, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(fOut.F, fOut_m.F, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(fOut.M, fOut_m.M, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(fOut.K, fOut_m.K, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(fOut.L, fOut_m.L, 'RelTol', testCase.allowedError);      
+      testCase.verifyEqual(fOut.w, fOut_m.w, 'RelTol', testCase.allowedError);      
+      testCase.verifyEqual(fOut.Finv, fOut_m.Finv, 'RelTol', testCase.allowedError);      
     end
     
     function testSmoother(testCase)
@@ -87,15 +89,15 @@ classdef mex_univarite_test < matlab.unittest.TestCase
       [alpha, sOut] = testCase.ssMex.smooth(testCase.Y);
       
       % Assertions
-      allowedError = 1e-13;
-
-      testCase.verifyEqual(alpha, alpha_m, 'RelTol', allowedError);
-      testCase.verifyEqual(sOut.eta, sOut_m.eta, 'RelTol', allowedError);
-      testCase.verifyEqual(sOut.r, sOut_m.r, 'RelTol', allowedError);
-      testCase.verifyEqual(sOut.N, sOut_m.N, 'RelTol', allowedError);
-      testCase.verifyEqual(sOut.V, sOut_m.V, 'RelTol', allowedError);
-      testCase.verifyEqual(sOut.J, sOut_m.J, 'RelTol', allowedError);
-      testCase.verifyEqual(sOut.logli, sOut_m.logli, 'RelTol', allowedError);
+      testCase.verifyEqual(alpha, alpha_m, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.eta, sOut_m.eta, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.epsilon, sOut_m.epsilon, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.r, sOut_m.r, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.N, sOut_m.N, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.V, sOut_m.V, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.J, sOut_m.J, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.logli, sOut_m.logli, 'RelTol', testCase.allowedError);
+      testCase.verifyEqual(sOut.a0tilde, sOut_m.a0tilde, 'RelTol', testCase.allowedError);
     end
     
     function testTiming(testCase)
@@ -111,7 +113,7 @@ classdef mex_univarite_test < matlab.unittest.TestCase
       
       smooth_fn = @() testCase.ssMex.smooth(testCase.Y);
       mexTime_smooth = timeit(smooth_fn, 2);
-      
+
       fprintf('\nMex timing (%d observables, %d states, t = %d):\n', ...
         testCase.ssM.p, testCase.ssM.m, size(testCase.Y, 2));
       fprintf(' mex filter takes %3.2f%% of the time as the .m version.\n', ...

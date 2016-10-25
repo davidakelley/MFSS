@@ -29,9 +29,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     tau
     a0, P0
     Harvey
-  end
   
-  properties(Hidden = true)
     % Dimensions
     p         % Number of observed series
     m         % Number of states
@@ -49,8 +47,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     % ML Estimation parameters
     thetaMap
-    useGrad = false;
-    tol = 1e-6;
+    useGrad = true;
+    tol = 1e-10;
     verbose = true;
   end
   
@@ -91,8 +89,11 @@ classdef StateSpace < matlab.mixin.CustomDisplay
           [a, logli, filterOut] = obj.filter_uni_m(y);
         end
       else
-        % No multivariate mex. Plan to implement Cholesky and use uni.
-        [a, logli, filterOut] = obj.filter_multi_m(y);
+        if obj.useMex
+          [a, logli, filterOut] = obj.filter_multi_mex(y);
+        else
+          [a, logli, filterOut] = obj.filter_multi_m(y);
+        end
       end
     end
     
@@ -114,7 +115,11 @@ classdef StateSpace < matlab.mixin.CustomDisplay
           [alpha, smootherOut] = obj.smoother_uni_m(y, filterOut);
         end
       else
-        [alpha, smootherOut] = obj.smoother_multi_m(y, filterOut);
+        if obj.useMex
+          [alpha, smootherOut] = obj.smoother_multi_mex(y, filterOut);
+        else
+          [alpha, smootherOut] = obj.smoother_multi_m(y, filterOut);
+        end
       end
       smootherOut.logli = logli;
     end
@@ -136,9 +141,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       obj = obj.generateThetaMap();
       paramVec = obj.getParamVec();
       
-      % Restrict H and Q to be positive
+      % Restrict the diagonal of H and Q to be positive
       estimInd = find(obj.thetaMap.estimated);
-      varPos = [obj.thetaMap.elem.H, obj.thetaMap.elem.Q];
+      varPos = [obj.thetaMap.elem.H(1:obj.thetaMap.shape.H(1)+1:end), ...
+        obj.thetaMap.elem.Q(1:obj.thetaMap.shape.Q(1)+1:end)];
       paramVarPos = intersect(estimInd, varPos);
       [~, thetaVarPos] = intersect(estimInd, paramVarPos);
       
@@ -164,10 +170,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         'Display', 'iter-detailed', ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 10000, ...
+        'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
         'PlotFcns', plotFcns);
       
+      warning off MATLAB:nearlySingularMatrix;
       [thetaHat, ~, flag] = fmincon(minfunc, theta0, [], [], [], [], ...
         thetaPositiveLB, [], [], options);
+      warning on MATLAB:nearlySingularMatrix;
       
       % Save estimated system to current object
       obj = obj.theta2system(thetaHat);
@@ -262,10 +271,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_uni_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(exist('kfilter_uni') == 3, ...
+      assert(exist('+ss_mex/kfilter_uni') == 3, ...
         'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
       
-      [LogL, a, P, v, F, M, K, L] = kfilter_uni(y, ...
+      [LogL, a, P, v, F, M, K, L] = ss_mex.kfilter_uni(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
         obj.a0, obj.P0);
@@ -282,7 +291,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       P       = zeros(obj.m, obj.m, obj.n+1);
       LogL    = zeros(obj.n, 1);
       v       = zeros(obj.p, obj.n);
-      w       = zeros(obj.m, obj.n);
+      w       = zeros(obj.p, obj.n);
       K       = zeros(obj.m, obj.p, obj.n);
       L       = zeros(obj.m, obj.m, obj.n);
       F       = zeros(obj.p, obj.p, obj.n);
@@ -320,6 +329,21 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(LogL);
+      filterOut = obj.compileStruct(a, P, v, F, M, K, L, w, Finv);
+    end
+    
+    function [a, logli, filterOut] = filter_multi_mex(obj, y)
+      % Call mex function kfilter_uni
+      assert(exist('+ss_mex/kfilter_multi') == 3, ...
+        'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
+      
+      [LogL, a, P, v, F, M, K, L, w, Finv] = ss_mex.kfilter_multi(y, ...
+        obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
+        obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
+        obj.a0, obj.P0);
+
+      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
+
       filterOut = obj.compileStruct(a, P, v, F, M, K, L, w, Finv);
     end
     
@@ -367,10 +391,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [alpha, smootherOut] = smoother_uni_mex(obj, y, fOut)
       % Call mex function kfilter_uni
-      assert(exist('ksmoother_uni') == 3, ...
+      assert(exist('+ss_mex/ksmoother_uni') == 3, ...
         'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
       
-      [alpha, eta, r, N, V, J] = ksmoother_uni(y, ...
+      [alpha, eta, r, N, V, J] = ss_mex.ksmoother_uni(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
         fOut.a, fOut.P, fOut.v, fOut.F, fOut.M, fOut.L, ...
@@ -383,7 +407,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       % Multivariate smoother
       
       alpha   = zeros(obj.m, obj.n);
-      eta     = zeros(obj.m, obj.n);
+      eta     = zeros(obj.g, obj.n);
       epsilon = zeros(obj.p, obj.n);
       r       = zeros(obj.m, obj.n+1);
       N       = zeros(obj.m, obj.m, obj.n+1);
@@ -418,8 +442,23 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, V, J, a0tilde);
     end
     
+    function [alpha, smootherOut] = smoother_multi_mex(obj, y, fOut)
+      % Call mex function kfilter_uni
+      assert(exist('+ss_mex/ksmoother_multi') == 3, ...
+        'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
+      
+      [alpha, eta, epsilon, r, N, V, J, a0tilde] = ss_mex.ksmoother_multi(y, ...
+        obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
+        obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
+        fOut.a, fOut.P, fOut.v, fOut.M, fOut.K, fOut.L, fOut.Finv, ...
+        obj.a0, obj.P0);
+      
+      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, V, J, a0tilde);
+    end
+    
     function [logli, gradient] = gradient_multi_filter(obj, y)
       % Gradient algorithm from Nagakura (SSRN # 1634552).
+      assert(obj.timeInvariant); % FIXME: First think about G.x carefully.
       
       [~, logli, fOut] = obj.filter_multi_m(y);
       
@@ -471,13 +510,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         
         grad(:, ii) = G.a * Zii' * fOut.w(ind,ii) + ...
           0.5 * G.P * vec(Zii' * fOut.w(ind,ii) * fOut.w(ind,ii)' * Zii - ...
-          Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
+            Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
           G.d * W' * fOut.w(ind,ii) + ...
           G.Z * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
-          fOut.w(ind,ii) * fOut.v(ind,ii)' * fOut.M(:,ind,ii)' - ...
-          fOut.M(:,ind,ii)')) + ...
+            fOut.w(ind,ii) * fOut.v(ind,ii)' * fOut.M(:,ind,ii)' - ...
+            fOut.M(:,ind,ii)')) + ...
           0.5 * G.H * kron(W', W') * vec(fOut.w(ind,ii) * fOut.w(ind,ii)' - ...
-          fOut.Finv(ind,ind,ii));
+            fOut.Finv(ind,ind,ii));
         
         % Set t+1 values
         G.a = G.a * fOut.L(:,:,ii)' + ...
@@ -485,19 +524,18 @@ classdef StateSpace < matlab.mixin.CustomDisplay
           G.c + ...
           G.d * fOut.K(:,:,ii)' + ...
           G.Z * (kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', fOut.w(:,ii)) - ...
-          kron(fOut.a(:,ii) + ...
-          fOut.M(:,:,ii) * fOut.v(:, ii), fOut.K(:,:,ii)')) - ...
+            kron(fOut.a(:,ii) + fOut.M(:,:,ii) * fOut.v(:, ii), ...
+              fOut.K(:,:,ii)')) - ...
           G.H * kron(fOut.w(:,ii), fOut.K(:,:,ii)') + ...
-          G.T * kron(fOut.a(:,ii) + ...
-          fOut.M(:,:,ii) * fOut.v(:,ii), eye(obj.m));
+          G.T * kron(fOut.a(:,ii) + fOut.M(:,:,ii) * fOut.v(:,ii), eye(obj.m));
         G.P = G.P * kron(fOut.L(:,:,ii)', fOut.L(:,:,ii)') + ...
           G.H * kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)') + ...
           G.Q * kron(obj.R(:,:,obj.tau.R(ii+1))', obj.R(:,:,obj.tau.R(ii+1))') + ...
           (G.T * kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', eye(obj.m)) + ...
-          G.Z * kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', fOut.K(:,:,ii)') + ...
-          G.R * kron(obj.Q(:,:,obj.tau.Q(ii+1)) * ...
-          obj.R(:,:,obj.tau.R(ii+1))', eye(obj.m))) * ...
-          (eye(obj.m^2) + commutation);
+            G.Z * kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', fOut.K(:,:,ii)') + ...
+            G.R * kron(obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))', ...
+              eye(obj.m))) * ...
+            (eye(obj.m^2) + commutation);
       end
       
       gradient = sum(grad, 2);
@@ -906,12 +944,17 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       % Get the likelihood of
       [ss1, a0_theta, P0_theta] = obj.theta2system(theta);
       
-      if obj.useGrad
-        [rawLogli, rawGradient] = ss1.gradient(y, a0_theta, P0_theta);
-        gradient = -rawGradient(obj.thetaMap.estimated);
-      else
-        [~, rawLogli] = ss1.filter(y, a0_theta, P0_theta);
-        gradient = [];
+      try
+        if obj.useGrad
+          [rawLogli, rawGradient] = ss1.gradient(y, a0_theta, P0_theta);
+          gradient = -rawGradient(obj.thetaMap.estimated);
+        else
+          [~, rawLogli] = ss1.filter(y, a0_theta, P0_theta);
+          gradient = [];
+        end
+      catch
+        rawLogli = nan;
+        gradient = nan(sum(obj.thetaMap.estimated), 1);
       end
       
       negLogli = -rawLogli;
@@ -1035,8 +1078,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     end
   end
   
+  %% Display
   methods (Access = protected)
-    %% Display
+    
     function displayScalarObject(obj)
       if ~isempty(obj.Harvey)
         type = 'Mixed-Frequency';
@@ -1054,6 +1098,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         space, obj.p, space, obj.m, space, obj.g);
       if ~obj.timeInvariant
         fprintf('%sData dimension          : %d\n', obj.t);
+      end
+      
+      allParamValues = [obj.Z(:); obj.d(:); obj.H(:); ...
+        obj.T(:); obj.c(:); obj.R(:); obj.Q(:)];
+      if any(isnan(allParamValues))
+        fprintf('%sParameter values to be estimated: %d\n', space, ...
+          sum(isnan(allParamValues)));
       end
       
       %       propgroup = getPropertyGroups(obj);
@@ -1075,6 +1126,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         propgrp(1) = matlab.mixin.util.PropertyGroup(propList1,gTitle1);
         propgrp(2) = matlab.mixin.util.PropertyGroup(propList2,gTitle2);
       end
+      
     end
   end
   
