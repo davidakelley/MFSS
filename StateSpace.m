@@ -3,19 +3,57 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   %
   % Includes filtering/smoothing algorithms and maximum likelihood
   % estimation of parameters with restrictions.
+  % 
+  % Object construction
+  % -------------------
+  %   ss = StateSpace(Z, d, H, T, c, R, Q) 
+  %   ss = StateSpace(Z, d, H, T, C, R, Q, accumulator)
+  % 
+  % The d & c parameters may be entered as empty for convenience. 
+  % 
+  % Time varrying parameters may be passed as structures with a field for
+  % the parameter values and a vector indicating the timing. Using Z as an
+  % example the field names would be Z.Zt and Z.tauZ. 
   %
-  % ss = StateSpace(Z, d, H, T, c, R, Q)
+  % Accumulators may be defined for each observable series in the accumulator
+  % structure. Three fields need to be defined: 
+  %   index     - linear indexes of series needing accumulation
+  %   calendar  - calendar of observations for accumulated series
+  %   horizon   - periods covered by each observation
+  % These fields may also be named xi, psi, and Horizon. For more
+  % information, see the readme. 
+  % 
+  % Filtering/smoothing
+  % -------------------
+  %   [a, logl] = ss.filter(y)
+  %   [a, logl] = ss.filter(y, a0, P0)
+  %   [a, logl, filterValues] = ss.filter(...)
+  %   alpha = ss.smooth(y)
+  %   alpha = ss.smooth(y, a0, P0)
+  %   [alpha, smootherValues] = ss.smooth(...)
+  % 
+  % Additional estimates from the filter (P, v, F, M, K, L) and 
+  % smoother (eta, r, N, a0tilde) are returned in the filterValues and 
+  % smootherValues structures. The multivariate filter also returns w and
+  % Finv (the inverse of F). The multivariate smoother also returns V and J. 
+  % 
+  % When the initial value parameters are not passed or are empty, default
+  % values will be generated as either the stationary solution (if it exists) 
+  % or the approximate diffuse case with large kappa. The value of kappa
+  % can be set with ss.kappa before the use of the filter/smoother. 
   %
-  % ss = StateSpace(Z, d, H, T, C, R, Q, Harvey)
+  % The univariate filter/smoother will be used if H is diagonal. Set
+  % ss.filterUni to false to force the use of the multivaritate versions. 
   %
-  % ss = StateSpace(Z, d, H, T, C, R, Q, Harvey, a0, P0)
-  %
-  % ss.filter(y)
-  % ss.filter(y, a0, P0)
-  % ss.smooth(y)
-  % ss.smooth(y, a0, P0)
-  % ss.estimate(y)
-  % ss.em_estimate(y)
+  % Mex versions will be used unless ss.useMex is set to false or the mex
+  % files cannot be found.
+  % 
+  % Maximum likelihood estimation of parameters
+  % -------------------------------------------
+  %   ss_estimated = ss.estimate(y, ss0)
+  %   ss_estimated = ss.em_estimate(y, ss0)
+  % 
+  % 
   
   % David Kelley, 2016
   %
@@ -24,45 +62,52 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   %     Is there any easy way to package the class file with the mex files?
   
   properties
-    Z, d, H
-    T, c, R, Q
-    tau
-    a0, P0
-    Harvey
+    Z, d, H           % Observation equation parameters
+    T, c, R, Q        % State equation parameters
+    accumulator       % Structure defining accumulated series
+    tau               % Structure of time-varrying parameter indexes
+
+    a0, P0            % Initial value parameters
+    kappa = 1e6;      % Diffuse initialization constant
+
+    useMex = true;    % Use mex versions. Set to false if no mex compiled.
+    filterUni         % Use univarite filter if appropriate (H is diagonal)
+
+    verbose = true;   % Screen output during ML estimation
+    tol = 1e-10;      % ML-estimation likelihood tolerance
+  end
   
+  properties(Hidden=true)
     % Dimensions
-    p         % Number of observed series
-    m         % Number of states
-    g         % Number of shocks
-    n         % Time periods
+    p                 % Number of observed series
+    m                 % Number of states
+    g                 % Number of shocks
+    n                 % Time periods
     
     % General options
-    useMex = true;    % Use mex versions. Set to false if no mex compiled.
     systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'};
-    kappa = 1e6;
-    
-    % Object specific properties
-    timeInvariant     % Indicator for TVP
-    filterUni         % Use univarite filter if appropriate (H is diagonal)
+    nonsymmetricParams = {'Z', 'd', 'T', 'c', 'R', 'a0'};
+    symmetricParams = {'H', 'Q', 'P0'};
+    timeInvariant     % Indicator for TVP models
     
     % ML Estimation parameters
-    thetaMap
-    useGrad = true;
-    tol = 1e-10;
-    verbose = true;
+    thetaMap          % Structure of mappings from theta vector to parameters
+    useGrad = true;   % Indicator for use of analytic gradient 
   end
   
   methods
-    
-    function obj = StateSpace(Z, d, H, T, c, R, Q, Harvey)
+    function obj = StateSpace(Z, d, H, T, c, R, Q, accumulator)
       % StateSpace constructor
       % Pass state parameters to construct new object (or pass a structure
       % containing the neccessary parameters)
       
       if nargin == 1
         % Structure of parameter values was passed, contains all parameters
-        Harvey = Z.Harvey;
-        parameters = rmfield(Z, 'Harvey');
+        accumulator = Z.accumulator;
+        parameters = rmfield(Z, 'accumulator');
+      elseif nargin == 7
+        parameters = obj.compileStruct(Z, d, H, T, c, R, Q);
+        accumulator = [];
       elseif nargin >= 8
         parameters = obj.compileStruct(Z, d, H, T, c, R, Q);
       else
@@ -70,7 +115,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       
       obj = obj.systemParameters(parameters);
-      obj = obj.addAccumulators(Harvey);
+      obj = obj.addAccumulators(accumulator);
     end
     
     function [a, logli, filterOut] = filter(obj, y, a0, P0)
@@ -81,6 +126,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         obj = obj.setInitial(a0);
       end
       obj = setDefaultInitial(obj);
+      
+      if obj.useMex && ~(exist('+ss_mex/kfilter_uni', 'file') == 3 && ...
+          exist('+ss_mex/kfilter_multi', 'file') == 3)
+        obj.useMex = false;
+        warning('MEX files not found. See .\mex\make.m');        
+      end
       
       if obj.filterUni
         if obj.useMex
@@ -105,6 +156,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         obj = obj.setInitial(a0);
       end
       obj = setDefaultInitial(obj);
+      
+      if obj.useMex && ~(exist('+ss_mex/ksmoother_uni', 'file') == 3 && ...
+          exist('+ss_mex/ksmoother_multi', 'file') == 3)
+        obj.useMex = false;
+        warning('MEX files not found. See .\mex\make.m');        
+      end
       
       [~, logli, filterOut] = obj.filter(y);
       
@@ -271,9 +328,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_uni_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(exist('+ss_mex/kfilter_uni') == 3, ...
-        'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
-      
+      assert(exist('+ss_mex/kfilter_uni', 'file') == 3, ...
+            'MEX file not found. See .\mex\make.m'); 
       [LogL, a, P, v, F, M, K, L] = ss_mex.kfilter_uni(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
@@ -334,8 +390,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_multi_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(exist('+ss_mex/kfilter_multi') == 3, ...
-        'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
+      assert(exist('+ss_mex/kfilter_multi', 'file') == 3, ...
+        'MEX file not found. See .\mex\make.m'); 
       
       [LogL, a, P, v, F, M, K, L, w, Finv] = ss_mex.kfilter_multi(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
@@ -354,9 +410,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       eta   = zeros(obj.g, obj.n);
       r     = zeros(obj.m, obj.n);
       N     = zeros(obj.m, obj.m, obj.n+1);
-      V     = zeros(obj.m, obj.m, obj.n);
-      J     = zeros(obj.m, obj.m, obj.n);
-      
+
       rti = zeros(obj.m,1);
       Nti = zeros(obj.m,obj.m);
       for ii = obj.n:-1:1
@@ -376,17 +430,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii);
         eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
         
-        V(:,:,ii) = fOut.P(:,:,ii) - ...
-          fOut.P(:,:,ii) * N(:,:,ii) * fOut.P(:,:,ii);
-        J(:,:,ii) = fOut.P(:,:,ii) * fOut.L(:,:,ii)' * ...
-          eye(obj.m) * (eye(obj.m) - N(:,:,ii+1) * fOut.P(:,:,ii+1));
-        
         rti = obj.T(:,:,obj.tau.T(ii))' * rti;
         Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
       end
       a0tilde = obj.a0 + obj.P0 * rti;
       
-      smootherOut = obj.compileStruct(alpha, eta, r, N, V, J, a0tilde);
+      smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
     
     function [alpha, smootherOut] = smoother_uni_mex(obj, y, fOut)
@@ -394,13 +443,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       assert(exist('+ss_mex/ksmoother_uni') == 3, ...
         'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
       
-      [alpha, eta, r, N, V, J] = ss_mex.ksmoother_uni(y, ...
+      [alpha, eta, r, N, a0tilde] = ss_mex.ksmoother_uni(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
         fOut.a, fOut.P, fOut.v, fOut.F, fOut.M, fOut.L, ...
         obj.a0, obj.P0);
 
-      smootherOut = obj.compileStruct(alpha, eta, r, N, V, J);
+      smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
      end
     
     function [alpha, smootherOut] = smoother_multi_m(obj, y, fOut)
@@ -439,7 +488,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       
       a0tilde = obj.a0 + obj.P0 * obj.T(:,:,obj.tau.T(1))'*r(:,1);
-      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, V, J, a0tilde);
+      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
     end
     
     function [alpha, smootherOut] = smoother_multi_mex(obj, y, fOut)
@@ -447,13 +496,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       assert(exist('+ss_mex/ksmoother_multi') == 3, ...
         'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
       
-      [alpha, eta, epsilon, r, N, V, J, a0tilde] = ss_mex.ksmoother_multi(y, ...
+      [alpha, eta, epsilon, r, N, a0tilde, V, J] = ss_mex.ksmoother_multi(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
         fOut.a, fOut.P, fOut.v, fOut.M, fOut.K, fOut.L, fOut.Finv, ...
         obj.a0, obj.P0);
       
-      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, V, J, a0tilde);
+      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
     end
     
     function [logli, gradient] = gradient_multi_filter(obj, y)
@@ -564,7 +613,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % d system matrix
       if isstruct(parameters.d)
-        obj = obj.setTimeVarrying(length(parameters.d.tauZ));
+        obj = obj.setTimeVarrying(length(parameters.d.taud));
         obj.tau.d = parameters.d.taud;
         obj.d = parameters.d.dt;
       elseif size(parameters.d, 2) > 1
@@ -577,7 +626,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % H system matrix
       if isstruct(parameters.H)
-        obj = obj.setTimeVarrying(length(parameters.H.tauZ));
+        obj = obj.setTimeVarrying(length(parameters.H.tauH));
         obj.tau.H = parameters.H.tauH;
         obj.H = parameters.H.Ht;
       else
@@ -586,7 +635,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % T system matrix
       if isstruct(obj.T)
-        obj = obj.setTimeVarrying(length(parameters.T.tauZ) - 1);
+        obj = obj.setTimeVarrying(length(parameters.T.tauT) - 1);
         obj.tau.T = parameters.T.tauT;
         obj.T = parameters.T.Tt;
       else
@@ -595,7 +644,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % c system matrix
       if isstruct(parameters.c)
-        obj = obj.setTimeVarrying(length(parameters.c.tauZ) - 1);
+        obj = obj.setTimeVarrying(length(parameters.c.tauc) - 1);
         obj.tau.c = parameters.c.tauc;
         obj.c = parameters.c.ct;
       elseif size(parameters.c, 2) > 1
@@ -608,7 +657,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % R system matrix
       if isstruct(parameters.R)
-        obj = obj.setTimeVarrying(length(parameters.R.tauZ) - 1);
+        obj = obj.setTimeVarrying(length(parameters.R.tauR) - 1);
         obj.tau.R = parameters.R.tauR;
         obj.R = parameters.R.Rt;
       else
@@ -617,7 +666,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Q system matrix
       if isstruct(parameters.Q)
-        obj = obj.setTimeVarrying(length(parameters.Q.tauZ) - 1);
+        obj = obj.setTimeVarrying(length(parameters.Q.tauQ) - 1);
         obj.tau.Q = parameters.Q.tauQ;
         obj.Q = parameters.Q.Qt;
       else
@@ -682,9 +731,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
     end
     
-    function obj = addAccumulators(obj, Harvey)
+    function obj = addAccumulators(obj, accumulator)
       % Augment system parameters with Harvey accumulators
-      
+      %
       % Augment Standard State Space with Harvey Accumulator
       % $\xi$  - $\xi_{h}$ indice vector of each series accumulated
       % $A$    - selection matrix
@@ -695,15 +744,15 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Andrew Butters, 2013
       
-      if isempty(Harvey)
+      if isempty(accumulator)
         return
       else
-        obj.Harvey = Harvey;
+        obj.accumulator = accumulator;
       end
       
-      xi      = Harvey.xi;
-      psi     = Harvey.psi;
-      Horizon = Harvey.Horizon;
+      xi      = accumulator.xi;
+      psi     = accumulator.psi;
+      Horizon = accumulator.Horizon;
       
       type = any((psi==0),2);
       [s,r] = find((any((obj.Z(xi,:,:)~=0),3))');
@@ -960,7 +1009,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       negLogli = -rawLogli;
     end
     
-    function [system, a0, P0] = theta2system(obj, theta)
+    function [newObj, a0, P0] = theta2system(obj, theta)
       % Generates a StateSpace object from a vector of parameters being
       % estimated, theta.
       
@@ -976,40 +1025,56 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Generate system parameters from theta vector
       params = struct;
-      for iP = 1:length(obj.systemParam)
-        iParam = obj.systemParam{iP};
+      for iP = 1:length(obj.nonsymmetricParams)
+        iParam = obj.nonsymmetricParams{iP};
         params.(iParam) = reshape(paramVec(obj.thetaMap.elem.(iParam)), ...
           obj.thetaMap.shape.(iParam));
       end
-      params.Harvey = obj.Harvey;
+      for iP = 1:length(obj.symmetricParams)
+        iParam = obj.symmetricParams{iP};
+        selectHalf = tril(true(obj.thetaMap.shape.(iParam)));
+        params.(iParam) = zeros(obj.thetaMap.shape.(iParam));
+        params.(iParam)(selectHalf) = paramVec(obj.thetaMap.elem.(iParam));
+        halfMatTrans = params.(iParam)';
+        params.(iParam)(selectHalf') = halfMatTrans(selectHalf');
+      end
+      
+      params.accumulator = obj.accumulator;
       a0 = params.a0;
       P0 = params.P0;
       
       % Create new StateSpace object from parameters
-      system = StateSpace(params);
+      newObj = StateSpace(params);
     end
     
     function paramVec = getParamVec(obj)
       % TODO: Handle restrictions on the system parameters passed as non-nan values
+      lowerH = obj.H(tril(true(size(obj.H))));
+      lowerQ = obj.Q(tril(true(size(obj.Q))));
+      lowerP0 = obj.P0(tril(true(size(obj.P0))));
+      
       vec = @(M) reshape(M, [], 1);
-      paramVec = [vec(obj.Z); vec(obj.d); vec(obj.H); ...
-        vec(obj.T); vec(obj.c); vec(obj.R); vec(obj.Q); ...
-        vec(obj.a0); vec(obj.P0)];
+      paramVec = [vec(obj.Z); vec(obj.d); lowerH; ...
+        vec(obj.T); vec(obj.c); vec(obj.R); lowerQ; ...
+        vec(obj.a0); lowerP0];
     end
     
     function obj = generateThetaMap(obj)
       % Generate map from parameters to theta
-      parameters = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, ...
-        obj.a0, obj.P0}; % Do a0, P0 need to be ss0? I don't think so.
-      
+       
       obj.thetaMap = struct;
       
-      elems = cellfun(@numel, parameters);
+      elems = cellfun(@numel, obj.parameters);
+      % Correct for symmetric matrixes (H, Q, P0):
+      elems(3) = sum(sum(tril(ones(size(obj.H)))));
+      elems(7) = sum(sum(tril(ones(size(obj.Q)))));
+      elems(9) = sum(sum(tril(ones(size(obj.P0)))));
+      
       elemMap = arrayfun(@(x) sum(elems(1:x-1))+1:sum(elems(1:x)), ...
         1:length(elems), 'Uniform', false);
       obj.thetaMap.elem = cell2struct(elemMap', obj.systemParam');
       
-      shapes = cellfun(@size, parameters, 'Uniform', false);
+      shapes = cellfun(@size, obj.parameters, 'Uniform', false);
       obj.thetaMap.shape = cell2struct(shapes', obj.systemParam');
       
       paramVec = obj.getParamVec();
@@ -1030,7 +1095,24 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       obj = setDefaultInitial(obj);
       
-      [logli, gradient] = obj.gradient_multi_filter(y);
+      [logli, vectorized_gradient] = obj.gradient_multi_filter(y);
+      
+      % Return only the part of the gradient that corresponds to the free
+      % parameters and the lower triangular portion of the symmetric parameters.
+      vec = @(M) reshape(M, [], 1);
+      elems = cellfun(@numel, obj.parameters);
+
+      freeElems = cell(length(obj.systemParam), 1);
+      for iP = 1:length(obj.parameters)
+        if any(strcmp(obj.systemParam{iP}, obj.symmetricParams))
+          freeElems{iP} = vec(tril(true(sqrt(elems(iP)))));
+        else
+          freeElems{iP} = true(elems(iP), 1);
+        end
+      end
+      freeAndHalfSymParams = cat(1, freeElems{:});
+            
+      gradient = vectorized_gradient(freeAndHalfSymParams);      
     end
     
     function [obj, ss0] = checkConformingSystem(obj, y, ss0, a0, P0)
@@ -1057,6 +1139,14 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       obj.P0 = ss0.P0;
     end
     
+    function param = parameters(obj, index)
+      % Getter for cell array of parameters
+      param = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, ...
+        obj.a0, obj.P0}; % Do a0, P0 need to be ss0? I don't think so.
+      if nargin > 1
+        param = param{index};
+      end
+    end
     %% EM Algorithm Helper functions
     function [beta, sigma] = restrictedOLS(y, X, V, J, F, G)
       % Restricted OLS regression
@@ -1080,9 +1170,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   
   %% Display
   methods (Access = protected)
-    
     function displayScalarObject(obj)
-      if ~isempty(obj.Harvey)
+      if ~isempty(obj.accumulator)
         type = 'Mixed-Frequency';
       elseif ~obj.timeInvariant
         type = 'Time-varying parameter';
@@ -1106,27 +1195,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         fprintf('%sParameter values to be estimated: %d\n', space, ...
           sum(isnan(allParamValues)));
       end
-      
-      %       propgroup = getPropertyGroups(obj);
-      %       matlab.mixin.CustomDisplay.displayPropertyGroups(obj,propgroup)
-    end
-    
-    function propgrp = getPropertyGroups(obj)
-      if ~isscalar(obj)
-        propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(obj);
-      else
-        gTitle1 = 'Public Info';
-        gTitle2 = 'Personal Info';
-        propList1 = {'Name','JobTitle'};
-        pd(1:length(obj.Password)) = '*';
-        level = round(obj.Salary/100);
-        propList2 = struct('Salary',...
-          ['Level: ',num2str(level)],...
-          'Password',pd);
-        propgrp(1) = matlab.mixin.util.PropertyGroup(propList1,gTitle1);
-        propgrp(2) = matlab.mixin.util.PropertyGroup(propList2,gTitle2);
-      end
-      
     end
   end
   

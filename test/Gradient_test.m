@@ -17,23 +17,25 @@ classdef Gradient_test < matlab.unittest.TestCase
     delta = 1e-5;
   end
   
+  methods
+    function printNice(testCase, grad)
+      paramLen = structfun(@length, testCase.ss.thetaMap.elem);
+      systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'}';
+      separateNames = arrayfun(@(len, name) repmat(name, [len 1]), paramLen, systemParam, 'Uniform', false);
+      nameVec = cat(1, separateNames{:});
+      
+      out = [{'Param', 'Analytic', 'Numeric', 'Difference'}; ...
+        [nameVec num2cell(testCase.gradient) num2cell(grad) num2cell(testCase.gradient - grad)]];
+      disp(out);
+    end
+    
+  end
+  
   methods(TestClassSetup)    
     function setupOnce(testCase)
-      addCBD;      
-      addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
-      data_pull = cbd.data({'DIFF%(IP)', 'FRBCNAIM@SURVEYS'}, ...
-        'startDate', '1/1/1980');
-      dm_data = cbd.stddm(data_pull);
-      testCase.y = dm_data{:,:}';
-            
-      Z = [1; 1];
-      d = zeros(2, 1);
-      H = [.5, .4; .4, .5];
-      T = 0.9;
-      c = 0;
-      R = 1;
-      Q = 1000;
-      testCase.ss = StateSpace(Z, d, H, T, c, R, Q, []);
+      testCase.ss = generateARmodel(4, 2);
+      testCase.y = generateData(testCase.ss, 500);
+      
       testCase.ss = testCase.ss.checkSample(testCase.y);
       testCase.ss = testCase.ss.setDefaultInitial();
       testCase.ss = testCase.ss.generateThetaMap();
@@ -43,23 +45,24 @@ classdef Gradient_test < matlab.unittest.TestCase
   end
   
   methods (Test)
-    function testZ(testCase)
+    function testNumeric(testCase)
       theta = testCase.ss.getParamVec();
       grad = nan(size(theta));
       
+      [~, logl_fix] = testCase.ss.filter(testCase.y);
+
       for iT = 1:size(theta, 1)
         iTheta = theta;
         iTheta(iT) = iTheta(iT) + testCase.delta;
         
         [ssTest, a0_theta, P0_theta] = testCase.ss.theta2system(iTheta);
         
-        [~, loglZ1] = ssTest.filter(testCase.y, a0_theta, P0_theta);
-        grad(iT) = (loglZ1 - testCase.logl) ./ testCase.delta;
+        [~, logl_delta] = ssTest.filter(testCase.y, a0_theta, P0_theta);
+        grad(iT) = (logl_delta - logl_fix) ./ testCase.delta;
       end
-      
-      disp('Percentage errors:');
-      disp((grad - testCase.gradient) ./ testCase.gradient * 100);
-      testCase.verifyEqual(testCase.gradient, grad, 'RelTol', 0.05);
+      testCase.printNice(grad);
+     
+      testCase.verifyEqual(testCase.gradient, grad, 'RelTol', 0.01);
     end
   end
 end

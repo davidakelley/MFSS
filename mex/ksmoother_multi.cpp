@@ -213,15 +213,15 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 	cube N(m, m, n+1, fill::zeros);
 	plhs[4] = armaCreateMxMatrix(m, m, n+1);
 	
+	mat a0tilde(m, 1, fill::zeros);
+	plhs[5] = armaCreateMxMatrix(m, 1);
+
 	cube V(m, m, n, fill::zeros);
-	plhs[5] = armaCreateMxMatrix(m, m, n);
+	plhs[6] = armaCreateMxMatrix(m, m, n);
 
 	cube J(m, m, n, fill::zeros);
-	plhs[6] = armaCreateMxMatrix(m, m, n);
+	plhs[7] = armaCreateMxMatrix(m, m, n);
 	
-	mat a0tilde(m, 1, fill::zeros);
-	plhs[7] = armaCreateMxMatrix(m, 1);
-
 	// Compute
 	try
 	{
@@ -239,9 +239,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 	armaSetPr(plhs[2], epsilon);
 	armaSetPr(plhs[3], r);
 	armaSetCubeData(plhs[4], N);
-	armaSetCubeData(plhs[5], V);
-	armaSetCubeData(plhs[6], J);
-	armaSetPr(plhs[7], a0tilde);
+	armaSetPr(plhs[5], a0tilde);
+	armaSetCubeData(plhs[6], V);
+	armaSetCubeData(plhs[7], J);
 
 	return;
 }

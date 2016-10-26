@@ -23,7 +23,7 @@ void ksmooth(
         cube Tt, mat tauT, cube Rt, mat tauR, cube Qt, mat tauQ,
         mat a, cube P, mat v, mat F, cube M, cube L, 
         mat a0, mat P0, 
-        mat &alpha, mat &eta, mat &r, cube &N, cube &V, cube &J)
+        mat &alpha, mat &eta, mat &r, cube &N, mat &a0tilde)
 {
     // loop indexes
     unsigned int ii, jj;
@@ -76,15 +76,7 @@ void ksmooth(
        // eta(:,ii)    = Qt(:,:,tauQ(ii))*Rt(:,:,tauR(ii))'*r(:,ii);
         eta.col(ii) = Qt.slice(uint tauQ(ii)-1) * Rt.slice(uint tauR(ii)-1).t() * r.col(ii);
                  
-        // V(:,:,ii) = P(:,:,ii) - P(:,:,ii)*N(:,:,ii)*P(:,:,ii);
-        // FIXME? I feel like the last P here should be transposed.
-        V.slice(ii) = P.slice(ii) - P.slice(ii) * N.slice(ii) * P.slice(ii);
-        
-        // J(:,:,ii) = P(:,:,ii)*L(:,:,ii)'*(eye(m)-N(:,:,ii+1)*P(:,:,ii+1));
-        J.slice(ii) = P.slice(ii) * L.slice(ii).t() \
-                * (eyeM - N.slice(ii+1) * P.slice(ii+1));
-                
-        // rti = Tt(:,:,tauT(ii))'*rti;
+       // rti = Tt(:,:,tauT(ii))'*rti;
         rti = Tt.slice(uint tauT(ii)-1).t() * rti;
         
         // Nti = Tt(:,:,tauT(ii))'*Nti*Tt(:,:,tauT(ii));    
@@ -92,7 +84,7 @@ void ksmooth(
         
     } 
     
-    // a0tilde = a0 + P0*rti;
+    a0tilde = a0 + P0*rti;
     return;
 }
 
@@ -122,7 +114,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     if(nrhs!=19) {
         mexErrMsgIdAndTxt("ksmoother_uni:nrhs", "Nineteen input required.");
     }
-    if(nlhs!=6) {
+    if(nlhs!=5) {
         mexErrMsgIdAndTxt("ksmoother_uni:nlhs", "Six output required.");
     }
     
@@ -187,19 +179,15 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     
     cube N(m, m, n+1, fill::zeros);
     plhs[3] = armaCreateMxMatrix(m, m, n+1);
-    
-    cube V(m, m, n, fill::zeros);
-    plhs[4] = armaCreateMxMatrix(m, m, n);
 
-    cube J(m, m, n, fill::zeros);
-    plhs[5] = armaCreateMxMatrix(m, m, n);
-    
+    mat a0tilde(m, 1, fill::zeros);
+    plhs[4] = armaCreateMxMatrix(m, 1);
     
     // Compute
     try
     {
         ksmooth(y, Zt, tauZ, Ht, tauH, Tt, tauT, Rt, tauR, Qt, tauQ, 
-                a, P, v, F, M, L, a0, P0, alpha, eta, r, N, V, J);
+                a, P, v, F, M, L, a0, P0, alpha, eta, r, N, a0tilde);
     }
     catch (int e)
     {
@@ -211,8 +199,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     armaSetPr(plhs[1], eta);
     armaSetPr(plhs[2], r);
     armaSetCubeData(plhs[3], N);
-    armaSetCubeData(plhs[4], V);
-    armaSetCubeData(plhs[5], J);
-    
+    armaSetPr(plhs[4], a0tilde);
+
     return;
 }

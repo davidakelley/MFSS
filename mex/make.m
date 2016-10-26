@@ -1,12 +1,14 @@
 function make
-% Makes the .mex file for StateSpace.m
+% Makes the .mex files for StateSpace.m
 
 % David Kelley, 2016
+
+fprintf('\nBuilding .mex files for StateSpace.\n');
 
 clear mex; %#ok<CLMEX>
 
 % Get folders
-baseDir =  [subsref(strsplit(pwd, 'StateSpace'), ...
+baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
   struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
 outputFolder = fullfile(baseDir, '+ss_mex');
 if ~exist(outputFolder, 'dir')
@@ -33,5 +35,5 @@ results_multi = runtests(fullfile(baseDir, 'test', 'mex_multivarite_test.m'));
 
 % Report
 if all(~[results_uni.Failed]) && all(~[results_multi.Failed])
-  fprintf('\n\nCompleted mex comilation. All tests pass.\n');
+  fprintf('\nCompleted mex comilation. All tests pass.\n');
 end
