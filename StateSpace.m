@@ -507,13 +507,14 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [logli, gradient] = gradient_multi_filter(obj, y)
       % Gradient algorithm from Nagakura (SSRN # 1634552).
-      assert(obj.timeInvariant); % FIXME: First think about G.x carefully.
+      assert(obj.timeInvariant); % TODO: First think about G.x carefully.
       
       [~, logli, fOut] = obj.filter_multi_m(y);
       
       parameters = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.P0};
       nParamElem = cellfun(@numel, parameters);
       
+      % FIXME: This ignores half of the impact from H, Q, and P0
       paramNames = [obj.systemParam(1:7), {'a', 'P'}];
       G = struct;
       for iP = 1:length(paramNames)
@@ -896,7 +897,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     end
     
     function obj = checkSample(obj, y)
-      assert(size(y, 1) == obj.p, 'Observed series number mismatch.');
+      assert(size(y, 1) == obj.p, ...
+        'Number of series does not match observation equation.');
       
       if ~obj.timeInvariant
         assert(size(y, 2) == obj.n);
@@ -1085,7 +1087,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     function [logli, gradient] = gradient(obj, y, a0, P0)
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
-      % a0 and P0 must be previously specified as paramters.
       
       assert(obj.timeInvariant, 'TVP gradient not developed yet.');
       
@@ -1097,6 +1098,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       [logli, vectorized_gradient] = obj.gradient_multi_filter(y);
       
+      % FIXME: This needs to be handled in gradient_multi_filter
       % Return only the part of the gradient that corresponds to the free
       % parameters and the lower triangular portion of the symmetric parameters.
       vec = @(M) reshape(M, [], 1);

@@ -3,7 +3,7 @@ function ssOut = generateARmodel(p, m)
 g = 1;
 
 % Observation equation
-Z = rand(p, m);
+Z = [rand(p, 1) zeros(p, m-1)];
 d = zeros(p, 1);
 baseH = (rand(p, p) + (diag(3 + rand(p, 1)))) ./ 10;
 H = baseH * baseH' ./ 2;
