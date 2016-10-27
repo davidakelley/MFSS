@@ -10,7 +10,7 @@
 classdef Gradient_test < matlab.unittest.TestCase
   
   properties
-    delta = 1e-5;
+    delta = 1e-8;
   end
   
   methods
@@ -44,6 +44,26 @@ classdef Gradient_test < matlab.unittest.TestCase
   end
   
   methods (Test)
+    function testNumericMedium(testCase)
+      ss = generateARmodel(2, 2);
+      y = generateData(ss, 500);
+      
+      ss = ss.checkSample(y);
+      ss = ss.setDefaultInitial();
+      ss = ss.generateThetaMap();
+      
+      tic;
+      [~, analytic] = ss.gradient(y);
+      time_a = toc;
+      tic;
+      numeric = testCase.numericGradient(ss, y);
+      time_n = toc;
+      
+      testCase.printNice(ss, analytic, numeric);
+      fprintf('Analytic gradient took %3.2f%% of the time as the numeric version.\n', 100*(time_a/time_n));
+      testCase.verifyEqual(analytic, numeric, 'RelTol', 0.01);
+    end
+    
     function testNumericLLM(testCase)
       ss = generateARmodel(1, 2);
       y = generateData(ss, 500);
@@ -64,24 +84,5 @@ classdef Gradient_test < matlab.unittest.TestCase
       testCase.verifyEqual(analytic, numeric, 'RelTol', 0.01);
     end
     
-    function testNumericMedium(testCase)
-      ss = generateARmodel(4, 2);
-      y = generateData(ss, 500);
-      
-      ss = ss.checkSample(y);
-      ss = ss.setDefaultInitial();
-      ss = ss.generateThetaMap();
-      
-      tic;
-      [~, analytic] = ss.gradient(y);
-      time_a = toc;
-      tic;
-      numeric = testCase.numericGradient(ss, y);
-      time_n = toc;
-      
-      testCase.printNice(ss, analytic, numeric);
-      fprintf('Analytic gradient took %3.2f%% of the time as the numeric version.\n', 100*(time_a/time_n));
-      testCase.verifyEqual(analytic, numeric, 'RelTol', 0.01);
-    end
   end
 end

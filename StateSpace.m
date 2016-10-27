@@ -86,8 +86,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     % General options
     systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'};
-    nonsymmetricParams = {'Z', 'd', 'T', 'c', 'R', 'a0'};
-    symmetricParams = {'H', 'Q', 'P0'};
+    symmetricParams = {'H', 'Q', 'P0', 'P'};
     timeInvariant     % Indicator for TVP models
     
     % ML Estimation parameters
@@ -511,31 +510,25 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       [~, logli, fOut] = obj.filter_multi_m(y);
       
-      parameters = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.P0};
-      nParamElem = cellfun(@numel, parameters);
-      
-      % FIXME: This ignores half of the impact from H, Q, and P0
+      % Generate vectorized gradients of parameters
       paramNames = [obj.systemParam(1:7), {'a', 'P'}];
+      nThetaElem = obj.thetaElements();
+      nParamElem = cellfun(@numel, obj.parameters);
       G = struct;
       for iP = 1:length(paramNames)
-        prevElem = sum(nParamElem(1:iP-1));
-        G.(paramNames{iP}) = zeros(sum(nParamElem), nParamElem(iP));
-        G.(paramNames{iP})(prevElem+1:prevElem+nParamElem(iP), :) = eye(nParamElem(iP));
-      end
-      
-      % Generate commutation matrix
-      % A commutation matrix is "a suqare mn-dimensional matrix partitioned
-      % into mn sub-matricies of order (n, m) such that the ijth submatrix
-      % as a 1 in its jith position and zeros elsewhere."
-      E = @(i, j) [zeros(i-1, obj.m); ...
-        zeros(1, j-1), 1, zeros(1, obj.m-j); zeros(obj.m-i, obj.m)];
-      commutation = zeros(obj.m^2);
-      for iComm = 1:obj.m
-        for jComm = 1:obj.m
-          commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
+        iParam = paramNames{iP};
+        prevThetaElem = sum(nThetaElem(1:iP-1));
+        G.(iParam) = zeros(sum(nThetaElem), nParamElem(iP));
+        
+        thetaInds = prevThetaElem+1:prevThetaElem+nThetaElem(iP);
+        if ~strcmp(iParam, obj.symmetricParams)
+          G.(iParam)(thetaInds, :) = eye(nThetaElem(iP));
+        else
+          G.(iParam)(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
         end
       end
       
+      commutation = obj.genCommutation(obj.m);
       vec = @(M) reshape(M, [], 1);
       
       % Initial period: G.a and G.P capture effects of a0, T
@@ -549,8 +542,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         obj.R(:,:,obj.tau.R(1))', eye(obj.m))) * ...
         (eye(obj.m^2) + commutation);
       
-      % Initialize G_\theta(a_0) = 1, G_\theta(P_0) = 1 (?)
-      grad = zeros(sum(nParamElem), obj.n);
+      % Recursion through time periods
+      grad = zeros(sum(nThetaElem), obj.n);
       for ii = 1:obj.n
         W = eye(obj.p);
         ind = ~isnan(y(:,ii));
@@ -571,9 +564,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         % Set t+1 values
         G.a = G.a * fOut.L(:,:,ii)' + ...
           G.P * kron(Zii' * fOut.w(ind,ii), fOut.L(:,:,ii)') + ...
-          G.c + ...
+          G.c - ...
           G.d * fOut.K(:,:,ii)' + ...
-          G.Z * (kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', fOut.w(:,ii)) - ...
+          G.Z * (kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', ...
+            fOut.w(:,ii)) - ...
             kron(fOut.a(:,ii) + fOut.M(:,:,ii) * fOut.v(:, ii), ...
               fOut.K(:,:,ii)')) - ...
           G.H * kron(fOut.w(:,ii), fOut.K(:,:,ii)') + ...
@@ -990,6 +984,21 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       logDetF = sum(log(diag(DSDV)));
     end
     
+    function commutation = genCommutation(obj, m) %#ok<INUSL>
+      % Generate commutation matrix
+      % A commutation matrix is "a suqare mn-dimensional matrix partitioned
+      % into mn sub-matricies of order (n, m) such that the ijth submatrix
+      % as a 1 in its jith position and zeros elsewhere."
+      E = @(i, j) [zeros(i-1, m); ...
+        zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
+      commutation = zeros(m^2);
+      for iComm = 1:m
+        for jComm = 1:m
+          commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
+        end
+      end
+    end
+    
     %% Maximum likelihood estimation functions
     function [negLogli, gradient] = minimizeFun(obj, theta, y)
       % Get the likelihood of
@@ -1027,18 +1036,18 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Generate system parameters from theta vector
       params = struct;
-      for iP = 1:length(obj.nonsymmetricParams)
-        iParam = obj.nonsymmetricParams{iP};
-        params.(iParam) = reshape(paramVec(obj.thetaMap.elem.(iParam)), ...
-          obj.thetaMap.shape.(iParam));
-      end
-      for iP = 1:length(obj.symmetricParams)
-        iParam = obj.symmetricParams{iP};
-        selectHalf = tril(true(obj.thetaMap.shape.(iParam)));
-        params.(iParam) = zeros(obj.thetaMap.shape.(iParam));
-        params.(iParam)(selectHalf) = paramVec(obj.thetaMap.elem.(iParam));
-        halfMatTrans = params.(iParam)';
-        params.(iParam)(selectHalf') = halfMatTrans(selectHalf');
+      for iP = 1:length(obj.systemParam)
+        iParam = obj.systemParam{iP};
+        if ~strcmp(iParam, obj.symmetricParams)
+          params.(iParam) = reshape(paramVec(obj.thetaMap.elem.(iParam)), ...
+            obj.thetaMap.shape.(iParam));
+        else
+          selectHalf = tril(true(obj.thetaMap.shape.(iParam)));
+          params.(iParam) = zeros(obj.thetaMap.shape.(iParam));
+          params.(iParam)(selectHalf) = paramVec(obj.thetaMap.elem.(iParam));
+          halfMatTrans = params.(iParam)';
+          params.(iParam)(selectHalf') = halfMatTrans(selectHalf');
+        end
       end
       
       params.accumulator = obj.accumulator;
@@ -1065,12 +1074,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       % Generate map from parameters to theta
        
       obj.thetaMap = struct;
-      
-      elems = cellfun(@numel, obj.parameters);
-      % Correct for symmetric matrixes (H, Q, P0):
-      elems(3) = sum(sum(tril(ones(size(obj.H)))));
-      elems(7) = sum(sum(tril(ones(size(obj.Q)))));
-      elems(9) = sum(sum(tril(ones(size(obj.P0)))));
+      elems = obj.thetaElements();
       
       elemMap = arrayfun(@(x) sum(elems(1:x-1))+1:sum(elems(1:x)), ...
         1:length(elems), 'Uniform', false);
@@ -1082,6 +1086,41 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       paramVec = obj.getParamVec();
       obj.thetaMap.estimated = isnan(paramVec);
       obj.thetaMap.constrained = paramVec;
+    end
+    
+    function elems = thetaElements(obj)
+      elems = cellfun(@numel, obj.parameters);
+      % Correct for symmetric matrixes (H, Q, P0):
+      elems(3) = sum(sum(tril(ones(size(obj.H)))));
+      elems(7) = sum(sum(tril(ones(size(obj.Q)))));
+      elems(9) = sum(sum(tril(ones(size(obj.P0)))));
+    end
+    
+    function Gtheta = gradThetaSym(obj, dim) %#ok<INUSL>
+      % Generate the G_{\theta}(A) matrix for symmetric matricies A. 
+      % All that we care about is the size of A (must be square). 
+      
+      nFreeElem = sum(1:dim);
+      nElem = dim.^2;
+      Gtheta = zeros(nFreeElem, nElem);
+      
+      % Set the diagonal elements and the lower non-diagonal elements
+      vec = @(M) reshape(M, [], 1);
+      freeParam = vec(tril(true(dim)));
+      Gtheta(:, freeParam) = eye(nFreeElem);
+      
+      % Set the upper non-diagonal elements
+      % Find the lower off-diagonal elements we've already set. The
+      % corresponding element will be (n-1)*(j-i) columns to the right. 
+      offDiag = vec(tril(true(dim), -1))';
+      covarThetaRows = any(bsxfun(@eq, offDiag, Gtheta) & Gtheta ~= 0, 2);
+      
+      [~,lowerOffDiagCol] = find(Gtheta(covarThetaRows, :));
+      iMinusj = vec(cumsum(tril(true(dim-1))));
+      iMinusj(iMinusj == 0) = [];
+      upperOffDiagCol = lowerOffDiagCol + (dim-1) * iMinusj;
+      
+      Gtheta(covarThetaRows, upperOffDiagCol) = eye(nElem - nFreeElem);
     end
     
     function [logli, gradient] = gradient(obj, y, a0, P0)
@@ -1096,25 +1135,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       obj = setDefaultInitial(obj);
       
-      [logli, vectorized_gradient] = obj.gradient_multi_filter(y);
-      
-      % FIXME: This needs to be handled in gradient_multi_filter
-      % Return only the part of the gradient that corresponds to the free
-      % parameters and the lower triangular portion of the symmetric parameters.
-      vec = @(M) reshape(M, [], 1);
-      elems = cellfun(@numel, obj.parameters);
-
-      freeElems = cell(length(obj.systemParam), 1);
-      for iP = 1:length(obj.parameters)
-        if any(strcmp(obj.systemParam{iP}, obj.symmetricParams))
-          freeElems{iP} = vec(tril(true(sqrt(elems(iP)))));
-        else
-          freeElems{iP} = true(elems(iP), 1);
-        end
-      end
-      freeAndHalfSymParams = cat(1, freeElems{:});
-            
-      gradient = vectorized_gradient(freeAndHalfSymParams);      
+      [logli, gradient] = obj.gradient_multi_filter(y);
     end
     
     function [obj, ss0] = checkConformingSystem(obj, y, ss0, a0, P0)
