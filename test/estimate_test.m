@@ -11,6 +11,7 @@ classdef estimate_test < matlab.unittest.TestCase
     tol_DK = 1e-2;    % Test v. Drubin-Koopman
     tol_grad = 1e-5;   % Tets against gradient version
     bbk
+    deai
   end
   
   methods(TestClassSetup)
@@ -30,6 +31,11 @@ classdef estimate_test < matlab.unittest.TestCase
       lineBreaks = strfind(dataStr, sprintf('\n'));
       dataStr(1:lineBreaks(1)) = [];
       testCase.data.nile = sscanf(dataStr, '%d');
+      
+      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
+        struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
+      testCase.deai = load(fullfile(baseDir, 'test', 'data', 'deai.mat'));
+
 
       addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
     end
@@ -150,6 +156,25 @@ classdef estimate_test < matlab.unittest.TestCase
       
       % Test
       ssE = ss.estimate(testCase.bbk.y, ss0);
+      
+    end
+    
+    function testDetroit(testCase)
+      ss0 = StateSpace(testCase.deai.Z, testCase.deai.d, testCase.deai.H, ...
+        testCase.deai.T, testCase.deai.c, testCase.deai.R, testCase.deai.Q, ...
+        testCase.deai.Harvey);
+      
+      estZ = Z;
+      estZ(:,1) = nan;
+      estT = T;
+      estT(T~=0 & T~=1) = nan;
+      estQ = Q;
+      estQ(Q~=0 & Q~=1) = nan;
+      ss = StateSpace(estZ, testCase.deai.d, testCase.deai.H, ...
+        estT, testCase.deai.c, testCase.deai.R, estQ, ...
+        testCase.deai.Harvey);
+      
+      ssE = ss.estimate(testCase.deai.Y, ss0);
       
     end
   end
