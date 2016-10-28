@@ -18,7 +18,7 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
       addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
 
       % Set up test
-      ss = generateARmodel(10, 2);
+      ss = generateARmodel(10, 2, false);
       
       testCase.Y = generateData(ss, 600);
       

@@ -1,0 +1,92 @@
+\documentclass[12pt]{article}
+\usepackage{amsthm,amsfonts,amsmath,xcolor,fullpage}
+
+\setlength{\parindent}{0pt}
+\pagenumbering{gobble}
+
+\begin{document}
+
+\section*{State Space Loglikelihood Gradient Calculation}
+Using the preferred (Harvey 1989) timing for the state space model,
+\begin{align*} 
+y_t = Z_t \alpha_t + d_t + \epsilon_t &\qquad \epsilon_t \sim N(0,H_t) \\ 
+\alpha_{t} = T_t \alpha_{t-1} + c_t + R_t \eta_t &\qquad \eta_t \sim N(0, Q_t)
+\end{align*}
+the likelihood of of data $\mathbf{Y}_t$ is given by $L_n \equiv \sum_{t=1}^n \ell_t$ where 
+\begin{align}
+\ell_t = -\frac{p}{2} \log(2\pi) - \frac{1}{2} \log|F_t| + v_t^\prime F_t^{-1}v_t
+\end{align}
+\begin{align*}
+a_t = T_t a_{t-1} + c_t + K_t v_t &\qquad
+P_t = T_t P_{t-1}L_{t-1} + R_t Q_t R_t^\prime \\
+v_t = y_t - d_t - Z_ta_t &\qquad
+F_t = Z_t P_t Z_t^\prime + H_t \\
+M_t = P_t Z_t^\prime F_t^{-1} &\qquad
+K_t = T_{t+1} M_t \\
+L_t = T_{t+1} - K_t Z_t &\qquad
+w_t = F_t^{-1} v_t 
+\end{align*} 
+
+\newcommand{\vecop}[0]{\text{vec}}
+
+From Nagakura (working paper), we can get the gradient:
+\begin{align}
+\begin{split}
+G_\theta(\ell_t) &= G_\theta(a_t) Z_t' w_t  \\
+ &+ \frac{1}{2} G_\theta(P_t) \vecop (Z_t^\prime w_t w_t^\prime Z_t - Z_t^\prime F_t^{-1} Z_t) \\
+ &+ G_\theta(d_t) w_t \\
+ &+ G_\theta(Z_t) \vecop (w_t a_t^\prime + w_t v_t^\prime M_t^\prime - M_t^\prime) \\
+ &+ \frac{1}{2} G_\theta(H_t) \vecop (w_t w_t^\prime - F_t^{-1})
+\end{split}
+\end{align}
+
+where 
+\begin{align*}
+\begin{split}
+G_\theta(a_{t+1}) &= G_\theta(a_t)L_t^\prime \\ 	
+ &+ G_\theta(P_t) (Z_t^\prime w_t \otimes L_t^\prime) \\
+ &+ G_\theta(c_{t+1}) \\
+ &- G_\theta(d_t) K_t^\prime \\ 
+ &+ G_\theta(Z_t) [P_tL_t^\prime \otimes w_t - (a_t + M_t v_t) \otimes K_t^\prime] \\
+ &- G_\theta(H_t) (w_t \otimes K_t^\prime) \\ 
+ &+ G_\theta(T_{t+1})[(a_t + M_t v_t) \otimes I_m]
+\end{split} \\
+\begin{split}
+G_\theta(P_{t+1}) &= G_\theta(P_t) (L_t^\prime \otimes L_t^\prime) \\
+ &+ G_\theta(H_t)(K_t^\prime \otimes K_t^\prime) \\
+ &+ G_\theta(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
+ &+ [G_\theta(T_{t+1})(P_t L_t^\prime \otimes I_m) \\
+ &\qquad - G_\theta(Z_t)(P_t L_t^\prime \otimes K_t^\prime) \\
+ &\qquad + G_\theta(R_{t+1})(Q_{t+1}R_{t+1}^\prime \otimes I_m) ] N_m
+\end{split}
+\end{align*}
+
+
+The initial conditions for the recursion are given by a simplification of the expressions above: 
+\begin{align*}
+\begin{split}
+G_\theta(a_1) &= G_\theta(a_0) T_1^\prime \\ 
+ &+ G_\theta(c_1)  \\
+ &+ G_\theta(T_1)[a_0 \otimes I_m]
+\end{split} \\
+\begin{split}
+G_\theta(P_1) &= G_\theta(P_0) (T_t^\prime \otimes T_t^\prime) \\
+ &+ G_\theta(Q_1)(R_1^\prime \otimes R_1^\prime) \\
+ &+ [G_\theta(T_1)(P_0 T_1^\prime \otimes I_m) \\
+ &\qquad + G_\theta(R_1)(Q_1 R_1^\prime \otimes I_m) ] N_m
+\end{split}
+\end{align*}
+
+% \section*{Derivation}
+
+% It's clear that the gradient of the total likelihood with respect to the parameters, 
+% \begin{align}
+% \ell_t = -\frac{p}{2} \log(2\pi) - \frac{1}{2} \log|F_t| + v_t^\prime F_t^{-1}v_t
+% \end{align}
+% can be divided by time period:
+% \begin{align*}
+% \frac{\partial L_n}{\partial \theta} = \sum_{t=1}^{n} \frac{\partial \ell_t}{\partial \theta} = \sum_{t=1}^{n} \frac{\partial v_t^\prime}{\partial \theta} \frac{\partial \ell_t}{\partial v_t^\prime}
+% \end{align*}
+
+\end{document}
+

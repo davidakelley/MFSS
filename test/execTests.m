@@ -23,8 +23,7 @@ testDir = [baseDir '\test'];
 
 mexTests = [TestSuite.fromFile(fullfile(testDir, 'mex_univariate_test.m')), ...
             TestSuite.fromFile(fullfile(testDir, 'mex_multivariate_test.m'))];
-gradientTests = [TestSuite.fromFile(fullfile(testDir, 'Gradient_test.m')), ...
-            TestSuite.fromFile(fullfile(testDir, 'Gradient_factor_model_test.m'))];
+gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_test.m'));
 mlTests = TestSuite.fromFile(fullfile(testDir, 'estimate_test.m'));
           
 alltests = {mexTests gradientTests mlTests};

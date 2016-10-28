@@ -51,15 +51,27 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   % Maximum likelihood estimation of parameters
   % -------------------------------------------
   %   ss_estimated = ss.estimate(y, ss0)
+  %
+  % Estimate parameter values of a state space system. Indicate values to
+  % be estimated by setting them to nan. An initial set of parameters must
+  % be provided in ss0. 
+  %
+  % Pseudo maximum likelihood estimation
+  % ------------------------------------
   %   ss_estimated = ss.em_estimate(y, ss0)
   % 
-  % 
+  % Initial work on implementing a general EM algorithm. 
   
   % David Kelley, 2016
   %
-  % Questions I need to answer:
-  %     For the gradient: Missing data? Time varrying parameters?
-  %     Is there any easy way to package the class file with the mex files?
+  % TODO (10/27/16)
+  % ---------------
+  %   - mex version of the gradient function
+  %   - Test that accumulators work as we expect
+  %   - TVP for gradient (G.x matricies)
+  %   - Accumulators for gradient
+  %   - TVP/accumulators in estimation/thetaMap
+  %   - EM algorithm
   
   properties
     Z, d, H           % Observation equation parameters
@@ -126,8 +138,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       obj = setDefaultInitial(obj);
       
-      if obj.useMex && ~(exist('+ss_mex/kfilter_uni', 'file') == 3 && ...
-          exist('+ss_mex/kfilter_multi', 'file') == 3)
+      if obj.useMex && (isempty(which('ss_mex.kfilter_uni')) || ...
+           isempty(which('ss_mex.kfilter_multi')))
         obj.useMex = false;
         warning('MEX files not found. See .\mex\make.m');        
       end
@@ -156,8 +168,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       obj = setDefaultInitial(obj);
       
-      if obj.useMex && ~(exist('+ss_mex/ksmoother_uni', 'file') == 3 && ...
-          exist('+ss_mex/ksmoother_multi', 'file') == 3)
+      if obj.useMex && (isempty(which('ss_mex.ksmoother_uni')) || ...
+           isempty(which('ss_mex.ksmoother_multi')))
         obj.useMex = false;
         warning('MEX files not found. See .\mex\make.m');        
       end
@@ -220,10 +232,15 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       minfunc = @(theta) obj.minimizeFun(theta, y);
       plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
         @optimplotstepsize, @optimplotconstrviolation};
+      if obj.verbose
+        displayType = 'iter-detailed';
+      else
+        displayType = 'none';
+      end
       options = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
-        'Display', 'iter-detailed', ...
+        'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 10000, ...
         'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
@@ -327,7 +344,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_uni_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(exist('+ss_mex/kfilter_uni', 'file') == 3, ...
+      assert(~isempty(which('ss_mex.kfilter_uni')), ...
             'MEX file not found. See .\mex\make.m'); 
       [LogL, a, P, v, F, M, K, L] = ss_mex.kfilter_uni(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
@@ -389,7 +406,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_multi_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(exist('+ss_mex/kfilter_multi', 'file') == 3, ...
+      assert(~isempty(which('ss_mex.kfilter_multi')), ...
         'MEX file not found. See .\mex\make.m'); 
       
       [LogL, a, P, v, F, M, K, L, w, Finv] = ss_mex.kfilter_multi(y, ...
@@ -439,8 +456,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [alpha, smootherOut] = smoother_uni_mex(obj, y, fOut)
       % Call mex function kfilter_uni
-      assert(exist('+ss_mex/ksmoother_uni') == 3, ...
-        'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
+      assert(~isempty(which('ss_mex.ksmoother_uni')), ...
+        'MEX file not found. See .\mex\make.m');
       
       [alpha, eta, r, N, a0tilde] = ss_mex.ksmoother_uni(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
@@ -492,8 +509,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [alpha, smootherOut] = smoother_multi_mex(obj, y, fOut)
       % Call mex function kfilter_uni
-      assert(exist('+ss_mex/ksmoother_multi') == 3, ...
-        'MEX file not found. See .\mex\make.m'); %#ok<EXIST>
+      assert(~isempty(which('ss_mex.ksmoother_multi')), ...
+        'MEX file not found. See .\mex\make.m');
       
       [alpha, eta, epsilon, r, N, a0tilde, V, J] = ss_mex.ksmoother_multi(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
@@ -507,8 +524,11 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     function [logli, gradient] = gradient_multi_filter(obj, y)
       % Gradient algorithm from Nagakura (SSRN # 1634552).
       assert(obj.timeInvariant); % TODO: First think about G.x carefully.
+      assert(~isempty(obj.thetaMap), ...
+        'thetaMap must be set before calling gradient');
       
-      [~, logli, fOut] = obj.filter_multi_m(y);
+      obj.filterUni = false;
+      [~, logli, fOut] = obj.filter(y);
       
       % Generate vectorized gradients of parameters
       paramNames = [obj.systemParam(1:7), {'a', 'P'}];
@@ -518,14 +538,15 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       for iP = 1:length(paramNames)
         iParam = paramNames{iP};
         prevThetaElem = sum(nThetaElem(1:iP-1));
-        G.(iParam) = zeros(sum(nThetaElem), nParamElem(iP));
+        paramGrad = zeros(sum(nThetaElem), nParamElem(iP));
         
         thetaInds = prevThetaElem+1:prevThetaElem+nThetaElem(iP);
         if ~strcmp(iParam, obj.symmetricParams)
-          G.(iParam)(thetaInds, :) = eye(nThetaElem(iP));
+          paramGrad(thetaInds, :) = eye(nThetaElem(iP));
         else
-          G.(iParam)(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
+          paramGrad(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
         end
+        G.(iParam) = sparse(paramGrad(obj.thetaMap.estimated, :));
       end
       
       commutation = obj.genCommutation(obj.m);
@@ -543,9 +564,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         (eye(obj.m^2) + commutation);
       
       % Recursion through time periods
-      grad = zeros(sum(nThetaElem), obj.n);
+      grad = zeros(sum(sum(obj.thetaMap.estimated)), obj.n);
       for ii = 1:obj.n
-        W = eye(obj.p);
+        W = sparse(eye(obj.p));
         ind = ~isnan(y(:,ii));
         W = W((ind==1),:);
         
@@ -1007,7 +1028,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       try
         if obj.useGrad
           [rawLogli, rawGradient] = ss1.gradient(y, a0_theta, P0_theta);
-          gradient = -rawGradient(obj.thetaMap.estimated);
+          gradient = -rawGradient;
         else
           [~, rawLogli] = ss1.filter(y, a0_theta, P0_theta);
           gradient = [];
@@ -1056,6 +1077,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Create new StateSpace object from parameters
       newObj = StateSpace(params);
+      newObj = newObj.generateThetaMap;
+      newObj.thetaMap.estimated = obj.thetaMap.estimated;
     end
     
     function paramVec = getParamVec(obj)
@@ -1098,7 +1121,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function Gtheta = gradThetaSym(obj, dim) %#ok<INUSL>
       % Generate the G_{\theta}(A) matrix for symmetric matricies A. 
-      % All that we care about is the size of A (must be square). 
+      % Only neccessary input is the size of A (must be square). 
+      % The theta vector is ordered as the vectorized lower triangular
+      % portion of A. 
       
       nFreeElem = sum(1:dim);
       nElem = dim.^2;
@@ -1170,6 +1195,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         param = param{index};
       end
     end
+    
     %% EM Algorithm Helper functions
     function [beta, sigma] = restrictedOLS(y, X, V, J, F, G)
       % Restricted OLS regression
