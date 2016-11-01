@@ -56,13 +56,16 @@ classdef estimate_test < matlab.unittest.TestCase
       ss0 = ss;
       ss0.H = 1000;
       ss0.Q = 1000;
-      ss.verbose = false;
+%       ss.verbose = false;
       
       ssE = ss.estimate(testCase.data.nile', ss0);
       
       % Using values from Dubrin & Koopman (2012), p. 37
       testCase.verifyEqual(ssE.H, 15099, 'RelTol', testCase.tol_DK);
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', testCase.tol_DK);
+      
+      [~, ssE_grad] = ssE.gradient(testCase.data.nile');
+      testCase.verifyLessThan(abs(ssE_grad), ssE.tol);
     end
     
     function testNileGradient(testCase)
@@ -120,7 +123,7 @@ classdef estimate_test < matlab.unittest.TestCase
     function testFactorModel(testCase)
       % Set up state
       rnfacs = 2;
-      nSeries = testCase.bbk.dims.nSeries;
+      nSeries = 5; %testCase.bbk.dims.nSeries;
       nlags = testCase.bbk.dims.nlags;
       
       Z = [nan(nSeries, rnfacs) zeros(nSeries, rnfacs * (nlags-1))];
@@ -138,10 +141,10 @@ classdef estimate_test < matlab.unittest.TestCase
       ss0 = ss;
       
       % Initial values
-      [ss0.Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y', 'NumComponents', rnfacs);
+      [ss0.Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y(1:nSeries, :)', 'NumComponents', rnfacs);
       f0(any(isnan(f0), 2), :) = [];
       
-      ss0.H = diag(var(testCase.bbk.y' - f0 * ss0.Z(:, 1:rnfacs)'));
+      ss0.H = diag(var(testCase.bbk.y(1:nSeries, :)' - f0 * ss0.Z(:, 1:rnfacs)'));
       
       y_var = f0(nlags+1:end, :);
       assert(nlags == 2);
@@ -152,10 +155,10 @@ classdef estimate_test < matlab.unittest.TestCase
       yTy = y_var' * y_var;
       
       ss0.T(1:rnfacs, :) = yTx / xTx;
-      ss0.Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y, 1);
+      ss0.Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y(1:nSeries, :), 1);
       
       % Test
-      ssE = ss.estimate(testCase.bbk.y, ss0);
+      ssE = ss.estimate(testCase.bbk.y(1:nSeries, :), ss0);
       
     end
     
@@ -164,12 +167,12 @@ classdef estimate_test < matlab.unittest.TestCase
         testCase.deai.T, testCase.deai.c, testCase.deai.R, testCase.deai.Q, ...
         testCase.deai.Harvey);
       
-      estZ = Z;
+      estZ = testCase.deai.Z;
       estZ(:,1) = nan;
-      estT = T;
-      estT(T~=0 & T~=1) = nan;
-      estQ = Q;
-      estQ(Q~=0 & Q~=1) = nan;
+      estT = testCase.deai.T;
+      estT(estT~=0 & estT~=1) = nan;
+      estQ = testCase.deai.Q;
+      estQ(estQ~=0 & estQ~=1) = nan;
       ss = StateSpace(estZ, testCase.deai.d, testCase.deai.H, ...
         estT, testCase.deai.c, testCase.deai.R, estQ, ...
         testCase.deai.Harvey);

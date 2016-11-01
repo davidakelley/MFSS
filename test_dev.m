@@ -1,11 +1,16 @@
-function ssE = test_dev 
+function [ss, ss0, y] = test_dev 
 % Development tests
+% Call with
+%{
+[ss, ss0, y] = test_dev;
+ssE = ss.estimate(y, ss0);
+%}
 
 % Sam's transformations. 
 % Stationarity constraint. 
 
 %%
-[y, alpha] = generateData();
+y = generateData();
 Z = [1 0; nan 0];
 d = zeros(2, 1);
 H = [.1 0; 0 .3];
@@ -16,26 +21,12 @@ R = [1; -0];
 Q = nan;
 ss = StateSpace(Z, d, H, T, c, R, Q, []);
 
-%%
+%% Set up initial values
 ss0 = ss;
 ss0.Z(isnan(ss0.Z)) = 1;
 ss0.H(isnan(ss0.H)) = 1;
 ss0.Q(isnan(ss0.Q)) = 1;
 ss0.T(isnan(ss0.T)) = 0.1;
-
-%% MEX
-ss0.useMex = false;
-[a, logl] = ss0.filter(y);
-ss0.useMex = true;
-[a_mex, logl_mex] = ss0.filter(y);
-
-%% Test the basic filter/smoother
-alpha0 = ss0.smooth(y);
-
-%% test the gradient
-tic;
-ssE = ss.estimate(y, ss0);
-toc
 
 end
 
