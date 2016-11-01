@@ -72,7 +72,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   %   - mex version of the gradient function
   %   - EM algorithm
   %   - Create utiltiy methods for standard accumulator creation
-  %   - Can we make Y be (n x p)? 
+  %   - Can we make Y be (n x p)?
   
   properties
     Z, d, H           % Observation equation parameters
@@ -88,6 +88,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     verbose = true;   % Screen output during ML estimation
     tol = 1e-10;      % ML-estimation likelihood tolerance
+    stepTol = 1e-12;
+    iterTol = 1e-6;
   end
   
   properties(Hidden=true)
@@ -128,6 +130,16 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       obj = obj.systemParameters(parameters);
       obj = obj.addAccumulators(accumulator);
+      
+      % Check mex files exist
+      mexMissing = any([isempty(which('ss_mex.kfilter_uni'));
+                        isempty(which('ss_mex.kfilter_multi'));
+                        isempty(which('ss_mex.kfilter_uni'));
+                        isempty(which('ss_mex.kfilter_multi'))]);         
+      if obj.useMex && mexMissing 
+        obj.useMex = false;
+        warning('MEX files not found. See .\mex\make.m');
+      end
     end
     
     function [a, logli, filterOut] = filter(obj, y, a0, P0)
@@ -138,13 +150,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         obj = obj.setInitial(a0);
       end
       obj = setDefaultInitial(obj);
-      
-      if obj.useMex && (isempty(which('ss_mex.kfilter_uni')) || ...
-          isempty(which('ss_mex.kfilter_multi')))
-        obj.useMex = false;
-        warning('MEX files not found. See .\mex\make.m');
-      end
-      
+
       if obj.filterUni
         if obj.useMex
           [a, logli, filterOut] = obj.filter_uni_mex(y);
@@ -168,12 +174,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         obj = obj.setInitial(a0);
       end
       obj = setDefaultInitial(obj);
-      
-      if obj.useMex && (isempty(which('ss_mex.ksmoother_uni')) || ...
-          isempty(which('ss_mex.ksmoother_multi')))
-        obj.useMex = false;
-        warning('MEX files not found. See .\mex\make.m');
-      end
       
       [~, logli, filterOut] = obj.filter(y);
       
@@ -233,11 +233,11 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       minfunc = @(theta) obj.minimizeFun(theta, y);
       plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
         @optimplotstepsize, @optimplotconstrviolation};
-      if obj.verbose
-        displayType = 'iter-detailed';
-      else
+%       if obj.verbose
+%         displayType = 'iter-detailed';
+%       else
         displayType = 'none';
-      end
+%       end
       options = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
@@ -245,13 +245,27 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 10000, ...
         'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
+        'StepTolerance', obj.stepTol, ...
         'PlotFcns', plotFcns);
       
       warning off MATLAB:nearlySingularMatrix;
-      [thetaHat, ~, flag] = fmincon(minfunc, theta0, [], [], [], [], ...
-        thetaPositiveLB, [], [], options);
-      warning on MATLAB:nearlySingularMatrix;
       
+      obj.iterDisplay([]);
+      iter = 0; lolgli = []; logli0 = []; lineLen = [];
+      while iter < 2 || logli0 - lolgli > obj.iterTol
+        iter = iter + 1;
+        logli0 = lolgli;
+        
+        [thetaHat, lolgli, flag] = fmincon(minfunc, theta0, [], [], [], [], ...
+          thetaPositiveLB, [], [], options);
+        
+        lineLen = obj.iterDisplay(iter, lolgli, logli0, lineLen);
+        theta0 = thetaHat;
+      end
+      
+      warning on MATLAB:nearlySingularMatrix;
+      obj.iterDisplay(-1);
+  
       % Save estimated system to current object
       obj = obj.theta2system(thetaHat);
     end
@@ -345,8 +359,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_uni_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(~isempty(which('ss_mex.kfilter_uni')), ...
-        'MEX file not found. See .\mex\make.m');
       [LogL, a, P, v, F, M, K, L] = ss_mex.kfilter_uni(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
@@ -407,9 +419,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [a, logli, filterOut] = filter_multi_mex(obj, y)
       % Call mex function kfilter_uni
-      assert(~isempty(which('ss_mex.kfilter_multi')), ...
-        'MEX file not found. See .\mex\make.m');
-      
       [LogL, a, P, v, F, M, K, L, w, Finv] = ss_mex.kfilter_multi(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
@@ -457,9 +466,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [alpha, smootherOut] = smoother_uni_mex(obj, y, fOut)
       % Call mex function kfilter_uni
-      assert(~isempty(which('ss_mex.ksmoother_uni')), ...
-        'MEX file not found. See .\mex\make.m');
-      
       [alpha, eta, r, N, a0tilde] = ss_mex.ksmoother_uni(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
@@ -510,9 +516,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [alpha, smootherOut] = smoother_multi_mex(obj, y, fOut)
       % Call mex function kfilter_uni
-      assert(~isempty(which('ss_mex.ksmoother_multi')), ...
-        'MEX file not found. See .\mex\make.m');
-      
       [alpha, eta, epsilon, r, N, a0tilde, V, J] = ss_mex.ksmoother_multi(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
@@ -524,10 +527,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [logli, gradient] = gradient_multi_filter(obj, y)
       % Gradient algorithm from Nagakura (SSRN # 1634552).
-      assert(obj.timeInvariant); % TODO: First think about G.x carefully.
-      assert(~isempty(obj.thetaMap), ...
-        'thetaMap must be set before calling gradient');
-      
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
       
@@ -547,11 +546,29 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         else
           paramGrad(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
         end
-        G.(iParam) = sparse(paramGrad(obj.thetaMap.estimated, :));
+        if iP <= 7
+          G.(iParam) = sparse(paramGrad(obj.thetaMap.estimated, :));
+        else
+          G.(iParam) = paramGrad(obj.thetaMap.estimated, :);
+        end
       end
       
       commutation = obj.genCommutation(obj.m);
+      Nm = (eye(obj.m^2) + commutation);
       vec = @(M) reshape(M, [], 1);
+      
+      % Compute partial results that have less time-variation (even with TVP)
+      kronRR = zeros(obj.g*obj.g, obj.m*obj.m, max(obj.tau.R));
+      for iR = 1:max(obj.tau.R)
+        kronRR(:, :, iR) = kron(obj.R(:,:,iR)', obj.R(:,:,iR)');
+      end
+      
+      [tauQRrows, ~, tauQR] = unique([obj.tau.R' obj.tau.Q'], 'rows');
+      kronQRI = zeros(obj.g * obj.m, obj.m * obj.m, max(tauQR));
+      for iQR = 1:max(tauQR)
+        kronQRI(:, :, iQR) = kron(obj.Q(:,:,tauQRrows(iQR, 2)) * obj.R(:,:,tauQRrows(iQR, 1))', ...
+          eye(obj.m));
+      end
       
       % Initial period: G.a and G.P capture effects of a0, T
       G.a = G.a * obj.T(:,:,obj.tau.T(1))' + ...
@@ -570,38 +587,39 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         W = sparse(eye(obj.p));
         ind = ~isnan(y(:,ii));
         W = W((ind==1),:);
+        kronWW = kron(W', W');
         
         Zii = W * obj.Z(:, :, obj.tau.Z(ii));
         
+        ww = fOut.w(ind,ii) * fOut.w(ind,ii)';
+        Mv = fOut.M(:,:,ii) * fOut.v(:, ii);
+         
         grad(:, ii) = G.a * Zii' * fOut.w(ind,ii) + ...
-          0.5 * G.P * vec(Zii' * fOut.w(ind,ii) * fOut.w(ind,ii)' * Zii - ...
-          Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
+          0.5 * G.P * vec(Zii' * ww * Zii - Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
           G.d * W' * fOut.w(ind,ii) + ...
           G.Z * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
-          fOut.w(ind,ii) * fOut.v(ind,ii)' * fOut.M(:,ind,ii)' - ...
-          fOut.M(:,ind,ii)')) + ...
-          0.5 * G.H * kron(W', W') * vec(fOut.w(ind,ii) * fOut.w(ind,ii)' - ...
-          fOut.Finv(ind,ind,ii));
+            fOut.w(ind,ii) * Mv' - fOut.M(:,ind,ii)')) + ...
+          0.5 * G.H * kronWW * vec(ww - fOut.Finv(ind,ind,ii));
         
         % Set t+1 values
+        PL = fOut.P(:,:,ii) * fOut.L(:,:,ii)';
+        
         G.a = G.a * fOut.L(:,:,ii)' + ...
           G.P * kron(Zii' * fOut.w(ind,ii), fOut.L(:,:,ii)') + ...
           G.c - ...
           G.d * fOut.K(:,:,ii)' + ...
-          G.Z * (kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', ...
-          fOut.w(:,ii)) - ...
-          kron(fOut.a(:,ii) + fOut.M(:,:,ii) * fOut.v(:, ii), ...
-          fOut.K(:,:,ii)')) - ...
+          G.Z * (kron(PL, fOut.w(:,ii)) - ...
+            kron(fOut.a(:,ii) + Mv, fOut.K(:,:,ii)')) - ...
           G.H * kron(fOut.w(:,ii), fOut.K(:,:,ii)') + ...
-          G.T * kron(fOut.a(:,ii) + fOut.M(:,:,ii) * fOut.v(:,ii), eye(obj.m));
+          G.T * kron(fOut.a(:,ii) + Mv, eye(obj.m));
+        
         G.P = G.P * kron(fOut.L(:,:,ii)', fOut.L(:,:,ii)') + ...
           G.H * kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)') + ...
-          G.Q * kron(obj.R(:,:,obj.tau.R(ii+1))', obj.R(:,:,obj.tau.R(ii+1))') + ...
-          (G.T * kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', eye(obj.m)) - ...
-          G.Z * kron(fOut.P(:,:,ii) * fOut.L(:,:,ii)', fOut.K(:,:,ii)') + ...
-          G.R * kron(obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))', ...
-          eye(obj.m))) * ...
-          (eye(obj.m^2) + commutation);
+          G.Q * kronRR(:,:, obj.tau.R(ii+1)) + ...
+          (G.T * kron(PL, eye(obj.m)) - ...
+            G.Z * kron(PL, fOut.K(:,:,ii)') + ...
+            G.R * kronQRI(:, :, tauQR(ii))) * ...
+            Nm;
       end
       
       gradient = sum(grad, 2);
@@ -714,7 +732,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       obj.T = newT;
       obj.tau.T = newtauT;
-
+      
       % Construct new c vector
       ctypes   = [obj.tau.c' Psi'];
       [uniquecs, ~, newtauc] = unique(ctypes,'rows');
@@ -752,7 +770,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       obj.R = newR;
       obj.tau.R = newtauR;
-
+      
       % Construct new Z matrix
       newZ = zeros(obj.p, obj.m, size(obj.Z,3));
       for jj = 1:size(obj.Z, 3)
@@ -768,7 +786,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     
     function [states, AddLags, ColAdd, RowPos, mNew] = ...
         accumAugmentedStateDims(obj, horizon, accumObs, accumStates)
-      % Checking we have the correct number of lags of the states that need 
+      % Checking we have the correct number of lags of the states that need
       % accunulation to be compatible with Horizon
       states = unique(accumStates);
       maxHor = max(horizon, [], 2);
@@ -803,10 +821,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       %   nLags     - number of lags in the state of variable of interest
       %   positions - linear index position of the lags
       
-      % Criteria for determining if a candidate variable is a "lag variable": 
+      % Criteria for determining if a candidate variable is a "lag variable":
       %   - The variable of interest loads on to the candidate with a 1.
-      %   - All other variables have a loading on the candidate of 0. 
-      %   - No shocks are selected for the candidate in R. 
+      %   - All other variables have a loading on the candidate of 0.
+      %   - No shocks are selected for the candidate in R.
       criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
         all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
         all(obj.R(:, :, obj.tau.R(1)) == 0, 2)], 2);
@@ -952,7 +970,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
       
-      assert(obj.timeInvariant, 'TVP gradient not developed yet.');
+      % TODO: First think about G.x carefully.
+      assert(obj.timeInvariant, 'TVP gradient not developed yet.'); 
       
       obj = obj.checkSample(y);
       if nargin > 2
@@ -1021,7 +1040,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     end
     
     function obj = setDefaultInitial(obj)
-      % Set default a0 and P0. 
+      % Set default a0 and P0.
       % Run before filter/smoother after a0 & P0 inputs have been processed
       if ~isempty(obj.a0) && ~isempty(obj.P0)
         % User provided a0 and P0.
@@ -1170,6 +1189,14 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
     end
     
+    function obj = setInvariantTau(obj)
+      % Set the tau structure for TVP.
+      % FIXME: obj.tau shouldn't be set if it's already defined
+      taus = [repmat({ones([1 obj.n])}, [3 1]); ...
+        repmat({ones([1 obj.n+1])}, [4 1])];
+      obj.tau = cell2struct(taus, obj.systemParam(1:7));
+    end
+    
     function obj = checkSample(obj, y)
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
@@ -1183,14 +1210,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         obj.n = size(y, 2);
         obj = obj.setInvariantTau();
       end
-    end
-    
-    function obj = setInvariantTau(obj)
-      % Set the tau structure for TVP.
-      % FIXME: obj.tau shouldn't be set if it's already defined
-      taus = [repmat({ones([1 obj.n])}, [3 1]); ...
-        repmat({ones([1 obj.n+1])}, [4 1])];
-      obj.tau = cell2struct(taus, obj.systemParam(1:7));
     end
     
     function validateKFilter(obj)
@@ -1309,6 +1328,44 @@ classdef StateSpace < matlab.mixin.CustomDisplay
           sum(isnan(allParamValues)));
       end
     end
+    
+    function lineLen = iterDisplay(obj, iter, logli, logli0, prevLen)
+      lineLen = [];
+      if ~obj.verbose
+        return
+      end
+      
+      lineLen = 46;
+      line = @(char) repmat(char, [1 lineLen]);
+      
+      if nargin < 2 || isempty(iter)
+        algoTitle = 'StateSpace Maximum Likelihood Estimation';
+        fprintf('\n%s\n', algoTitle);
+        fprintf('%s\n  Iteration |  Log-likelihood |  Improvement\n%s\n', ...
+          line('='), line('-'));
+        return
+      end
+      if iter < 0
+        % End of iter
+        fprintf('%s\n', line('-'));
+        return
+      end
+      
+      gap = logli - logli0;
+      tolLvl = num2str(abs(floor(log10(obj.iterTol)))+1);
+      screenOutFormat = ['%11.0d | %16.8g | %12.' tolLvl 'g\n'];
+      
+      if iter <=2
+        bspace = [];
+      else
+        bspace = repmat('\b', [1 prevLen]*desktop('-inuse'));
+      end
+      screenOut = sprintf(screenOutFormat, iter, logli, gap);
+      fprintf([bspace screenOut]);
+      
+      lineLen = length(screenOut);
+    end
   end
+
   
 end
