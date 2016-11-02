@@ -193,7 +193,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       smootherOut.logli = logli;
     end
     
-    function [obj, flag] = estimate(obj, y, ss0, varargin)
+    function [obj, flag, gradient] = estimate(obj, y, ss0, varargin)
       % Estimate missing parameter values via maximum likelihood.
       %
       % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
@@ -231,13 +231,15 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Run fminunc/fmincon
       minfunc = @(theta) obj.minimizeFun(theta, y);
+      nonlconFn = @(theta) obj.nlConstraintFun(theta);
+      
       plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
         @optimplotstepsize, @optimplotconstrviolation};
-%       if obj.verbose
-%         displayType = 'iter-detailed';
-%       else
+      if obj.verbose
+        displayType = 'iter-detailed';
+      else
         displayType = 'none';
-%       end
+      end
       options = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
@@ -246,7 +248,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         'MaxIterations', 10000, ...
         'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
-        'PlotFcns', plotFcns);
+        'PlotFcns', plotFcns, ...
+        'TolCon', 0);
       
       warning off MATLAB:nearlySingularMatrix;
       
@@ -256,10 +259,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         iter = iter + 1;
         logli0 = lolgli;
         
-        [thetaHat, lolgli, flag] = fmincon(minfunc, theta0, [], [], [], [], ...
-          thetaPositiveLB, [], [], options);
+        [thetaHat, lolgli, flag, ~, ~, gradient] = fmincon(minfunc, ...
+          theta0, [], [], [], [], thetaPositiveLB, [], nonlconFn, options);
         
-        lineLen = obj.iterDisplay(iter, lolgli, logli0, lineLen);
+%         lineLen = obj.iterDisplay(iter, lolgli, logli0, lineLen);
         theta0 = thetaHat;
       end
       
@@ -530,28 +533,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
       
-      % Generate vectorized gradients of parameters
-      paramNames = [obj.systemParam(1:7), {'a', 'P'}];
-      nThetaElem = obj.thetaElements();
-      nParamElem = cellfun(@numel, obj.parameters);
-      G = struct;
-      for iP = 1:length(paramNames)
-        iParam = paramNames{iP};
-        prevThetaElem = sum(nThetaElem(1:iP-1));
-        paramGrad = zeros(sum(nThetaElem), nParamElem(iP));
-        
-        thetaInds = prevThetaElem+1:prevThetaElem+nThetaElem(iP);
-        if ~strcmp(iParam, obj.symmetricParams)
-          paramGrad(thetaInds, :) = eye(nThetaElem(iP));
-        else
-          paramGrad(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
-        end
-        if iP <= 7
-          G.(iParam) = sparse(paramGrad(obj.thetaMap.estimated, :));
-        else
-          G.(iParam) = paramGrad(obj.thetaMap.estimated, :);
-        end
-      end
+      G = obj.generateParameterGradients();
+      G.a = G.a0; G = rmfield(G, 'a0');
+      G.P = G.P0; G = rmfield(G, 'P0');
       
       commutation = obj.genCommutation(obj.m);
       Nm = (eye(obj.m^2) + commutation);
@@ -582,11 +566,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         (eye(obj.m^2) + commutation);
       
       % Recursion through time periods
+      W_base = logical(sparse(eye(obj.p)));
+
       grad = zeros(sum(sum(obj.thetaMap.estimated)), obj.n);
       for ii = 1:obj.n
-        W = sparse(eye(obj.p));
         ind = ~isnan(y(:,ii));
-        W = W((ind==1),:);
+        W = W_base((ind==1),:);
         kronWW = kron(W', W');
         
         Zii = W * obj.Z(:, :, obj.tau.Z(ii));
@@ -846,17 +831,37 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       try
         if obj.useGrad
           [rawLogli, rawGradient] = ss1.gradient(y, a0_theta, P0_theta);
-          gradient = -rawGradient;
         else
           [~, rawLogli] = ss1.filter(y, a0_theta, P0_theta);
-          gradient = [];
+          rawGradient = [];
         end
       catch
         rawLogli = nan;
-        gradient = nan(sum(obj.thetaMap.estimated), 1);
+        rawGradient = nan(sum(obj.thetaMap.estimated), 1);
       end
       
       negLogli = -rawLogli;
+      gradient = -rawGradient;
+    end
+    
+    function [cx, ceqx, deltaCX, deltaCeqX] = nlConstraintFun(obj, theta)
+      % Constraints of the form c(x) <= 0 and ceq(x) = 0.
+      scale = 1e6;
+      
+      % Return the negative determinants in cx
+      [ss1, ~, P0_theta] = obj.theta2system(theta);
+      cx = scale *  -[det(ss1.H) det(ss1.Q) det(P0_theta)]';
+      ceqx = 0;
+      
+      G = obj.generateParameterGradients();
+    	
+      vec = @(M) reshape(M, [], 1);
+
+      % Should also give gradients
+      deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
+                 det(ss1.Q) * G.Q * vec(inv(ss1.Q)), ...
+                 det(P0_theta) * G.P0 * vec(inv(P0_theta))];
+      deltaCeqX = sparse(0);
     end
     
     function [newObj, a0, P0] = theta2system(obj, theta)
@@ -935,6 +940,30 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       elems(3) = sum(sum(tril(ones(size(obj.H)))));
       elems(7) = sum(sum(tril(ones(size(obj.Q)))));
       elems(9) = sum(sum(tril(ones(size(obj.P0)))));
+    end
+    
+    function G = generateParameterGradients(obj)
+      % Generate vectorized gradients of parameters
+      nThetaElem = obj.thetaElements();
+      nParamElem = cellfun(@numel, obj.parameters);
+      G = struct;
+      for iP = 1:length(obj.systemParam)
+        iParam = obj.systemParam{iP};
+        prevThetaElem = sum(nThetaElem(1:iP-1));
+        paramGrad = zeros(sum(nThetaElem), nParamElem(iP));
+        
+        thetaInds = prevThetaElem+1:prevThetaElem+nThetaElem(iP);
+        if ~strcmp(iParam, obj.symmetricParams)
+          paramGrad(thetaInds, :) = eye(nThetaElem(iP));
+        else
+          paramGrad(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
+        end
+        if iP <= 7
+          G.(iParam) = sparse(paramGrad(obj.thetaMap.estimated, :));
+        else
+          G.(iParam) = paramGrad(obj.thetaMap.estimated, :);
+        end
+      end
     end
     
     function Gtheta = gradThetaSym(obj, dim) %#ok<INUSL>
@@ -1341,6 +1370,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       if nargin < 2 || isempty(iter)
         algoTitle = 'StateSpace Maximum Likelihood Estimation';
         fprintf('\n%s\n', algoTitle);
+        fprintf('Estimated parameters: %d\n', sum(obj.thetaMap.estimated));
         fprintf('%s\n  Iteration |  Log-likelihood |  Improvement\n%s\n', ...
           line('='), line('-'));
         return

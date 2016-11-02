@@ -120,10 +120,45 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.Q, estmdl.B^2, 'RelTol',  testCase.tol_DK);
     end
     
+    function testGeneratedSmall(testCase)
+      p = 2; m = 1; timeDim = 500;
+      ssTrue = generateARmodel(p, m-1, false);
+      y = generateData(ssTrue, timeDim);
+      
+      % Estimated system
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      d = zeros(p, 1);
+      H = nan(p, p);
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      c = zeros(m, 1);
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ss = StateSpace(Z, d, H, T, c, R, Q, []);
+      
+      % Initialization
+      ss0 = ss;
+      pcaWeight = pca(y');
+      ss0.Z(:,1) = pcaWeight(:, 1);
+      res = pcares(y', 1);      
+      ss0.H = cov(res);
+      ss0.T(isnan(ss0.T)) = 0.5./m;
+      ss0.Q = 1;
+      
+      [ssE, ~, grad] = ss.estimate(y, ssTrue);
+      testCase.verifyLessThan(abs(grad), ssE.tol);
+      
+      %{
+      alpha = ssE.smooth(y);
+      alphaTrue = ssTrue.smooth(y);
+      %}
+    end
+    
     function testFactorModel(testCase)
       % Set up state
       rnfacs = 2;
-      nSeries = 5; %testCase.bbk.dims.nSeries;
+      nSeries = 4; %testCase.bbk.dims.nSeries;
       nlags = testCase.bbk.dims.nlags;
       
       Z = [nan(nSeries, rnfacs) zeros(nSeries, rnfacs * (nlags-1))];
