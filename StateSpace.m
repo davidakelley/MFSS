@@ -66,13 +66,13 @@ classdef StateSpace < matlab.mixin.CustomDisplay
   %
   % TODO (10/27/16)
   % ---------------
+  %   - Allow a "bounding" StateSpace objects to constrain optimization
   %   - TVP for gradient (G.x matricies)
   %   - Accumulators for gradient - repeated/fixed entries
   %   - TVP/accumulators in estimation/thetaMap
   %   - mex version of the gradient function
   %   - EM algorithm
   %   - Create utiltiy methods for standard accumulator creation
-  %   - Can we make Y be (n x p)?
   
   properties
     Z, d, H           % Observation equation parameters
@@ -90,6 +90,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     tol = 1e-10;      % ML-estimation likelihood tolerance
     stepTol = 1e-12;
     iterTol = 1e-6;
+    
+    % Indicators for if initial values have been specified:
+    usingDefaulta0 = true;
+    usingDefaultP0 = true;
   end
   
   properties(Hidden=true)
@@ -129,6 +133,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       end
       
       obj = obj.systemParameters(parameters);
+      obj = obj.generateThetaMap();
+
       obj = obj.addAccumulators(accumulator);
       
       % Check mex files exist
@@ -203,24 +209,20 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       %
       % [ss, flag] = ss.estimate(...) also returns the fmincon flag
       
-      % Set initial values
-      [obj, ss0] = obj.checkConformingSystem(y, ss0, varargin{:});
-      
-      %
-      obj = obj.generateThetaMap();
-      paramVec = obj.getParamVec();
-      
-      % Restrict the diagonal of H and Q to be positive
-      estimInd = find(obj.thetaMap.estimated);
-      varPos = [obj.thetaMap.elem.H(1:obj.thetaMap.shape.H(1)+1:end), ...
-        obj.thetaMap.elem.Q(1:obj.thetaMap.shape.Q(1)+1:end)];
-      paramVarPos = intersect(estimInd, varPos);
-      [~, thetaVarPos] = intersect(estimInd, paramVarPos);
-      
-      thetaPositiveLB = -Inf * ones(sum(obj.thetaMap.estimated), 1);
-      thetaPositiveLB(thetaVarPos, :) = 0;
+      inP = inputParser;
+      inP.addParameter('a0', [], @isnumeric);
+      inP.addParameter('P0', [], @isnumeric);
+      inP.addParameter('LowerBound', [], @(x) isa(x, 'StateSpace'));
+      inP.addParameter('UpperBound', [], @(x) isa(x, 'StateSpace'));
+      inP.parse(varargin{:});
+      inOpts = inP.Results;
       
       % Initialize
+      [obj, ss0] = obj.checkConformingSystem(y, ss0, inOpts.a0, inOpts.P0);
+      paramVec = obj.getParamVec();
+      
+      [restrictLB, restrictUB] = obj.generateRestrictions(inOpts.LowerBound, inOpts.UpperBound);
+
       ss0.thetaMap = obj.thetaMap;
       paramVec0 = ss0.getParamVec();
       assert(all(paramVec0(~obj.thetaMap.estimated) == ...
@@ -231,7 +233,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Run fminunc/fmincon
       minfunc = @(theta) obj.minimizeFun(theta, y);
-      nonlconFn = @(theta) obj.nlConstraintFun(theta);
+      nonlconFn = @obj.nlConstraintFun;
       
       plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
         @optimplotstepsize, @optimplotconstrviolation};
@@ -260,7 +262,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         logli0 = lolgli;
         
         [thetaHat, lolgli, flag, ~, ~, gradient] = fmincon(minfunc, ...
-          theta0, [], [], [], [], thetaPositiveLB, [], nonlconFn, options);
+          theta0, [], [], [], [], restrictLB, restrictUB, nonlconFn, options);
         
 %         lineLen = obj.iterDisplay(iter, lolgli, logli0, lineLen);
         theta0 = thetaHat;
@@ -529,7 +531,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     end
     
     function [logli, gradient] = gradient_multi_filter(obj, y)
-      % Gradient algorithm from Nagakura (SSRN # 1634552).
+      % Gradient algorithm from Diasuke Nagakura (SSRN # 1634552).
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
       
@@ -567,8 +569,8 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Recursion through time periods
       W_base = logical(sparse(eye(obj.p)));
-
-      grad = zeros(sum(sum(obj.thetaMap.estimated)), obj.n);
+      
+      gradient = zeros(sum(sum(obj.thetaMap.estimated)), 1);
       for ii = 1:obj.n
         ind = ~isnan(y(:,ii));
         W = W_base((ind==1),:);
@@ -578,8 +580,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         
         ww = fOut.w(ind,ii) * fOut.w(ind,ii)';
         Mv = fOut.M(:,:,ii) * fOut.v(:, ii);
-         
-        grad(:, ii) = G.a * Zii' * fOut.w(ind,ii) + ...
+        
+        gradient = gradient + ...
+          G.a * Zii' * fOut.w(ind,ii) + ...
           0.5 * G.P * vec(Zii' * ww * Zii - Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
           G.d * W' * fOut.w(ind,ii) + ...
           G.Z * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
@@ -606,8 +609,6 @@ classdef StateSpace < matlab.mixin.CustomDisplay
             G.R * kronQRI(:, :, tauQR(ii))) * ...
             Nm;
       end
-      
-      gradient = sum(grad, 2);
     end
     
     %% Accumulators
@@ -850,18 +851,72 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       % Return the negative determinants in cx
       [ss1, ~, P0_theta] = obj.theta2system(theta);
-      cx = scale *  -[det(ss1.H) det(ss1.Q) det(P0_theta)]';
+      cx = scale * -[det(ss1.H) det(ss1.Q)]';
+      if ~obj.usingDefaultP0
+        cx = [cx; det(P0_theta)];
+      end      
       ceqx = 0;
       
-      G = obj.generateParameterGradients();
+      G = ss1.generateParameterGradients();
     	
       vec = @(M) reshape(M, [], 1);
 
       % Should also give gradients
       deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
-                 det(ss1.Q) * G.Q * vec(inv(ss1.Q)), ...
-                 det(P0_theta) * G.P0 * vec(inv(P0_theta))];
+                 det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
+      if ~obj.usingDefaultP0
+        deltaCX = [deltaCX; det(P0_theta) * G.P0 * vec(inv(P0_theta))];
+      end
       deltaCeqX = sparse(0);
+    end
+    
+    function [restrictLB, restrictUB] = generateRestrictions(obj, ssLB, ssUB)
+      % Generate the LB and UB vectors used by fmincon
+      nEstim = sum(obj.thetaMap.estimated);
+      estimInd = find(obj.thetaMap.estimated);
+      
+      % Restrict the diagonal of H and Q to be positive
+      variancePos = [obj.thetaMap.elem.H(1:obj.thetaMap.shape.H(1)+1:end), ...
+                     obj.thetaMap.elem.Q(1:obj.thetaMap.shape.Q(1)+1:end)];
+      paramVariancePos = intersect(estimInd, variancePos);
+      [~, thetaVariancePos] = intersect(estimInd, paramVariancePos);
+      restrictVariances = -Inf * ones(nEstim, 1);
+      restrictVariances(thetaVariancePos, :) = 0;
+      
+      % Get restrictions passed from LB and UB objects
+      if ~isempty(ssLB)
+        thetaLBvals = ssLB.getParamVec();
+        paramLBssPos = intersect(estimInd, find(~isnan(thetaLBvals)));
+        [~, thetaLBssPos] = intersect(estimInd, paramLBssPos);
+        
+        restrictLBss = -Inf * ones(nEstim, 1);
+        restrictLBss(thetaLBssPos, :) = thetaLBvals(~isnan(thetaLBvals));
+      else
+        restrictLBss = [];
+      end
+      
+      if ~isempty(ssUB)
+        thetaUBvals = ssUB.getParamVec();
+        paramUBssPos = intersect(estimInd, find(~isnan(thetaUBvals)));
+        [~, thetaUBssPos] = intersect(estimInd, paramUBssPos);
+        
+        restrictUB = Inf * ones(nEstim, 1);
+        restrictUB(thetaUBssPos, :) = thetaUBvals(~isnan(thetaUBvals));
+      else
+        restrictUB = [];
+      end
+      
+      % Take the upper bound of the possible lower bounds
+      restrictLB = max(restrictVariances, restrictLBss);
+
+      % If there are no effective restrictions, don't bother passing them
+      % to fmincon
+      if all(~isfinite(restrictLBss))
+        restrictLB = [];
+      end
+      if all(~isfinite(restrictUB))
+        restrictUB = [];
+      end
     end
     
     function [newObj, a0, P0] = theta2system(obj, theta)
@@ -912,12 +967,22 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       vec = @(M) reshape(M, [], 1);
       paramVec = [vec(obj.Z); vec(obj.d); lowerH; ...
-        vec(obj.T); vec(obj.c); vec(obj.R); lowerQ; ...
-        vec(obj.a0); lowerP0];
+        vec(obj.T); vec(obj.c); vec(obj.R); lowerQ];
+      if ~obj.usingDefaulta0
+        paramVec = [paramVec; vec(obj.a0)];
+      end
+      if ~obj.usingDefaultP0
+        paramVec = [paramVec; lowerP0];
+      end
     end
     
     function obj = generateThetaMap(obj)
       % Generate map from parameters to theta
+      
+      % Set dummy values for a0 and P0 (used to create thetaMap, will be
+      % overwritten in setDefaultInitial). 
+      obj.a0 = zeros(obj.m, 1);
+      obj.P0 = zeros(obj.m, obj.m);
       
       obj.thetaMap = struct;
       elems = obj.thetaElements();
@@ -928,6 +993,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       shapes = cellfun(@size, obj.parameters, 'Uniform', false);
       obj.thetaMap.shape = cell2struct(shapes', obj.systemParam');
+      if obj.usingDefaulta0
+        obj.thetaMap.shape.a0 = [0 0];
+      end
+      if obj.usingDefaultP0
+        obj.thetaMap.shape.P0 = [0 0];
+      end
       
       paramVec = obj.getParamVec();
       obj.thetaMap.estimated = isnan(paramVec);
@@ -940,6 +1011,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       elems(3) = sum(sum(tril(ones(size(obj.H)))));
       elems(7) = sum(sum(tril(ones(size(obj.Q)))));
       elems(9) = sum(sum(tril(ones(size(obj.P0)))));
+      if obj.usingDefaulta0
+        elems(8) = 0;
+      end
+      if obj.usingDefaultP0
+        elems(9) = 0;
+      end
     end
     
     function G = generateParameterGradients(obj)
@@ -947,21 +1024,55 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       nThetaElem = obj.thetaElements();
       nParamElem = cellfun(@numel, obj.parameters);
       G = struct;
+         
+      commutation = obj.genCommutation(obj.m);
+      Nm = (eye(obj.m^2) + commutation);
+      
       for iP = 1:length(obj.systemParam)
         iParam = obj.systemParam{iP};
         prevThetaElem = sum(nThetaElem(1:iP-1));
         paramGrad = zeros(sum(nThetaElem), nParamElem(iP));
         
         thetaInds = prevThetaElem+1:prevThetaElem+nThetaElem(iP);
-        if ~strcmp(iParam, obj.symmetricParams)
-          paramGrad(thetaInds, :) = eye(nThetaElem(iP));
-        else
-          paramGrad(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
+        if ~isempty(thetaInds)
+          if ~strcmp(iParam, obj.symmetricParams)
+            paramGrad(thetaInds, :) = eye(nThetaElem(iP));
+          else
+            paramGrad(thetaInds, :) = obj.gradThetaSym(sqrt(nParamElem(iP)));
+          end
         end
-        if iP <= 7
-          G.(iParam) = sparse(paramGrad(obj.thetaMap.estimated, :));
+        
+        % If we're using the default a0 or P0, calculate those gradients as
+        % functions of T, c and RQR'.
+        if all(isfinite(obj.T))
+          stationaryState = all(eig(obj.T(:,:,1)) < 1);
         else
-          G.(iParam) = paramGrad(obj.thetaMap.estimated, :);
+          stationaryState = false;
+        end
+        
+        if strcmpi(iParam, 'a0') && obj.usingDefaulta0 && stationaryState
+          IminusT = eye(obj.m) - obj.T(:,:,1);
+          % Think about doing the kron of the inv since the kron is so big:
+          paramGrad = G.T / kron(IminusT, IminusT') * ... 
+              kron(obj.c(:,:,1), eye(obj.m)) + ...
+            G.c / IminusT;
+        end
+        if strcmpi(iParam, 'P0') && obj.usingDefaultP0 && stationaryState
+          % Make sure GTkronT has the estimated elements selected out 
+          warning('Development incomplete');
+          GTkronT = zeros(sum(obj.thetaMap.estimated), obj.m^4);
+          
+          Im2minusTkron = eye(obj.m^2) - kron(obj.T(:,:,1), obj.T(:,:,1));
+          paramGrad = GTkronT / kron(Im2minusTkron, Im2minusTkron) + ... % <- This is wrong
+            G.R * (kron(obj.Q(:,:,1) * obj.R(:,:,1)', eye(obj.m))) * Nm + ...
+            G.Q * kron(obj.R(:,:,1)', obj.R(:,:,1)');
+        end
+        
+        if iP <= 7 || ~stationaryState || (~obj.usingDefaulta0 || ~obj.usingDefaultP0)
+          % TODO: Investigate efficiency of sparse matricies
+          G.(iParam) = paramGrad(obj.thetaMap.estimated, :); 
+        else
+          G.(iParam) = paramGrad;
         end
       end
     end
@@ -1025,9 +1136,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       
       obj = obj.checkSample(y);
       ss0 = ss0.checkSample(y);
-      if nargin > 4
+      if ~isempty(a0) && ~isempty(P0)
         ss0 = ss0.setInitial(a0, P0);
-      elseif nargin > 3
+      elseif ~isempty(a0) 
         ss0 = ss0.setInitial(a0);
       end
       ss0 = ss0.setDefaultInitial();
@@ -1049,10 +1160,12 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       % Setter for a0 and P0 (or kappa)
       if ~isempty(a0)
         assert(size(a0, 1) == obj.m, 'a0 should be a m X 1 vector');
+        obj.usingDefaulta0 = false;
         obj.a0 = a0;
       end
       
       if nargin > 2 && ~isempty(P0)
+        obj.usingDefaultP0 = false;
         if size(P0, 1) == 1 % (This is ok if m == 1 too)
           % Scalar value passed for kappa
           obj.P0 = eye(obj.m) * P0;
@@ -1071,7 +1184,7 @@ classdef StateSpace < matlab.mixin.CustomDisplay
     function obj = setDefaultInitial(obj)
       % Set default a0 and P0.
       % Run before filter/smoother after a0 & P0 inputs have been processed
-      if ~isempty(obj.a0) && ~isempty(obj.P0)
+      if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
         % User provided a0 and P0.
         return
       end
@@ -1079,10 +1192,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
       tempT = obj.T(:, :, obj.tau.T(1));
       if all(abs(eig(tempT)) < 1)
         % System is stationary. Compute unconditional estimate of state
-        if isempty(obj.a0)
+        if obj.usingDefaulta0
           obj.a0 = (eye(obj.m) - tempT) \ obj.c(:, obj.tau.c(1));
         end
-        if isempty(obj.P0)
+        if obj.usingDefaultP0
           tempR = obj.R(:, :, obj.tau.R(1));
           tempQ = obj.Q(:, :, obj.tau.Q(1));
           obj.P0 = reshape((eye(obj.m^2) - kron(tempT, tempT)) \ ...
@@ -1091,10 +1204,10 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         end
       else
         % Nonstationary case: use large kappa diffuse initialization
-        if isempty(obj.a0)
+        if obj.usingDefaulta0
           obj.a0 = zeros(obj.m, 1);
         end
-        if isempty(obj.P0)
+        if obj.usingDefaultP0
           obj.P0 = obj.kappa * eye(obj.m);
         end
       end
@@ -1247,6 +1360,9 @@ classdef StateSpace < matlab.mixin.CustomDisplay
         maxTaus = ones([7 1]);
       else
         maxTaus = structfun(@max, obj.tau);  % Untested?
+        
+        firstTau = structfun(@(x) x(1), obj.tau);
+        assert(all(firstTau == 1), 'First element of tau must be 1.');
       end
       
       validate = @(x, sz, name) validateattributes(x, {'numeric'}, ...

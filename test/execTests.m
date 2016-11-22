@@ -1,4 +1,4 @@
-function execTests(tests)
+function result = execTests(tests)
 % EXECTESTS runs all of the tests for StateSpace. 
 % Pass a cell array of strings containing the shortcuts to run subsets of
 % the tests. Subsets include 'mex', 'gradient', and 'ml'.

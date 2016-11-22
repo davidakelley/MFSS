@@ -45,15 +45,15 @@ classdef accumulator_test < matlab.unittest.TestCase
       testCase.verifyLessThanOrEqual(diffPeriods, allowedDiffPeriods);
     end
     
-    function testSumAccumulator(testCase)
-      p = 4; m = 2; timeDim = 599;
+    function testSumAccumulatorSmoother(testCase)
+      p = 2; m = 2; timeDim = 599;
       ssGen = generateARmodel(p, m, false);
       latentY = generateData(ssGen, timeDim);
       
       timeGroups = sort(repmat((1:ceil(timeDim/3))', [3 1]));
       timeGroups(end, :) = [];
       
-      aggSeries = logical([0 0 1 1]);
+      aggSeries = logical([0 1]);
       aggY = grpstats(latentY(aggSeries, :)', timeGroups, 'mean')';
       aggY(:, end) = [];
       Y = latentY;
@@ -62,8 +62,8 @@ classdef accumulator_test < matlab.unittest.TestCase
       
       accum = struct;
       accum.xi = aggSeries;
-      accum.psi = repmat([1 2 3]', [(timeDim+1)/3, 2])';
-      accum.Horizon = repmat(3, [timeDim+1, 2])';
+      accum.psi = repmat([1 2 3]', [(timeDim+1)/3, sum(aggSeries)])';
+      accum.Horizon = repmat(3, [timeDim+1, sum(aggSeries)])';
       
       ss = StateSpace(ssGen.Z, ssGen.d, ssGen.H, ...
         ssGen.T, ssGen.c, ssGen.R, ssGen.Q, accum);

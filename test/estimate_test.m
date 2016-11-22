@@ -155,65 +155,111 @@ classdef estimate_test < matlab.unittest.TestCase
       %}
     end
     
-    function testFactorModel(testCase)
-      % Set up state
-      rnfacs = 2;
-      nSeries = 4; %testCase.bbk.dims.nSeries;
-      nlags = testCase.bbk.dims.nlags;
+    function testBounds(testCase)
+      p = 2; m = 1; timeDim = 500;
+      ssTrue = generateARmodel(p, m-1, false);
+      y = generateData(ssTrue, timeDim);
       
-      Z = [nan(nSeries, rnfacs) zeros(nSeries, rnfacs * (nlags-1))];
-      d = zeros(nSeries, 1);
-      H = eye(nSeries);
-      H(H == 1) = nan;
+      % Estimated system
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      d = zeros(p, 1);
+      H = nan(p, p);
       
-      T = [nan(rnfacs, rnfacs * nlags);
-        eye(rnfacs * (nlags-1)) zeros(rnfacs)];
-      c = zeros(rnfacs * nlags, 1);
-      R = [eye(rnfacs); zeros(rnfacs * (nlags-1), rnfacs)];
-      Q = nan(rnfacs);
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      c = zeros(m, 1);
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
       
       ss = StateSpace(Z, d, H, T, c, R, Q, []);
+      
+      % Initialization
       ss0 = ss;
+      pcaWeight = pca(y');
+      ss0.Z(:,1) = pcaWeight(:, 1);
+      res = pcares(y', 1);      
+      ss0.H = cov(res);
+      ss0.T(isnan(ss0.T)) = 0.5./m;
+      ss0.Q = 1;
       
-      % Initial values
-      [ss0.Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y(1:nSeries, :)', 'NumComponents', rnfacs);
-      f0(any(isnan(f0), 2), :) = [];
+      % Bounds: constrain 0 < T < 1
+      ssLB = ss;
+      ssLB.Z(:) = nan;
+      ssLB.d(:) = nan;
+      ssLB.H(:) = nan;
+      ssLB.T(:) = 0;
+      ssLB.c(:) = nan;
+      ssLB.R(:) = nan;
+      ssLB.Q(:) = nan;
+      ssUB = ssLB;
       
-      ss0.H = diag(var(testCase.bbk.y(1:nSeries, :)' - f0 * ss0.Z(:, 1:rnfacs)'));
-      
-      y_var = f0(nlags+1:end, :);
-      assert(nlags == 2);
-      x = [f0(2:end-1, :) f0(1:end-2, :)];
-      
-      yTx = y_var' * x;
-      xTx = x' * x;
-      yTy = y_var' * y_var;
-      
-      ss0.T(1:rnfacs, :) = yTx / xTx;
-      ss0.Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y(1:nSeries, :), 1);
-      
-      % Test
-      ssE = ss.estimate(testCase.bbk.y(1:nSeries, :), ss0);
-      
-    end
-    
-    function testDetroit(testCase)
-      ss0 = StateSpace(testCase.deai.Z, testCase.deai.d, testCase.deai.H, ...
-        testCase.deai.T, testCase.deai.c, testCase.deai.R, testCase.deai.Q, ...
-        testCase.deai.Harvey);
-      
-      estZ = testCase.deai.Z;
-      estZ(:,1) = nan;
-      estT = testCase.deai.T;
-      estT(estT~=0 & estT~=1) = nan;
-      estQ = testCase.deai.Q;
-      estQ(estQ~=0 & estQ~=1) = nan;
-      ss = StateSpace(estZ, testCase.deai.d, testCase.deai.H, ...
-        estT, testCase.deai.c, testCase.deai.R, estQ, ...
-        testCase.deai.Harvey);
-      
-      ssE = ss.estimate(testCase.deai.Y, ss0);
+      ssUB.T = 1;
+      ssUB.H(:) = Inf;
+
+      [ssE, ~, grad] = ss.estimate(y, ssTrue, ...
+        'LowerBound', ssLB, 'UpperBound', ssUB);
+      testCase.verifyLessThan(abs(grad), ssE.tol);
       
     end
+%     
+%     function testFactorModel(testCase)
+%       % Set up state
+%       rnfacs = 2;
+%       nSeries = 4; %testCase.bbk.dims.nSeries;
+%       nlags = testCase.bbk.dims.nlags;
+%       
+%       Z = [nan(nSeries, rnfacs) zeros(nSeries, rnfacs * (nlags-1))];
+%       d = zeros(nSeries, 1);
+%       H = eye(nSeries);
+%       H(H == 1) = nan;
+%       
+%       T = [nan(rnfacs, rnfacs * nlags);
+%         eye(rnfacs * (nlags-1)) zeros(rnfacs)];
+%       c = zeros(rnfacs * nlags, 1);
+%       R = [eye(rnfacs); zeros(rnfacs * (nlags-1), rnfacs)];
+%       Q = nan(rnfacs);
+%       
+%       ss = StateSpace(Z, d, H, T, c, R, Q, []);
+%       ss0 = ss;
+%       
+%       % Initial values
+%       [ss0.Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y(1:nSeries, :)', 'NumComponents', rnfacs);
+%       f0(any(isnan(f0), 2), :) = [];
+%       
+%       ss0.H = diag(var(testCase.bbk.y(1:nSeries, :)' - f0 * ss0.Z(:, 1:rnfacs)'));
+%       
+%       y_var = f0(nlags+1:end, :);
+%       assert(nlags == 2);
+%       x = [f0(2:end-1, :) f0(1:end-2, :)];
+%       
+%       yTx = y_var' * x;
+%       xTx = x' * x;
+%       yTy = y_var' * y_var;
+%       
+%       ss0.T(1:rnfacs, :) = yTx / xTx;
+%       ss0.Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y(1:nSeries, :), 1);
+%       
+%       % Test
+%       ssE = ss.estimate(testCase.bbk.y(1:nSeries, :), ss0);
+%       
+%     end
+%     
+%     function testDetroit(testCase)
+%       ss0 = StateSpace(testCase.deai.Z, testCase.deai.d, testCase.deai.H, ...
+%         testCase.deai.T, testCase.deai.c, testCase.deai.R, testCase.deai.Q, ...
+%         testCase.deai.Harvey);
+%       
+%       estZ = testCase.deai.Z;
+%       estZ(:,1) = nan;
+%       estT = testCase.deai.T;
+%       estT(estT~=0 & estT~=1) = nan;
+%       estQ = testCase.deai.Q;
+%       estQ(estQ~=0 & estQ~=1) = nan;
+%       ss = StateSpace(estZ, testCase.deai.d, testCase.deai.H, ...
+%         estT, testCase.deai.c, testCase.deai.R, estQ, ...
+%         testCase.deai.Harvey);
+%       
+%       ssE = ss.estimate(testCase.deai.Y, ss0);
+%       
+%     end
   end
 end
