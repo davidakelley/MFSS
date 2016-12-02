@@ -5,7 +5,7 @@ function result = execTests(tests)
 
 % David Kelley, 2016 
 
-defaultTests = {'mex', 'gradient', 'ml'};
+defaultTests = {'mex', 'accumulator', 'gradient', 'ml'};
 if nargin == 0
   tests = defaultTests;
 end
@@ -23,10 +23,11 @@ testDir = [baseDir '\test'];
 
 mexTests = [TestSuite.fromFile(fullfile(testDir, 'mex_univariate_test.m')), ...
             TestSuite.fromFile(fullfile(testDir, 'mex_multivariate_test.m'))];
+accumulatorTests = TestSuite.fromFile(fullfile(testDir, 'accumulator_test.m'));
 gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_test.m'));
 mlTests = TestSuite.fromFile(fullfile(testDir, 'estimate_test.m'));
           
-alltests = {mexTests gradientTests mlTests};
+alltests = {mexTests accumulatorTests gradientTests mlTests};
 selectedTests = alltests(ismember(defaultTests, tests));
 suite = [selectedTests{:}];
 

@@ -52,11 +52,12 @@ classdef estimate_test < matlab.unittest.TestCase
       R = 1;
       Q = nan;
       
-      ss = StateSpace(Z, d, H, T, c, R, Q, []);
-      ss0 = ss;
-      ss0.H = 1000;
-      ss0.Q = 1000;
-%       ss.verbose = false;
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, []);
+      ss.useGrad = false;
+      
+      H0 = 1000;
+      Q0 = 1000;
+      ss0 = StateSpace(Z, d, H0, T, c, R, Q0, []);
       
       ssE = ss.estimate(testCase.data.nile', ss0);
       
@@ -64,8 +65,8 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.H, 15099, 'RelTol', testCase.tol_DK);
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', testCase.tol_DK);
       
-      [~, ssE_grad] = ssE.gradient(testCase.data.nile');
-      testCase.verifyLessThan(abs(ssE_grad), ssE.tol);
+      [~, ssE_grad] = ssE.gradient(testCase.data.nile', ss.ThetaMapping);
+      testCase.verifyLessThan(abs(ssE_grad), ss.tol);
     end
     
     function testNileGradient(testCase)
@@ -77,17 +78,18 @@ classdef estimate_test < matlab.unittest.TestCase
       R = 1;
       Q = nan;
       
-      ss = StateSpace(Z, d, H, T, c, R, Q, []);
-      ss0 = ss;
-      ss0.H = 1000;
-      ss0.Q = 1000;
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, []);
       
-      ss.useGrad = true;
-      ss.verbose = false;
-      ssE = ss.estimate(testCase.data.nile', ss0);
+      H0 = 1000;
+      Q0 = 1000;
+      ss0 = StateSpace(Z, d, H0, T, c, R, Q0, []);
+
       ss.useGrad = false;
       ssE_ng = ss.estimate(testCase.data.nile', ss0);
       
+      ss.useGrad = true;
+      ssE = ss.estimate(testCase.data.nile', ss0);
+
       % Using values from Dubrin & Koopman (2012), p. 37
       testCase.verifyEqual(ssE.H, ssE_ng.H, 'RelTol', testCase.tol_grad);
       testCase.verifyEqual(ssE.Q, ssE_ng.Q, 'RelTol',  testCase.tol_grad);
@@ -103,13 +105,13 @@ classdef estimate_test < matlab.unittest.TestCase
       R = 1;
       Q = nan;
       
-      ss = StateSpace(Z, d, H, T, c, R, Q, []);
-      ss0 = ss;
-      ss0.H = 1000;
-      ss0.Q = 1000;
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, []);
       
-      ss.useGrad = true;
-      ss.verbose = false;
+      H0 = 1000;
+      Q0 = 1000;
+      ss0 = StateSpace(Z, d, H0, T, c, R, Q0, []);
+      
+      ss.useGrad = false;
       ssE = ss.estimate(testCase.data.nile', ss0);
       
       A = 1; B = nan; C = 1; D = nan;
@@ -135,24 +137,21 @@ classdef estimate_test < matlab.unittest.TestCase
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
-      ss = StateSpace(Z, d, H, T, c, R, Q, []);
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, []);
       
       % Initialization
-      ss0 = ss;
       pcaWeight = pca(y');
-      ss0.Z(:,1) = pcaWeight(:, 1);
+      Z0 = ss.Z;
+      Z0(:,1) = pcaWeight(:, 1);
       res = pcares(y', 1);      
-      ss0.H = cov(res);
-      ss0.T(isnan(ss0.T)) = 0.5./m;
-      ss0.Q = 1;
-      
-      [ssE, ~, grad] = ss.estimate(y, ssTrue);
-      testCase.verifyLessThan(abs(grad), ssE.tol);
-      
-      %{
-      alpha = ssE.smooth(y);
-      alphaTrue = ssTrue.smooth(y);
-      %}
+      H0 = cov(res);
+      T0 = ss.T;
+      T0(isnan(T0)) = 0.5./m;
+      Q0 = 1;
+      ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0, []);
+
+      [~, ~, grad] = ss.estimate(y, ss0);
+      testCase.verifyLessThan(abs(grad), ss.tol);
     end
     
     function testBounds(testCase)
@@ -170,17 +169,6 @@ classdef estimate_test < matlab.unittest.TestCase
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
-      ss = StateSpace(Z, d, H, T, c, R, Q, []);
-      
-      % Initialization
-      ss0 = ss;
-      pcaWeight = pca(y');
-      ss0.Z(:,1) = pcaWeight(:, 1);
-      res = pcares(y', 1);      
-      ss0.H = cov(res);
-      ss0.T(isnan(ss0.T)) = 0.5./m;
-      ss0.Q = 1;
-      
       % Bounds: constrain 0 < T < 1
       ssLB = ss;
       ssLB.Z(:) = nan;
@@ -194,6 +182,9 @@ classdef estimate_test < matlab.unittest.TestCase
       
       ssUB.T = 1;
       ssUB.H(:) = Inf;
+
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, [], ...
+        'LowerBound', ssLB, 'UpperBound', ssUB);
 
       [ssE, ~, grad] = ss.estimate(y, ssTrue, ...
         'LowerBound', ssLB, 'UpperBound', ssUB);

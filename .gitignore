@@ -18,12 +18,10 @@ text/
 data/realtime_datasets
 
 ## Ignore temp data files
-data/*.xls*
-data/*.rat
-data/*.mat
-data/realtime/
+test/data/*.mat
+test/data/*.dat
 
-## RATS output
-*.rgf
-*.LIS
-*.OUT
+## LaTeX files
+*.aux
+*.log
+*.synctex.gz

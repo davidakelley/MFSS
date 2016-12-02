@@ -8,8 +8,7 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
   
   properties
     Y
-    ssM
-    ssMex
+    ss
     allowedError = 1e-11;
   end
   
@@ -18,21 +17,18 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
       addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
 
       % Set up test
-      ss = generateARmodel(10, 2, false);
-      
-      testCase.Y = generateData(ss, 600);
-      
-      testCase.ssMex = ss;
-      testCase.ssM = testCase.ssMex;
-      testCase.ssM.useMex = false;
+      testCase.ss = generateARmodel(10, 2, false);
+      testCase.Y = generateData(testCase.ss, 600);
     end
   end
   
   methods (Test)
     function testFilter(testCase)
       % Run filter
-      [a_m, logl_m, fOut_m] = testCase.ssM.filter(testCase.Y);
-      [a, logl, fOut] = testCase.ssMex.filter(testCase.Y);
+      testCase.ss.useMex(false);
+      [a_m, logl_m, fOut_m] = testCase.ss.filter(testCase.Y);
+      testCase.ss.useMex(true);
+      [a, logl, fOut] = testCase.ss.filter(testCase.Y);
       
       % Assertions
       testCase.verifyEqual(logl, logl_m, 'AbsTol', testCase.allowedError);
@@ -49,8 +45,10 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
     
     function testSmoother(testCase)
       % Run smoother
-      [alpha_m, sOut_m] = testCase.ssM.smooth(testCase.Y);
-      [alpha, sOut] = testCase.ssMex.smooth(testCase.Y);
+      testCase.ss.useMex(false);
+      [alpha_m, sOut_m] = testCase.ss.smooth(testCase.Y);
+      testCase.ss.useMex(true);
+      [alpha, sOut] = testCase.ss.smooth(testCase.Y);
       
       % Assertions
       testCase.verifyEqual(alpha, alpha_m, 'AbsTol', testCase.allowedError);
@@ -66,20 +64,24 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
     
     function testTiming(testCase)
       %% Timing
-      filter_fn = @() testCase.ssM.filter(testCase.Y);
+      testCase.ss.useMex(false);
+      filter_fn = @() testCase.ss.filter(testCase.Y);
       mTime_filter = timeit(filter_fn, 3);
       
-      filter_fn = @() testCase.ssMex.filter(testCase.Y);
+      testCase.ss.useMex(true);
+      filter_fn = @() testCase.ss.filter(testCase.Y);
       mexTime_filter = timeit(filter_fn, 3);
       
-      smooth_fn = @() testCase.ssM.smooth(testCase.Y);
+      testCase.ss.useMex(false);
+      smooth_fn = @() testCase.ss.smooth(testCase.Y);
       mTime_smooth = timeit(smooth_fn, 2);
       
-      smooth_fn = @() testCase.ssMex.smooth(testCase.Y);
+      testCase.ss.useMex(true);
+      smooth_fn = @() testCase.ss.smooth(testCase.Y);
       mexTime_smooth = timeit(smooth_fn, 2);
 
       fprintf('\nMex timing (%d observables, %d states, t = %d):\n', ...
-        testCase.ssM.p, testCase.ssM.m, size(testCase.Y, 2));
+        testCase.ss.p, testCase.ss.m, size(testCase.Y, 2));
       fprintf(' mex filter takes %3.2f%% of the time as the .m version.\n', ...
         mexTime_filter/mTime_filter*100);
       fprintf(' mex smoother takes %3.2f%% of the time as the .m version.\n', ...
