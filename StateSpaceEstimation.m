@@ -15,7 +15,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   % David Kelley, 2016
   %
-  % TODO (12/1/16)
+  % TODO (12/2/16)
   % ---------------
   %   - Restore gradient for P0 positive definite-ness.
   %   - TVP/accumulators
@@ -65,7 +65,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         obj.ThetaMapping = ThetaMap.ThetaMapEstimation(obj);
       end
       
-      obj.ThetaMapping.addRestrictions(inOpts.LowerBound, inOpts.UpperBound);      
+      obj.ThetaMapping = obj.ThetaMapping.addRestrictions(inOpts.LowerBound, inOpts.UpperBound);      
       
       % Estimation restrictions - estimation will be bounded by bounds on
       % parameter matricies passed and non-negative restrictions on variances. 

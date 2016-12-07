@@ -50,11 +50,12 @@ classdef StateSpace < AbstractStateSpace
   
   % David Kelley, 2016
   %
-  % TODO (12/1/16)
+  % TODO (12/2/16)
   % ---------------
   %   - TVP in gradient function 
-  %   - mex version of the gradient function
-
+  %   - mex version of the gradient function (?)
+  %   - Add filter/smoother weight decompositions
+  
   properties
     filterUni         % Use univarite filter if appropriate (H is diagonal)
   end
@@ -570,24 +571,5 @@ classdef StateSpace < AbstractStateSpace
         end
       end
     end
-  end
-  
-  methods(Static)
-    %% Utilities
-    function commutation = genCommutation(m) 
-      % Generate commutation matrix
-      % A commutation matrix is "a suqare mn-dimensional matrix partitioned
-      % into mn sub-matricies of order (n, m) such that the ijth submatrix
-      % as a 1 in its jith position and zeros elsewhere."
-      E = @(i, j) [zeros(i-1, m); ...
-        zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
-      commutation = zeros(m^2);
-      for iComm = 1:m
-        for jComm = 1:m
-          commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
-        end
-      end
-    end
-       
   end
 end

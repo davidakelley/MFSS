@@ -31,17 +31,19 @@ classdef ThetaMap
   
   % David Kelley, 2016
   %
-  % TODO (12/1/2016)
+  % TODO (12/2/2016)
   % ---------------
   %   - Allow user-defined transformations so a parameter value can 
   %   effectively be a function of another parameter value.
   %   - Check that system2theta satisfies bound conditions
-  %   - Write checkThetaMap
-  %   - Determine transformations for accumulators
+  %   - Write checkThetaMap 
+  %   - Determine transformations for accumulators, decide where to put them.
   %   - Which tau should be used for a0 and P0?
   %   - Do I need to be able to remove a parameter restriction ever? 
   
   properties(SetAccess = protected)
+    nTheta            % Number of elements in theta vector
+
     % StateSpace containing all fixed elements
     fixed
     % StateSpace of indexes of theta that determines parameter values
@@ -63,7 +65,6 @@ classdef ThetaMap
   
   properties(SetAccess = protected, Hidden)
     % Dimensions
-    nTheta            % Number of elements in theta vector
     p                 % Number of observed series
     m                 % Number of states
     g                 % Number of shocks
@@ -124,10 +125,10 @@ classdef ThetaMap
       obj.UpperBound = ssUB;      
       
       % Set variances to be positive
-      ssLB.H(1:obj.p+1:end) = 0;
-      ssLB.Q(1:obj.m+1:end) = 0;
+      ssLB.H(1:obj.p+1:end) = eps;
+      ssLB.Q(1:obj.m+1:end) = eps;
       if ~obj.usingDefaultP0
-        ssLB.P0(1:obj.m+1:end) = 0;
+        ssLB.P0(1:obj.m+1:end) = eps;
       end      
       
       obj = obj.addRestrictions(ssLB, ssUB);
@@ -148,6 +149,13 @@ classdef ThetaMap
       transformations = {@(x) x};
       derivatives = {@(x) 1};
       inverses = {@(x) x};
+      
+      if ss.usingDefaulta0 && ~isempty(ss.a0)
+        warning('usingDefaulta0 but a0 already set!');
+      end
+      if ss.usingDefaultP0 && ~isempty(ss.P0)
+        warning('usingDefaultP0 but P0 already set!');
+      end
       
       tm = ThetaMap(ss, index, transformations, derivatives, inverses, transformationIndex);
     end
@@ -198,6 +206,8 @@ classdef ThetaMap
       
       index = StateSpace(paramEstimIndexes{1:7}, []);
       index = index.setInitial(paramEstimIndexes{8}, paramEstimIndexes{9});
+      index.usingDefaulta0 = ss.usingDefaulta0;
+      index.usingDefaultP0 = ss.usingDefaultP0;
     end
     
     function transformationIndex = TransformationIndexStateSpace(ss)
@@ -216,6 +226,8 @@ classdef ThetaMap
       
       transformationIndex = StateSpace(paramTransIndexes{1:7}, []);
       transformationIndex = transformationIndex.setInitial(paramTransIndexes{8}, paramTransIndexes{9});
+      transformationIndex.usingDefaulta0 = ss.usingDefaulta0;
+      transformationIndex.usingDefaultP0 = ss.usingDefaultP0;
     end
   end
   
@@ -281,7 +293,7 @@ classdef ThetaMap
         
         % Get the optimal theta value for each parameter, make sure they match
         thetaVals = arrayfun(@(x) obj.inverses{iTransformIndexes(x)}(iParamValues(x)), 1:nParam);        
-        assert(all(thetaVals == thetaVals(1)), ...
+        assert(all(thetaVals - thetaVals(1) < 1e4 * eps), ...
           'Transformation inverses result in differing values of theta.');
         
         theta(iTheta) = thetaVals(1);
@@ -310,31 +322,38 @@ classdef ThetaMap
       % Construct the new parameter matricies
       for iP = 1:nParameterMats
         iName = obj.fixed.systemParam{iP};
-        if strcmpi(iName, 'a0') && obj.fixed.usingDefaulta0 && stationaryState
-          % See note in documentation on initil conditions gradients
-          IminusT = eye(obj.m) - obj.T(:,:,1);
-          % Think about doing the kron of the inv since the kron is so big:
-          paramGrad = G.T / kron(IminusT, IminusT') * ...
-            kron(ss.c(:,:,1), eye(obj.m)) + ...
-            G.c / IminusT;
-        elseif strcmpi(iName, 'a0') 
+        if strcmpi(iName, 'a0') && obj.usingDefaulta0 && ~stationaryState
+          % Diffuse case
           paramGrad = zeros(obj.nTheta, obj.m);
+        elseif strcmpi(iName, 'a0') && obj.usingDefaulta0 && stationaryState
+          % See note in documentation on initial conditions gradients
+          IminusTinv = inv(eye(obj.m) - ss.T(:,:,1));
+          IminusTPrimeInv = inv((eye(obj.m) - ss.T(:,:,1))');
+          paramGrad = G.T * kron(IminusTinv, IminusTPrimeInv) * ...
+            kron(ss.c(:,:,1), eye(obj.m)) + ...
+            G.c * IminusTinv;
+        
+        elseif strcmpi(iName, 'P0') && obj.usingDefaultP0 && ~stationaryState
+          % Diffuse case 
+          paramGrad = zeros(obj.nTheta, obj.m^2);
+        elseif strcmpi(iName, 'P0') && obj.usingDefaultP0 && stationaryState
+          % See note in documentation on initial conditions gradients
+          Nm = (eye(obj.m^2) + AbstractStateSpace.genCommutation(obj.m));
+          vec = @(M) reshape(M, [], 1);
+
+          rawGTkronT = ThetaMap.GAkronA(ss.T(:,:,1)); 
+          GTkronT = zeros(obj.nTheta, obj.m^4);
           
-        elseif strcmpi(iName, 'P0') && obj.fixed.usingDefaultP0 && stationaryState
-          % See note in documentation on initil conditions gradients
-          commutation = obj.genCommutation(obj.m);
-          Nm = (eye(obj.m^2) + commutation);
-          
-          warning('Development incomplete');
-          GTkronT = ThetaMap.GAkronA(ss.T(:,:,1)); % <- this needs to be padded with zeros above and below
+          usedT = logical(obj.index.T);
+          GTkronT(obj.index.T(usedT), :) = rawGTkronT(vec(usedT), :);
           
           Im2minusTkronInv = inv(eye(obj.m^2) - kron(ss.T(:,:,1), ss.T(:,:,1)));
-          paramGrad = GTkronT / kron(Im2minusTkronInv, Im2minusTkronInv) + ... 
+          Im2minusTkronPrimeInv = inv(eye(obj.m^2) - kron(ss.T(:,:,1), ss.T(:,:,1))');
+          paramGrad = GTkronT * kron(Im2minusTkronInv, Im2minusTkronPrimeInv) * ...
+              kron(vec(ss.R(:,:,1) * ss.Q(:,:,1) * ss.R(:,:,1)'), eye(obj.m^2)) + ... 
             G.R * (kron(ss.Q(:,:,1) * ss.R(:,:,1)', eye(obj.m))) * Nm + ...
             G.Q * kron(ss.R(:,:,1)', ss.R(:,:,1)');
-        elseif strcmpi(iName, 'P0') 
-          paramGrad = zeros(obj.nTheta, obj.m^2);
-          
+
         else
           % Normal parameter matricies: find elements determined by theta and
           % use the provided derivatives.
@@ -344,7 +363,12 @@ classdef ThetaMap
           % We don't need to worry about symmetric matricies since the index
           % matricies should be symmetric as well at this point.
           freeValues = find(logical(obj.index.(iName)));
-          for jF = freeValues'
+          
+          if size(freeValues, 1) ~= 1
+            freeValues = freeValues';
+          end
+          
+          for jF = freeValues
             freeIndex = obj.index.(iName)(jF);
             jTrans = obj.derivatives{obj.transformationIndex.(iName)(jF)};
             jTheta = theta(freeIndex);
@@ -381,7 +405,7 @@ classdef ThetaMap
         
         oldUBmat = obj.UpperBound.(iParam);
         passedUBmat = ssUB.(iParam);
-        newUBmat = max(oldUBmat, passedUBmat);
+        newUBmat = min(oldUBmat, passedUBmat);
         
         % Alter any transformations neccessary
         for iElem = 1:numel(newLBmat)

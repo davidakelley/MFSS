@@ -9,7 +9,7 @@ classdef estimate_test < matlab.unittest.TestCase
   properties
     data = struct;
     tol_DK = 1e-2;    % Test v. Drubin-Koopman
-    tol_grad = 1e-5;   % Tets against gradient version
+    tol_grad = 5e-4;   % Tets against gradient version
     bbk
     deai
   end
@@ -36,7 +36,6 @@ classdef estimate_test < matlab.unittest.TestCase
         struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
       testCase.deai = load(fullfile(baseDir, 'test', 'data', 'deai.mat'));
 
-
       addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
     end
   end
@@ -53,7 +52,6 @@ classdef estimate_test < matlab.unittest.TestCase
       Q = nan;
       
       ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, []);
-      ss.useGrad = false;
       
       H0 = 1000;
       Q0 = 1000;
@@ -66,7 +64,7 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', testCase.tol_DK);
       
       [~, ssE_grad] = ssE.gradient(testCase.data.nile', ss.ThetaMapping);
-      testCase.verifyLessThan(abs(ssE_grad), ss.tol);
+      testCase.verifyLessThan(abs(ssE_grad), testCase.tol_grad);
     end
     
     function testNileGradient(testCase)
@@ -150,8 +148,8 @@ classdef estimate_test < matlab.unittest.TestCase
       Q0 = 1;
       ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0, []);
 
-      [~, ~, grad] = ss.estimate(y, ss0);
-      testCase.verifyLessThan(abs(grad), ss.tol);
+      [ssE, ~, grad] = ss.estimate(y, ss0);
+      testCase.verifyLessThanOrEqual(abs(grad), testCase.tol_grad);
     end
     
     function testBounds(testCase)
@@ -170,28 +168,37 @@ classdef estimate_test < matlab.unittest.TestCase
       Q = nan;
       
       % Bounds: constrain 0 < T < 1
-      ssLB = ss;
-      ssLB.Z(:) = nan;
-      ssLB.d(:) = nan;
-      ssLB.H(:) = nan;
-      ssLB.T(:) = 0;
-      ssLB.c(:) = nan;
-      ssLB.R(:) = nan;
-      ssLB.Q(:) = nan;
-      ssUB = ssLB;
+      Zlb = Z; Zlb(:) = -Inf;
+      dlb = d; dlb(:) = -Inf;
+      Hlb = H; Hlb(:) = 0;
+      Tlb = T; Tlb(:) = 0.1;
+      clb = c; clb(:) = -Inf;
+      Rlb = R; Rlb(:) = -Inf;
+      Qlb = Q; Qlb(:) = 0;
+      ssLB = StateSpace(Zlb, dlb, Hlb, Tlb, clb, Rlb, Qlb, []);
       
-      ssUB.T = 1;
-      ssUB.H(:) = Inf;
+      Zub = Z; Zub(:) = Inf;
+      dub = d; dub(:) = Inf;
+      Hub = H; Hub(:) = Inf;
+      Tub = T; Tub(:) = 0.3;
+      cub = c; cub(:) = Inf;
+      Rub = R; Rub(:) = Inf;
+      Qub = Q; Qub(:) = Inf;
+      ssUB = StateSpace(Zub, dub, Hub, Tub, cub, Rub, Qub, []);
 
       ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, [], ...
         'LowerBound', ssLB, 'UpperBound', ssUB);
-
-      [ssE, ~, grad] = ss.estimate(y, ssTrue, ...
-        'LowerBound', ssLB, 'UpperBound', ssUB);
-      testCase.verifyLessThan(abs(grad), ssE.tol);
+     
+      ss0 = ssTrue;
+      ss0.T = 0.2;
       
+      [ssE, ~, ~] = ss.estimate(y, ss0);
+      testCase.verifyLessThan(ssE.T, Tub);
+      testCase.verifyGreaterThan(ssE.T, Tlb);      
     end
-%     
+    
+    %{
+%
 %     function testFactorModel(testCase)
 %       % Set up state
 %       rnfacs = 2;
@@ -252,5 +259,6 @@ classdef estimate_test < matlab.unittest.TestCase
 %       ssE = ss.estimate(testCase.deai.Y, ss0);
 %       
 %     end
+    %}
   end
 end

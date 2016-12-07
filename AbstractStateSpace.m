@@ -460,19 +460,21 @@ classdef (Abstract) AbstractStateSpace
         positions = [positions; varPos]; %#ok<AGROW>
       end
     end
-    
+  end
+  
+  methods (Static)
     %% General utility functions
-    function sOut = compileStruct(obj, varargin) %#ok<INUSL>
+    function sOut = compileStruct(varargin)
       % Combines variables passed as arguments into a struct
       % struct = compileStruct(a, b, c) will place the variables a, b, & c
       % in the output variable using the variable names as the field names.
       sOut = struct;
-      for iV = 1:nargin-1
-        sOut.(inputname(iV+1)) = varargin{iV};
+      for iV = 1:nargin
+        sOut.(inputname(iV)) = varargin{iV};
       end
     end
     
-    function [Finv, logDetF] = pseudoinv(obj, F, tol) %#ok<INUSL>
+    function [Finv, logDetF] = pseudoinv(F, tol)
       tempF = 0.5 * (F + F');
       
       [PSVD, DSDV, PSVDinv] = svd(tempF);
@@ -488,6 +490,21 @@ classdef (Abstract) AbstractStateSpace
       
       Finv = PSVD * (DSDV\eye(length(DSDV))) * PSVDinv';
       logDetF = sum(log(diag(DSDV)));
+    end
+    
+    function commutation = genCommutation(m)
+      % Generate commutation matrix
+      % A commutation matrix is "a suqare mn-dimensional matrix partitioned
+      % into mn sub-matricies of order (n, m) such that the ijth submatrix
+      % as a 1 in its jith position and zeros elsewhere."
+      E = @(i, j) [zeros(i-1, m); ...
+        zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
+      commutation = zeros(m^2);
+      for iComm = 1:m
+        for jComm = 1:m
+          commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
+        end
+      end
     end
     
   end
