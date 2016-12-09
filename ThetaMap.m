@@ -31,15 +31,16 @@ classdef ThetaMap
   
   % David Kelley, 2016
   %
-  % TODO (12/2/2016)
+  % TODO (12/9/2016)
   % ---------------
-  %   - Allow user-defined transformations so a parameter value can 
-  %   effectively be a function of another parameter value.
-  %   - Check that system2theta satisfies bound conditions
   %   - Write checkThetaMap 
-  %   - Determine transformations for accumulators, decide where to put them.
-  %   - Which tau should be used for a0 and P0?
-  %   - Do I need to be able to remove a parameter restriction ever? 
+  %   - Write a test class specifically for ThetaMap. It should verify: 
+  %     - We can go system -> theta -> system and get the same thing both when
+  %       a0 and P0 are defined and when they're not.
+  %     - Check a generated system obeys bounds. 
+  %     - checkThetaMap purpose: Can we eliminate an element from the map and
+  %       get a reduced size theta?
+  %   - Allow inverse transformations to be left empty, invert them numerically
   
   properties(SetAccess = protected)
     nTheta            % Number of elements in theta vector
@@ -174,63 +175,6 @@ classdef ThetaMap
     end
   end
   
-  methods(Static, Hidden)
-    %% Alternate constructor helper functions
-    function index = IndexStateSpace(ss)
-      % Set up index StateSpace for default case where all unknown elements of 
-      % the parameters are to be estimated individually
-      
-      paramEstimIndexes = cell(length(ss.systemParam), 1);
-      indexCounter = 1;
-      
-      ssZeros = ss.setAllParameters(0);
-      for iP = 1:length(ss.systemParam)
-        iParam = ss.(ss.systemParam{iP});
-        
-        estimatedIndexes = ssZeros.(ss.systemParam{iP});
-        if ~any(strcmpi(ss.systemParam{iP}, ss.symmetricParams))
-          % Unrestricted matricies
-          nRequiredTheta = sum(sum(sum(isnan(iParam))));
-          estimatedIndexes(isnan(iParam)) = indexCounter:indexCounter + nRequiredTheta - 1;
-        else
-          % Symmetric matricies
-          nRequiredTheta = sum(sum(sum(isnan(tril(iParam)))));
-          estimatedIndexes(isnan(tril(iParam))) = indexCounter:indexCounter + nRequiredTheta - 1;
-          
-          estimatedIndexes = estimatedIndexes + estimatedIndexes' - diag(diag(estimatedIndexes));
-        end
-        paramEstimIndexes{iP} = estimatedIndexes;
-        
-        indexCounter = indexCounter + nRequiredTheta;
-      end
-      
-      index = StateSpace(paramEstimIndexes{1:7});
-      index = index.setInitial(paramEstimIndexes{8}, paramEstimIndexes{9});
-      index.usingDefaulta0 = ss.usingDefaulta0;
-      index.usingDefaultP0 = ss.usingDefaultP0;
-    end
-    
-    function transformationIndex = TransformationIndexStateSpace(ss)
-      % Create the default transformationIndex - all parameters values are zeros
-      % except where ss is nan, in which case they are ones. 
-      paramTransIndexes = cell(length(ss.systemParam), 1);
-
-      ssZeros = ss.setAllParameters(0);
-      for iP = 1:length(ss.systemParam)
-        iParam = ss.(ss.systemParam{iP});
-
-        transformationIndexes = ssZeros.(ss.systemParam{iP});
-        transformationIndexes(isnan(iParam)) = 1;
-        paramTransIndexes{iP} = transformationIndexes;
-      end
-      
-      transformationIndex = StateSpace(paramTransIndexes{1:7});
-      transformationIndex = transformationIndex.setInitial(paramTransIndexes{8}, paramTransIndexes{9});
-      transformationIndex.usingDefaulta0 = ss.usingDefaulta0;
-      transformationIndex.usingDefaultP0 = ss.usingDefaultP0;
-    end
-  end
-  
   methods
     %% Conversion functions
     function ss = theta2system(obj, theta)
@@ -269,15 +213,11 @@ classdef ThetaMap
     function theta = system2theta(obj, ss)
       % Get the theta vector that would determine a system
       
-      % Since we know that each elemenet of the parameters must be determined
-      % from an individual element of theta we can do nTheta univariate
-      % optimization problems to find the theta that would produce ss.
-      % To make sure the StateSpace is feasible given the ThetaMap, we find the
-      % value of theta that would produce each element then check to make sure
-      % that they're the same.
-      
-      % TODO: Check that the resulting StateSpace satisfies bounds conditions
       obj.index.checkConformingSystem(ss);
+      assert(all(obj.LowerBound.vectorizedParameters < ss.vectorizedParameters), ...
+        'System violates lower bound of ThetaMap.');
+      assert(all(obj.UpperBound.vectorizedParameters > ss.vectorizedParameters), ...
+        'System violates upper bound of ThetaMap.');
       
       vecIndex = obj.index.vectorizedParameters();
       ssParamValues = ss.vectorizedParameters();
@@ -295,6 +235,9 @@ classdef ThetaMap
         thetaVals = arrayfun(@(x) obj.inverses{iTransformIndexes(x)}(iParamValues(x)), 1:nParam);        
         assert(all(thetaVals - thetaVals(1) < 1e4 * eps), ...
           'Transformation inverses result in differing values of theta.');
+        
+        % Optional TODO: Allow inverses to be passed empty and do the
+        % line-search to find the numeric inverse. 
         
         theta(iTheta) = thetaVals(1);
       end
@@ -427,15 +370,83 @@ classdef ThetaMap
     end
     
     function obj = checkThetaMap(obj)
-      % Minimize the size of theta needed after edits have been made to index,
-      % reset nTheta if we've added elements, remove unused transformations, 
-      % general error checking
+      % Verify that the ThetaMap is valid after user modifications. 
+      
+      % Minimize the size of theta needed after edits have been made to index:
+      % If the user changes an element to be a function of a different theta
+      % value, remove the old theta value - effectively shift all indexes down 
+      % by 1.
+      
+      % Remove unused transformations (and reset transformationIndexes too)
+      
+      % Reset nTheta if we've added/removed elements
+      
+      % Make sure the lower bound is actually below the upper bound
+      
+      % Other error checking?
       
     end
   end
   
   methods(Static, Hidden)
-    % Helper functions
+    %% Alternate constructor helper functions
+    function index = IndexStateSpace(ss)
+      % Set up index StateSpace for default case where all unknown elements of 
+      % the parameters are to be estimated individually
+      
+      paramEstimIndexes = cell(length(ss.systemParam), 1);
+      indexCounter = 1;
+      
+      ssZeros = ss.setAllParameters(0);
+      for iP = 1:length(ss.systemParam)
+        iParam = ss.(ss.systemParam{iP});
+        
+        estimatedIndexes = ssZeros.(ss.systemParam{iP});
+        if ~any(strcmpi(ss.systemParam{iP}, ss.symmetricParams))
+          % Unrestricted matricies
+          nRequiredTheta = sum(sum(sum(isnan(iParam))));
+          estimatedIndexes(isnan(iParam)) = indexCounter:indexCounter + nRequiredTheta - 1;
+        else
+          % Symmetric matricies
+          nRequiredTheta = sum(sum(sum(isnan(tril(iParam)))));
+          estimatedIndexes(isnan(tril(iParam))) = indexCounter:indexCounter + nRequiredTheta - 1;
+          
+          estimatedIndexes = estimatedIndexes + estimatedIndexes' - diag(diag(estimatedIndexes));
+        end
+        paramEstimIndexes{iP} = estimatedIndexes;
+        
+        indexCounter = indexCounter + nRequiredTheta;
+      end
+      
+      index = StateSpace(paramEstimIndexes{1:7});
+      index = index.setInitial(paramEstimIndexes{8}, paramEstimIndexes{9});
+      index.usingDefaulta0 = ss.usingDefaulta0;
+      index.usingDefaultP0 = ss.usingDefaultP0;
+    end
+    
+    function transformationIndex = TransformationIndexStateSpace(ss)
+      % Create the default transformationIndex - all parameters values are zeros
+      % except where ss is nan, in which case they are ones. 
+      paramTransIndexes = cell(length(ss.systemParam), 1);
+
+      ssZeros = ss.setAllParameters(0);
+      for iP = 1:length(ss.systemParam)
+        iParam = ss.(ss.systemParam{iP});
+
+        transformationIndexes = ssZeros.(ss.systemParam{iP});
+        transformationIndexes(isnan(iParam)) = 1;
+        paramTransIndexes{iP} = transformationIndexes;
+      end
+      
+      transformationIndex = StateSpace(paramTransIndexes{1:7});
+      transformationIndex = transformationIndex.setInitial(paramTransIndexes{8}, paramTransIndexes{9});
+      transformationIndex.usingDefaulta0 = ss.usingDefaulta0;
+      transformationIndex.usingDefaultP0 = ss.usingDefaultP0;
+    end
+  end
+  
+  methods(Static, Hidden)
+    %% Helper functions
     function [trans, deriv, inverse] = boudnedTransform(lowerBound, upperBound)
       % Generate a restriction transformation from a lower and upper bound
       % Also returns the derivative and inverse of the transformation

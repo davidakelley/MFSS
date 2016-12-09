@@ -8,11 +8,13 @@ classdef (Abstract) AbstractStateSpace
   
   % David Kelley, 2016
   % 
-  % TODO (11/30/16)
+  % TODO (12/9/16)
   % ---------------
+  %   - Accumulator funcion handles
   %   - Create utiltiy methods for standard accumulator creation (descriptive
-  %   specification as opposed to explicitly stating phi/Horizon values).
-
+  %     specification as opposed to explicitly stating phi/Horizon values).
+  %   - Which tau should be used for a0 and P0?
+  
   properties
     Z, d, H           % Observation equation parameters
     T, c, R, Q        % State equation parameters
@@ -94,6 +96,13 @@ classdef (Abstract) AbstractStateSpace
     
     function vec = vectorizedParameters(obj)
       param = obj.parameters;
+      if obj.usingDefaulta0
+        param{8} = [];
+      end
+      if obj.usingDefaultP0
+        param{9} = [];
+      end
+      
       vectors = cellfun(@(x) x(:), param, 'Uniform', false);
       vec = vertcat(vectors{:});
     end

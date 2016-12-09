@@ -50,7 +50,7 @@ classdef StateSpace < AbstractStateSpace
   
   % David Kelley, 2016
   %
-  % TODO (12/2/16)
+  % TODO (12/9/16)
   % ---------------
   %   - TVP in gradient function 
   %   - mex version of the gradient function (?)

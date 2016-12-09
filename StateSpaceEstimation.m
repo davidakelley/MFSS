@@ -15,10 +15,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   % David Kelley, 2016
   %
-  % TODO (12/2/16)
+  % TODO (12/9/16)
   % ---------------
-  %   - Restore gradient for P0 positive definite-ness.
-  %   - TVP/accumulators
   %   - EM algorithm
   
   properties
@@ -200,26 +198,28 @@ classdef StateSpaceEstimation < AbstractStateSpace
     function [cx, ceqx, deltaCX, deltaCeqX] = nlConstraintFun(obj, theta)
       % Constraints of the form c(x) <= 0 and ceq(x) = 0.
       scale = 1e6;
+      vec = @(M) reshape(M, [], 1);
       
       % Return the negative determinants in cx
       ss1 = obj.ThetaMapping.theta2system(theta);
       cx = scale * -[det(ss1.H) det(ss1.Q)]';
       if ~obj.usingDefaultP0
-        cx = [cx; det(ss0.P0)];
+        cx = [cx; det(ss1.P0)];
       end      
       ceqx = 0;
       
-%       G = ss1.generateParameterGradients();
-%     	
-%       vec = @(M) reshape(M, [], 1);
-% 
-%       % Should also give gradients
-%       deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
-%                  det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
-%       if ~obj.usingDefaultP0
-%         deltaCX = [deltaCX; det(P0_theta) * G.P0 * vec(inv(P0_theta))];
-%       end
-      deltaCX = [];
+      % And the gradients 
+      warning off MATLAB:nearlySingularMatrix
+      warning off MATLAB:singularMatrix
+      G = obj.ThetaMapping.parameterGradients(theta);
+    	deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
+                 det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
+      if ~obj.usingDefaultP0
+        deltaCX = [deltaCX; det(ss1.P0) * G.P0 * vec(inv(ss1.P0))];
+      end
+      warning on MATLAB:nearlySingularMatrix
+      warning on MATLAB:singularMatrix
+      
       deltaCeqX = sparse(0);
     end
     
