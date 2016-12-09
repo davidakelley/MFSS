@@ -12,23 +12,21 @@ classdef accumulator_test < matlab.unittest.TestCase
   methods(TestClassSetup)
     function setupOnce(testCase)
       % Factor model data
-      testCase.bbk = struct;
-      [testCase.bbk.data, testCase.bbk.opts, testCase.bbk.dims] = loadFactorModel();
-      
       baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
         struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
-      testCase.deai = load(fullfile(baseDir, 'test', 'data', 'deai.mat'));
+      
+      testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
+      testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
 
       addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
     end
   end
   
   methods (Test)
-    
     function testNoAccumWithMissing(testCase)
       % Run smoother over a dataset with missing observations, check that
       % its close to a dataset without missing values. 
-      p = 10; m = 2; timeDim = 500;
+      p = 10; m = 1; timeDim = 500;
       ss = generateARmodel(p, m, false);
       Y = generateData(ss, timeDim);
       
@@ -46,15 +44,16 @@ classdef accumulator_test < matlab.unittest.TestCase
     end
     
     function testSumAccumulatorSmoother(testCase)
-      p = 2; m = 2; timeDim = 599;
+      p = 2; m = 1; timeDim = 599;
       ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
       latentY = generateData(ssGen, timeDim);
       
       timeGroups = sort(repmat((1:ceil(timeDim/3))', [3 1]));
       timeGroups(end, :) = [];
       
       aggSeries = logical([0 1]);
-      aggY = grpstats(latentY(aggSeries, :)', timeGroups, 'mean')';
+      aggY = grpstats(latentY(aggSeries, :)', timeGroups, 'mean')' .* 3;
       aggY(:, end) = [];
       Y = latentY;
       Y(aggSeries, :) = nan;
@@ -66,21 +65,26 @@ classdef accumulator_test < matlab.unittest.TestCase
       accum.Horizon = repmat(3, [timeDim+1, sum(aggSeries)])';
       
       ss = StateSpace(ssGen.Z, ssGen.d, ssGen.H, ...
-        ssGen.T, ssGen.c, ssGen.R, ssGen.Q, accum);
+        ssGen.T, ssGen.c, ssGen.R, ssGen.Q);
+      ssA = ss.addAccumulators(accum);
       
-      alpha = ss.smooth(Y);
+      alpha = ssA.smooth(Y);
       latentAlpha = ssGen.smooth(latentY);
       
-      testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.5);      
+      testCase.verifyGreaterThan(corr(alpha(1,:)', latentAlpha(1,:)'), 0.96);
+      testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.75, 'RelTol', 0.5);      
     end
     
     function testDetroit(testCase)
       import matlab.unittest.constraints.IsFinite;
+      detroit = testCase.deai;
       
-      ss0 = StateSpace(testCase.deai.Z, testCase.deai.d, testCase.deai.H, ...
-        testCase.deai.T, testCase.deai.c, testCase.deai.R, testCase.deai.Q, ...
-        testCase.deai.Harvey);
-      [~, ll] = ss0.filter(testCase.deai.Y);
+      ss0 = StateSpace(detroit.Z, detroit.d, detroit.H, ...
+                       detroit.T, detroit.c, detroit.R, detroit.Q);
+      
+      ss0A = ss0.addAccumulators(detroit.Harvey);
+      
+      [~, ll] = ss0.filter(detroit.Y);
       
       testCase.verifyThat(ll, IsFinite);
     end

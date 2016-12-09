@@ -4,7 +4,7 @@ function [data, opts, dims] = loadFactorModel()
 baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
   struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
 
-saveFile = fullfile(baseDir, 'test', 'data', 'bbk_data.mat');
+saveFile = fullfile(baseDir, 'examples', 'data', 'bbk_data.mat');
 if exist(saveFile, 'file')
   fileInfo = dir(saveFile);
   if floor(datenum(fileInfo.date)) == floor(now)

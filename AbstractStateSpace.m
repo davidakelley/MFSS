@@ -42,24 +42,19 @@ classdef (Abstract) AbstractStateSpace
   
   methods
     %% Constructor
-    function obj = AbstractStateSpace(Z, d, H, T, c, R, Q, accumulator)
+    function obj = AbstractStateSpace(Z, d, H, T, c, R, Q)
       % Constructor
       % Inputs: Parameters matricies or a structure of parameters
       if nargin == 1
         % Structure of parameter values was passed, contains all parameters
-        accumulator = Z.accumulator;
-        parameters = rmfield(Z, 'accumulator');
+        parameters = Z;
       elseif nargin == 7
-        parameters = obj.compileStruct(Z, d, H, T, c, R, Q);
-        accumulator = [];
-      elseif nargin >= 8
         parameters = obj.compileStruct(Z, d, H, T, c, R, Q);
       else
         error('Input error.');
       end
       
       obj = obj.setSystemParameters(parameters);
-      obj = obj.addAccumulators(accumulator);
     end
     
     %% Initialization
@@ -265,66 +260,39 @@ classdef (Abstract) AbstractStateSpace
       
       if isempty(accumulator)
         return
-      else
-        obj.accumulator = accumulator;
       end
-      
-      % Validate input
-      if all(ismember(fieldnames(accumulator), {'xi', 'psi', 'Horizon'}))
-        accum.index = accumulator.xi;
-        accum.calendar = accumulator.psi;
-        accum.horizon = accumulator.Horizon;
-        accumulator = accum;
-      end
-      if islogical(accumulator.index)
-        accumulator.index = find(accumulator.index);
-      end
-      assert(all(ismember(fieldnames(accumulator), {'index', 'calendar', 'horizon'})), ...
-        'accumulator must be a structure with fields index, calendar, and horizon');
-      assert(length(accumulator.index) == size(accumulator.calendar, 1));
-      assert(length(accumulator.index) == size(accumulator.horizon, 1));
-      
-      accumIndex = accumulator.index;
-      calendar = accumulator.calendar;
-      horizon = accumulator.horizon;
+      [accumIndex, calendar, horizon] = obj.parseAccumulator(accumulator);
       
       % Set tau
       if isempty(obj.tau)
-        obj.n = size(calendar, 2)-1;
+        obj.n = size(calendar, 2) - 1;
         obj = obj.setInvariantTau();
       end
       
-      accumTypes = any((calendar==0),2);
-      [accumObs, accumStates] = find(any(obj.Z(accumIndex,:,:) ~= 0, 3));
+      % There are 2 accumulator "types": sum and average. A sum accumulator is
+      % type == 0, an average accumulator is type == 1 (for both simple and 
+      % triangle averages).      
+      accumulatorTypes = any(calendar == 0, 2);
+      [accumObsDim, accumStateDim] = find(any(obj.Z(accumIndex,:,:) ~= 0, 3));
+      states = unique(accumStateDim);
+
+      [AddLags, ColAdd, RowPos, mNew] = ...
+        obj.accumAugmentedStateDims(horizon, accumObsDim, accumStateDim);
       
-      [states, AddLags, ColAdd, RowPos, mNew] = obj.accumAugmentedStateDims(horizon, accumObs, accumStates);
-      
-      if sum(AddLags)==0
-        newZ0 = obj.Z;
-        newT0 = obj.T;
-        newc0 = obj.c;
-        newR0 = obj.R;
-      else
-        newZ0 = zeros(obj.p, obj.m + sum(AddLags), obj.n);
-        newZ0(:, 1:obj.m,:) = obj.Z;
-        newT0 = zeros(obj.m + sum(AddLags), obj.m + sum(AddLags), obj.n);
-        newT0(1:obj.m, 1:obj.m,:) = Tt;
-        newT0(sub2ind(size(newT0), (obj.m + 1:mNew)', reshape(ColAdd(ColAdd>0),[],1))) = 1;
-        newc0 = zeros(obj.m + sum(AddLags), obj.n);
-        newc0(1:obj.m,:) = ct;
-        newR0 = zeros(obj.m + sum(AddLags), obj.g, obj.n);
-        newR0(1:obj.m, :, :) = Rt;
+      if sum(AddLags) ~= 0
         obj.m = mNew;
       end
       
       % Indentify unique elements of the state that need accumulation
-      nonZeroZpos = zeros(length(accumIndex), obj.m);
-      [APsi, ~, nonZeroZpos(sub2ind([length(accumIndex) obj.m], accumObs, accumStates))] ...
-        = unique([accumStates accumTypes(accumObs) horizon(accumObs, :) calendar(accumObs, :)], 'rows');
-      
+      possibleRows = [accumStateDim ...
+                      accumulatorTypes(accumObsDim) ...
+                      horizon(accumObsDim, :) ...
+                      calendar(accumObsDim, :)];
+      [APsi, ~, uniqueRows] = unique(possibleRows, 'rows');
+       
       nTau  = size(APsi, 1);
       st = APsi(:, 1);
-      accumTypes = APsi(:, 2);
+      accumulatorTypes = APsi(:, 2);
       Hor = APsi(:, 3:size(horizon,2) + 2);
       Psi = APsi(:, size(horizon,2) + 3:end);
       
@@ -332,6 +300,13 @@ classdef (Abstract) AbstractStateSpace
       obj.m = obj.m + nTau;
       
       % Construct new T matrix
+      if sum(AddLags) == 0
+        newT0 = obj.T;
+      else
+        newT0 = zeros(obj.m + sum(AddLags), obj.m + sum(AddLags), obj.n);
+        newT0(1:obj.m, 1:obj.m,:) = Tt;
+        newT0(sub2ind(size(newT0), (obj.m + 1:mNew)', reshape(ColAdd(ColAdd>0),[],1))) = 1;
+      end
       Ttypes   = [obj.tau.T' Psi' Hor'];
       [uniqueTs,~, newtauT] = unique(Ttypes,'rows');
       NumT = size(uniqueTs, 1);
@@ -339,10 +314,9 @@ classdef (Abstract) AbstractStateSpace
       for jj = 1:NumT
         newT(1:mOld, :, jj) = [newT0(:,:,uniqueTs(jj,1)) zeros(mOld, nTau)];
         for h = 1:nTau
-          if accumTypes(h) == 1
+          if accumulatorTypes(h) == 1
             newT(mOld + h, [1:mOld mOld + h],jj) = ...
-              [newT0(APsi(h,1),:,uniqueTs(jj,1)) ...
-              uniqueTs(jj,1+h)];
+              [newT0(APsi(h,1),:,uniqueTs(jj,1)) uniqueTs(jj,1+h)];
           else
             newT(mOld+h, [1:mOld mOld+h],jj) =...
               [(1/uniqueTs(jj,1+h)) * newT0(APsi(h,1),:,uniqueTs(jj,1))...
@@ -358,6 +332,12 @@ classdef (Abstract) AbstractStateSpace
       obj.tau.T = newtauT;
       
       % Construct new c vector
+      if sum(AddLags)==0
+        newc0 = obj.c;
+      else
+        newc0 = zeros(obj.m + sum(AddLags), obj.n);
+        newc0(1:obj.m,:) = ct;
+      end
       ctypes   = [obj.tau.c' Psi'];
       [uniquecs, ~, newtauc] = unique(ctypes,'rows');
       Numc = size(uniquecs, 1);
@@ -365,11 +345,10 @@ classdef (Abstract) AbstractStateSpace
       for jj = 1:Numc
         newc(1:mOld, jj) = newc0(:, uniquecs(jj,1));
         for h = 1:nTau
-          if accumTypes(h) == 1
+          if accumulatorTypes(h) == 1
             newc(mOld+h, jj) = newc0(APsi(h,1), uniquecs(jj,1));
           else
-            newc(mOld+h, jj) = (1/uniquecs(jj,1+h))*...
-              newc0(APsi(h,1), uniquecs(jj,1));
+            newc(mOld+h, jj) = (1/uniquecs(jj,1+h)) * newc0(APsi(h,1), uniquecs(jj,1));
           end
         end
       end
@@ -377,6 +356,12 @@ classdef (Abstract) AbstractStateSpace
       obj.tau.c = newtauc;
       
       % Construct new R matrix
+      if sum(AddLags)==0
+        newR0 = obj.R;
+      else
+        newR0 = zeros(obj.m + sum(AddLags), obj.g, obj.n);
+        newR0(1:obj.m, :, :) = Rt;
+      end
       Rtypes   = [obj.tau.R' Psi'];
       [uniqueRs, ~, newtauR] = unique(Rtypes,'rows');
       NumR = size(uniqueRs, 1);
@@ -384,7 +369,7 @@ classdef (Abstract) AbstractStateSpace
       for jj = 1:NumR
         newR(1:mOld,1:obj.g,jj) = newR0(:, :, uniqueRs(jj,1));
         for h = 1:nTau
-          if accumTypes(h) == 1
+          if accumulatorTypes(h) == 1
             newR(mOld+h,:,jj) = newR0(APsi(h,1), :, uniqueRs(jj,1));
           else
             newR(mOld+h,:,jj) = (1/uniqueRs(jj, 1+h))*...
@@ -396,6 +381,15 @@ classdef (Abstract) AbstractStateSpace
       obj.tau.R = newtauR;
       
       % Construct new Z matrix
+      nonZeroZpos = zeros(length(accumIndex), obj.m);
+      nonZeroZpos(sub2ind([length(accumIndex) obj.m], accumObsDim, accumStateDim)) = uniqueRows;
+      
+      if sum(AddLags) == 0
+        newZ0 = obj.Z;
+      else
+        newZ0 = zeros(obj.p, obj.m + sum(AddLags), obj.n);
+        newZ0(:, 1:obj.m,:) = obj.Z;
+      end
       newZ = zeros(obj.p, obj.m, size(obj.Z,3));
       for jj = 1:size(obj.Z, 3)
         newZ(:,1:mOld,jj) = newZ0(:,:,jj);
@@ -408,12 +402,14 @@ classdef (Abstract) AbstractStateSpace
       obj.Z = newZ;
     end
     
-    function [states, AddLags, ColAdd, RowPos, mNew] = ...
+    function [AddLags, ColAdd, RowPos, mNew] = ...
         accumAugmentedStateDims(obj, horizon, accumObs, accumStates)
       % Checking we have the correct number of lags of the states that need
-      % accunulation to be compatible with Horizon
+      % accumulation to be compatible with Horizon
+      
       states = unique(accumStates);
       maxHor = max(horizon, [], 2);
+      
       AddLags = zeros(length(states), 1);
       ColAdd  = zeros(length(states), max(maxHor));
       RowPos  = zeros(length(states), max(maxHor));
@@ -505,6 +501,30 @@ classdef (Abstract) AbstractStateSpace
           commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
         end
       end
+    end
+    
+  end
+  
+  methods (Static, Hidden)
+    function [accumIndex, calendar, horizon] = parseAccumulator(accumulator)
+      % Validate input
+      if all(ismember(fieldnames(accumulator), {'xi', 'psi', 'Horizon'}))
+        accum.index = accumulator.xi;
+        accum.calendar = accumulator.psi;
+        accum.horizon = accumulator.Horizon;
+        accumulator = accum;
+      end
+      if islogical(accumulator.index)
+        accumulator.index = find(accumulator.index);
+      end
+      assert(all(ismember(fieldnames(accumulator), {'index', 'calendar', 'horizon'})), ...
+        'accumulator must be a structure with fields index, calendar, and horizon');
+      assert(length(accumulator.index) == size(accumulator.calendar, 1));
+      assert(length(accumulator.index) == size(accumulator.horizon, 1));
+      
+      accumIndex = accumulator.index;
+      calendar = accumulator.calendar;
+      horizon = accumulator.horizon;
     end
     
   end

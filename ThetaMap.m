@@ -204,7 +204,7 @@ classdef ThetaMap
         indexCounter = indexCounter + nRequiredTheta;
       end
       
-      index = StateSpace(paramEstimIndexes{1:7}, []);
+      index = StateSpace(paramEstimIndexes{1:7});
       index = index.setInitial(paramEstimIndexes{8}, paramEstimIndexes{9});
       index.usingDefaulta0 = ss.usingDefaulta0;
       index.usingDefaultP0 = ss.usingDefaultP0;
@@ -224,7 +224,7 @@ classdef ThetaMap
         paramTransIndexes{iP} = transformationIndexes;
       end
       
-      transformationIndex = StateSpace(paramTransIndexes{1:7}, []);
+      transformationIndex = StateSpace(paramTransIndexes{1:7});
       transformationIndex = transformationIndex.setInitial(paramTransIndexes{8}, paramTransIndexes{9});
       transformationIndex.usingDefaulta0 = ss.usingDefaulta0;
       transformationIndex.usingDefaultP0 = ss.usingDefaultP0;
@@ -262,7 +262,7 @@ classdef ThetaMap
       end
       
       % Create StateSpace
-      ss = StateSpace(knownParams{1:7}, []);
+      ss = StateSpace(knownParams{1:7});
       ss = ss.setInitial(knownParams{8}, knownParams{9});
     end
     

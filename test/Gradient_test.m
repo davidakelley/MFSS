@@ -19,16 +19,15 @@ classdef gradient_test < matlab.unittest.TestCase
   
   methods(TestClassSetup)
     function setupOnce(testCase)
-      [data, ~, dims] = loadFactorModel();
-      addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
-
-      % Subset the model to make it more managable:
-      dims.nSeries = 92;
+      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
+        struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
       
-      y = data.indicators(:, 1:dims.nSeries)';
+      testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
+      y = testCase.bbk.data.indicators';
       y(:, any(isnan(y), 1)) = [];
+      testCase.bbk.y = y;
       
-      testCase.bbk = struct('data', data, 'dims', dims, 'y', y);
+      addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
     end
   end
   
@@ -151,7 +150,7 @@ classdef gradient_test < matlab.unittest.TestCase
       R = [eye(rnfacs); zeros(rnfacs * (nlags-1), rnfacs)];
       Q = nan(rnfacs);
       
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, []);
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
           
       % Initial values
       [Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y', 'NumComponents', rnfacs);
@@ -170,7 +169,7 @@ classdef gradient_test < matlab.unittest.TestCase
       T(1:rnfacs, :) = yTx / xTx;
       Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y, 1);
       
-      ss0 = StateSpace(Z, d, H, T, c, R, Q, []);
+      ss0 = StateSpace(Z, d, H, T, c, R, Q);
       
       % Set up 
       ss0 = ss0.checkSample(testCase.bbk.y);

@@ -90,11 +90,11 @@ classdef StateSpace < AbstractStateSpace
   
   methods
     %% Constructor
-    function obj = StateSpace(Z, d, H, T, c, R, Q, accumulator)
+    function obj = StateSpace(Z, d, H, T, c, R, Q)
       % StateSpace constructor
       % Pass state parameters to construct new object (or pass a structure
       % containing the neccessary parameters)
-      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q, accumulator);
+      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
       
       obj.validateKFilter();
       
@@ -557,9 +557,22 @@ classdef StateSpace < AbstractStateSpace
         if obj.usingDefaultP0
           tempR = obj.R(:, :, obj.tau.R(1));
           tempQ = obj.Q(:, :, obj.tau.Q(1));
-          obj.P0 = reshape((eye(obj.m^2) - kron(tempT, tempT)) \ ...
-            reshape(tempR * tempQ * tempR', [], 1), ...
-            obj.m, obj.m);
+          try
+            obj.P0 = reshape((eye(obj.m^2) - kron(tempT, tempT)) \ ...
+              reshape(tempR * tempQ * tempR', [], 1), ...
+              obj.m, obj.m);
+          catch ex
+            % If the state is large, try making it sparse
+            if strcmpi(ex.identifier, 'MATLAB:array:SizeLimitExceeded')
+              tempT = sparse(tempT);
+              obj.P0 = full(reshape((speye(obj.m^2) - kron(tempT, tempT)) \ ...
+                reshape(tempR * tempQ * tempR', [], 1), ...
+                obj.m, obj.m));
+            else
+              rethrow(ex);
+            end
+          end
+            
         end
       else
         % Nonstationary case: use large kappa diffuse initialization

@@ -27,7 +27,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % ML-estimation tolerances
     tol = 1e-10;      % Final estimation tolerance
-    stepTol = 1e-12;  % Step-size tolerance for ML theta elements
+    stepTol = 1e-11;  % Step-size tolerance for ML theta elements
     iterTol = 1e-6;   % EM tolerance
     
     % ML Estimation parameters
@@ -37,8 +37,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   methods
     %% Constructor
-    function obj = StateSpaceEstimation(Z, d, H, T, c, R, Q, accumulator, varargin)
-      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q, accumulator);
+    function obj = StateSpaceEstimation(Z, d, H, T, c, R, Q, varargin)
+      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
       
       inP = inputParser;
       inP.addParameter('a0', [], @isnumeric);
