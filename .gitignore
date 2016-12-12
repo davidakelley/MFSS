@@ -5,22 +5,6 @@
 # OSX / *nix default autosave extension
 *.m~
 
-# Compiled MEX binaries (all platforms)
-*.mex*
-
-## Ignore output directories
-Archived Forecasts/
-Submitted Forecasts/
-papers/
-model_runs/
-text/
-/realtime/
-data/realtime_datasets
-
-## Ignore temp data files
-test/data/*.mat
-test/data/*.dat
-
 ## LaTeX files
 *.aux
 *.log
