@@ -15,10 +15,10 @@ classdef accumulator_test < matlab.unittest.TestCase
       baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
+      addpath(fullfile(baseDir, 'examples'));
 
       testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
       testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
-
     end
   end
   

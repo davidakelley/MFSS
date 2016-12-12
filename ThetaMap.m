@@ -329,7 +329,14 @@ classdef ThetaMap
         end
         
         G.(iName) = paramGrad;
-      end   
+      end  
+      
+      if obj.usingDefaulta0
+        G.a0 = [];
+      end
+      if obj.usingDefaultP0
+        G.P0 = [];
+      end
     end
     
     function [Ga0, GP0] = initialValuesGradients(obj, ss, G)
@@ -366,7 +373,9 @@ classdef ThetaMap
       end
       
       % Ga0
-      if obj.usingDefaulta0 && ~stationaryStateFlag
+      if ~obj.usingDefaulta0
+        Ga0 = [];
+      elseif obj.usingDefaulta0 && ~stationaryStateFlag
         % Diffuse case - a0 is always the zero vector and so will not change
         % with any of the theta parameters
         Ga0 = zeros(obj.nTheta, obj.m);
@@ -380,7 +389,9 @@ classdef ThetaMap
       end
       
       % GP0
-      if obj.usingDefaultP0 && ~stationaryStateFlag
+      if ~obj.usingDefaultP0 
+        GP0 = [];
+      elseif obj.usingDefaultP0 && ~stationaryStateFlag
         % Diffuse case - P0 is always a large diagonal matrix that doesn't
         % change with parameter values so its gradient is all zeros
         GP0 = zeros(obj.nTheta, obj.m^2);

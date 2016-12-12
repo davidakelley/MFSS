@@ -22,6 +22,7 @@ classdef gradient_test < matlab.unittest.TestCase
       baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
+      addpath(fullfile(baseDir, 'examples'));
       
       testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
       y = testCase.bbk.data.indicators';
@@ -49,9 +50,9 @@ classdef gradient_test < matlab.unittest.TestCase
       tic;
       numeric = numericGradient(ss, tm, y, testCase.delta);
       time_n = toc;
-      fprintf(['\nModel: %d series, %d states, t = %d\n' ...
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
-        p, m, timeDim, 100*(time_a/time_n));
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
     end
@@ -72,9 +73,10 @@ classdef gradient_test < matlab.unittest.TestCase
       numeric = numericGradient(ss, tm, y, testCase.delta);
       time_n = toc;
       
-      fprintf(['\nModel: %d series, %d states, t = %d\n' ...
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
-        p, m, timeDim, 100*(time_a/time_n));
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
+      
       testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
     end
     
@@ -96,10 +98,10 @@ classdef gradient_test < matlab.unittest.TestCase
       tic;
       numeric = numericGradient(ss, tm, y, testCase.delta);
       time_n = toc;
-      
-      fprintf(['\nModel: %d series, %d states, t = %d\n' ...
+
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
-        p, m, timeDim, 100*(time_a/time_n));
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
     end
     
@@ -126,9 +128,9 @@ classdef gradient_test < matlab.unittest.TestCase
       numeric = numericGradient(ss, tm, y, testCase.delta);
       time_n = toc;
       
-      fprintf(['\nModel: %d series, %d states, t = %d\n' ...
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
-        p, m, timeDim, 100*(time_a/time_n));
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
     end
     
@@ -184,9 +186,9 @@ classdef gradient_test < matlab.unittest.TestCase
       numeric = numericGradient(ss0, tm, testCase.bbk.y, testCase.delta);
       time_n = toc;
 
-      fprintf(['\nModel: %d series, %d states, t = %d (diagonal H)\n' ...
+      fprintf(['\nModel: %d series, %d states, t = %d (diagonal H), nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
-        nSeries, rnfacs, length(testCase.bbk.y), 100*(time_a/time_n));
+        nSeries, rnfacs, length(testCase.bbk.y), tm.nTheta, 100*(time_a/time_n));
       testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
     end
   end

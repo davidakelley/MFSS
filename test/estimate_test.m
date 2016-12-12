@@ -18,7 +18,8 @@ classdef estimate_test < matlab.unittest.TestCase
       baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
-      
+      addpath(fullfile(baseDir, 'examples'));
+
       testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
       y = testCase.bbk.data.indicators';
       y(:, any(isnan(y), 1)) = [];
