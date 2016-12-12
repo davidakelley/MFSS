@@ -3,13 +3,13 @@ function make
 
 % David Kelley, 2016
 
-fprintf('\nBuilding .mex files for StateSpace.\n');
+fprintf('\nBuilding .mex files for MFSS.\n');
 
 clear mex; %#ok<CLMEX>
 
 % Get folders
-baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
-  struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
+baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
+  struct('type', '{}', 'subs', {{1}})) 'MFSS'];
 outputFolder = fullfile(baseDir, '+ss_mex');
 if ~exist(outputFolder, 'dir')
   mkdir(outputFolder);
@@ -30,8 +30,8 @@ mex(flags{:}, fullfile(srcFolder, 'ksmoother_multi.cpp'), blaslib, lapacklib);
 fprintf('\n');
 
 % Test
-results_uni = runtests(fullfile(baseDir, 'test', 'mex_univarite_test.m'));
-results_multi = runtests(fullfile(baseDir, 'test', 'mex_multivarite_test.m'));
+results_uni = runtests(fullfile(baseDir, 'test', 'mex_univariate_test.m'));
+results_multi = runtests(fullfile(baseDir, 'test', 'mex_multivariate_test.m'));
 
 % Report
 if all(~[results_uni.Failed]) && all(~[results_multi.Failed])

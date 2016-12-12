@@ -14,7 +14,9 @@ classdef mex_univariate_test < matlab.unittest.TestCase
   
   methods(TestClassSetup)
     function setupOnce(testCase)
-      addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
+      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
+        struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+      addpath(baseDir);
 
       % Set up test
       testCase.ss = generateARmodel(10, 2, true);

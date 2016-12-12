@@ -463,9 +463,8 @@ classdef StateSpace < AbstractStateSpace
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
       
-      G = tm.parameterGradients(theta);   % Do I need the theta?
-      G.a = G.a0; G = rmfield(G, 'a0');
-      G.P = G.P0; G = rmfield(G, 'P0');
+      G = tm.parameterGradients(theta);
+      [G.a, G.P] = tm.initialValuesGradients(theta, G);
       
       commutation = obj.genCommutation(obj.m);
       Nm = (eye(obj.m^2) + commutation);

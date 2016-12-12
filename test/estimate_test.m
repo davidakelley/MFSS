@@ -15,8 +15,10 @@ classdef estimate_test < matlab.unittest.TestCase
   methods(TestClassSetup)
     function setupOnce(testCase)
       % Load data
-      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
-        struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
+      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
+        struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+      addpath(baseDir);
+      
       testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
       y = testCase.bbk.data.indicators';
       y(:, any(isnan(y), 1)) = [];
@@ -26,8 +28,6 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.data.nile = data_dk.nile;
       
       testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
-
-      addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
     end
   end
   

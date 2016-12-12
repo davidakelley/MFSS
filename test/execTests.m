@@ -10,8 +10,8 @@ if nargin == 0
   tests = defaultTests;
 end
 
-baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
-  struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
+baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
+  struct('type', '{}', 'subs', {{1}})) 'MFSS'];
 addpath(baseDir);
 
 import matlab.unittest.TestSuite

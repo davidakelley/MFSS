@@ -12,13 +12,13 @@ classdef accumulator_test < matlab.unittest.TestCase
   methods(TestClassSetup)
     function setupOnce(testCase)
       % Factor model data
-      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'StateSpace'), ...
-        struct('type', '{}', 'subs', {{1}})) 'StateSpace'];
-      
+      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
+        struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+      addpath(baseDir);
+
       testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
       testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
 
-      addpath('C:\Users\g1dak02\Documents\MATLAB\StateSpace');
     end
   end
   
