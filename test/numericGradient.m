@@ -10,7 +10,8 @@ for iT = 1:tm.nTheta
   iTheta(iT) = iTheta(iT) + delta;
   
   ssTest = tm.theta2system(iTheta);
-  
+  ssTest = ssTest.checkSample(y);
+      
   [~, logl_delta] = ssTest.filter(y);
   numeric(iT) = (logl_delta - logl_fix) ./ delta;
 end

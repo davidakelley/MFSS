@@ -10,10 +10,6 @@
 classdef gradient_test < matlab.unittest.TestCase
   
   properties
-    delta = 1e-8;
-    abstol = 3e-3;
-    reltol = 1e-4;
-    
     bbk
   end
   
@@ -37,24 +33,45 @@ classdef gradient_test < matlab.unittest.TestCase
       ss = generateARmodel(p, m, false);
       y = generateData(ss, timeDim);
       
-      ss = ss.checkSample(y);
-      ss = ss.setDefaultInitial();
-      
-      ss.usingDefaulta0 = false;
-      ss.usingDefaultP0 = false;
       tm = ThetaMap.ThetaMapAll(ss);
       
       tic;
       [~, analytic] = ss.gradient(y, tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss, tm, y, testCase.delta);
+      numeric = numericGradient(ss, tm, y, 1e-8);
       time_n = toc;
       fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 1e-4);
+    end
+    
+    function testGeneratedLLMexplicitInitial(testCase)
+      p = 1; m = 2; timeDim = 500;
+      ss = generateARmodel(p, m, false);
+      y = generateData(ss, timeDim);
+      
+      ss = ss.checkSample(y);
+      ss = ss.setDefaultInitial();
+      ss.a0 = [y(1); 0; 0];
+      ss.usingDefaulta0 = false;
+      ss.usingDefaultP0 = false;
+      
+      tm = ThetaMap.ThetaMapAll(ss);
+      
+      tic;
+      [~, analytic] = ss.gradient(y, tm);
+      time_a = toc;
+      tic;
+      numeric = numericGradient(ss, tm, y, 1e-8);
+      time_n = toc;
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
+        'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
+      
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 4e-5, 'RelTol', 1e-5);
     end
     
     function testGeneratedSmallDefaultInitial(testCase)
@@ -63,24 +80,43 @@ classdef gradient_test < matlab.unittest.TestCase
       y = generateData(ss, timeDim);
       
       ss = ss.checkSample(y);
-
       tm = ThetaMap.ThetaMapAll(ss);
       
       tic;
       [~, analytic] = ss.gradient(y, tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss, tm, y, testCase.delta);
+      numeric = numericGradient(ss, tm, y, 1e-8);
       time_n = toc;
       
       fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 1e-4);
     end
     
     function testGeneratedMedium(testCase)
+      p = 4; m = 4; timeDim = 500;
+      ss = generateARmodel(p, m, false);
+      y = generateData(ss, timeDim);
+      
+      tm = ThetaMap.ThetaMapAll(ss);
+      
+      tic;
+      [~, analytic] = ss.gradient(y, tm);
+      time_a = toc;
+      tic;
+      numeric = numericGradient(ss, tm, y, 1e-8);
+      time_n = toc;
+
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
+        'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 1e-4);
+    end
+    
+    function testGeneratedMediumExplicitIntial(testCase)
       p = 4; m = 4; timeDim = 500;
       ss = generateARmodel(p, m, false);
       y = generateData(ss, timeDim);
@@ -96,28 +132,22 @@ classdef gradient_test < matlab.unittest.TestCase
       [~, analytic] = ss.gradient(y, tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss, tm, y, testCase.delta);
+      numeric = numericGradient(ss, tm, y, 1e-8);
       time_n = toc;
 
       fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 1e-4);
     end
     
     function testGeneratedMediumDiffuseInitial(testCase)
-      error('Not developed.');
-    end
-    
-    function testGeneratedLarge(testCase)
-      p = 20; m = 2; timeDim = 500;
-      ss = generateARmodel(p, m, false);
+      p = 4; m = 0; timeDim = 500;
+      ss = generateARmodel(p, m, true);
+      ss.T(1) = 1;
       y = generateData(ss, timeDim);
       
       ss = ss.checkSample(y);
-      ss = ss.setDefaultInitial();
-      ss.usingDefaulta0 = false;
-      ss.usingDefaultP0 = false;
       
       tm = ThetaMap.ThetaMapAll(ss);
       
@@ -125,13 +155,33 @@ classdef gradient_test < matlab.unittest.TestCase
       [~, analytic] = ss.gradient(y, tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss, tm, y, testCase.delta);
+      numeric = numericGradient(ss, tm, y, 1e-8);
+      time_n = toc;
+
+      fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
+        'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
+        p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 4e-4);
+    end
+    
+    function testGeneratedLarge(testCase)
+      p = 20; m = 2; timeDim = 500;
+      ss = generateARmodel(p, m, false);
+      y = generateData(ss, timeDim);
+      
+      tm = ThetaMap.ThetaMapAll(ss);
+      
+      tic;
+      [~, analytic] = ss.gradient(y, tm);
+      time_a = toc;
+      tic;
+      numeric = numericGradient(ss, tm, y, 1e-8);
       time_n = toc;
       
       fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 1e-4);
     end
     
     function testFactorModel(testCase)
@@ -152,6 +202,7 @@ classdef gradient_test < matlab.unittest.TestCase
       Q = nan(rnfacs);
       
       ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      tm = ThetaMap.ThetaMapEstimation(ss);
           
       % Initial values
       [Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y', 'NumComponents', rnfacs);
@@ -169,27 +220,22 @@ classdef gradient_test < matlab.unittest.TestCase
       
       T(1:rnfacs, :) = yTx / xTx;
       Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y, 1);
-      
+
+      % Set up initial values
       ss0 = StateSpace(Z, d, H, T, c, R, Q);
-      
-      % Set up 
-      ss0 = ss0.checkSample(testCase.bbk.y);
-      ss0 = ss0.setDefaultInitial();
-      
-      tm = ThetaMap.ThetaMapEstimation(ss);
       
       % Test
       tic;
       [~, analytic] = ss0.gradient(testCase.bbk.y, tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss0, tm, testCase.bbk.y, testCase.delta);
+      numeric = numericGradient(ss0, tm, testCase.bbk.y, 1e-8);
       time_n = toc;
 
       fprintf(['\nModel: %d series, %d states, t = %d (diagonal H), nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         nSeries, rnfacs, length(testCase.bbk.y), tm.nTheta, 100*(time_a/time_n));
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', testCase.abstol, 'RelTol', testCase.reltol);
+      testCase.verifyEqual(analytic, numeric, 'AbsTol', 4e-3, 'RelTol', 1e-3);
     end
   end
 

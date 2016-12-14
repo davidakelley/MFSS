@@ -44,6 +44,8 @@ classdef ThetaMap
   %     - We can go system -> theta -> system and get the same thing both when
   %       a0 and P0 are defined and when they're not.
   %     - Check a generated system obeys bounds. 
+  %     - Creating a system with accumulators is the same as generating a system
+  %       without accumulators and adding the accumulators in afterward. 
   %     - checkThetaMap purpose: Can we eliminate an element from the map and
   %       get a reduced size theta?
   %   - Move initialValuesGradients to StateSpace?
@@ -385,7 +387,7 @@ classdef ThetaMap
         IminusTPrimeInv = inv((eye(obj.m) - T1)');
         Ga0 = G.T * kron(IminusTinv, IminusTPrimeInv) * ...
           kron(ss.c(:,:,1), eye(obj.m)) + ...
-          G.c * IminusTinv;
+          G.c / (eye(obj.m) - T1);
       end
       
       % GP0

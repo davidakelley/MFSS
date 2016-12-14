@@ -57,7 +57,8 @@ classdef StateSpace < AbstractStateSpace
   %   - Add filter/smoother weight decompositions
   
   properties
-    filterUni         % Use univarite filter if appropriate (H is diagonal)
+    % Use univarite filter if appropriate (H is diagonal)
+    filterUni
   end
   
   methods (Static)
