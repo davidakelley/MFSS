@@ -50,7 +50,7 @@ classdef StateSpace < AbstractStateSpace
   
   % David Kelley, 2016
   %
-  % TODO (12/9/16)
+  % TODO (12/11/16)
   % ---------------
   %   - TVP in gradient function 
   %   - mex version of the gradient function (?)
@@ -192,7 +192,7 @@ classdef StateSpace < AbstractStateSpace
     end
   end
   
-  methods(Hidden)
+  methods (Hidden)
     %% Filter/smoother Helper Methods
     function obj = checkSample(obj, y)
       assert(size(y, 1) == obj.p, ...

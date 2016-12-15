@@ -1,4 +1,4 @@
-classdef ThetaMap
+classdef ThetaMap < AbstractSystem
   % ThetaMap - Mapping from a vector of parameters to a StateSpace 
   %
   % A vector theta will be used to construct a StateSpace. Each non-fixed scalar
@@ -39,7 +39,7 @@ classdef ThetaMap
   %
   % TODO (12/12/2016)
   % ---------------
-  %   - Write checkThetaMap 
+  %   - Write checkThetaMap or write setters for most properties
   %   - Write a test class specifically for ThetaMap. It should verify: 
   %     - We can go system -> theta -> system and get the same thing both when
   %       a0 and P0 are defined and when they're not.
@@ -53,7 +53,7 @@ classdef ThetaMap
   %     to find the numeric inverse. 
   %   - Write documentation on initial values derivation
   
-  properties(SetAccess = protected)
+  properties (SetAccess = protected)
     % Number of elements in theta vector
     nTheta            
 
@@ -77,14 +77,7 @@ classdef ThetaMap
     UpperBound
   end
   
-  properties(SetAccess = protected, Hidden)
-    % Dimensions
-    p                 % Number of observed series
-    m                 % Number of states
-    g                 % Number of shocks
-    n                 % Time periods
-
-    timeInvariant     % Indicator for TVP models
+  properties (SetAccess = protected, Hidden)
     usingDefaulta0
     usingDefaultP0
   end
@@ -150,7 +143,7 @@ classdef ThetaMap
     end
   end
   
-  methods(Static)
+  methods (Static)
     %% Alternate constructors
     function tm = ThetaMapEstimation(ss)
       % Generate a ThetaMap where all parameters values to be estimated are
@@ -399,7 +392,7 @@ classdef ThetaMap
         GP0 = zeros(obj.nTheta, obj.m^2);
       else
         % See documentation for calculation of the initial conditions gradients
-        Nm = (eye(obj.m^2) + AbstractStateSpace.genCommutation(obj.m));
+        Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
         vec = @(M) reshape(M, [], 1);
         
         rawGTkronT = ThetaMap.GAkronA(T1);
@@ -491,7 +484,7 @@ classdef ThetaMap
     end
   end
   
-  methods(Static, Hidden)
+  methods (Static, Hidden)
     %% Alternate constructor helper functions
     function index = IndexStateSpace(ss)
       % Set up index StateSpace for default case where all unknown elements of 
@@ -562,7 +555,7 @@ classdef ThetaMap
     end
   end
   
-  methods(Static, Hidden)
+  methods (Static, Hidden)
     %% Helper functions
     function [trans, deriv, inver] = boundedTransform(lowerBound, upperBound)
       % Generate a restriction transformation from a lower and upper bound
