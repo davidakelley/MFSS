@@ -60,8 +60,8 @@ classdef accumulator_test < matlab.unittest.TestCase
       Y(aggSeries, 3:3:end) = aggY;
       
       accum = Accumulator(aggSeries, ...
-        repmat([1 2 3]', [(timeDim+1)/3, sum(aggSeries)])', ...
-        repmat(3, [timeDim+1, sum(aggSeries)])');
+        repmat([1 2 3]', [(timeDim+1)/3, sum(aggSeries)]), ...
+        repmat(3, [timeDim+1, sum(aggSeries)]));
       
       ss = StateSpace(ssGen.Z, ssGen.d, ssGen.H, ...
         ssGen.T, ssGen.c, ssGen.R, ssGen.Q);
@@ -72,6 +72,39 @@ classdef accumulator_test < matlab.unittest.TestCase
       
       testCase.verifyGreaterThan(corr(alpha(1,:)', latentAlpha(1,:)'), 0.96);
 %       testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.75, 'RelTol', 0.5);
+    end
+    
+    function testSumAccumutlatorMultiple(testCase)
+      p = 3; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      latentY = generateData(ssGen, timeDim);
+      
+      timeGroupsQtr = sort(repmat((1:ceil(timeDim/3))', [3 1]));
+      timeGroupsQtr(end, :) = [];
+      
+      timeGroupsYr= sort(repmat((1:ceil(timeDim/12))', [12 1]));
+      timeGroupsYr(end, :) = [];
+
+      aggSeriesQtr = logical([0 1 0]);
+      aggY = grpstats(latentY(aggSeriesQtr, :)', timeGroupsQtr, 'mean')' .* 3;
+      aggY(:, end) = [];
+      Y = latentY;
+      Y(aggSeriesQtr, :) = nan;
+      Y(aggSeriesQtr, 3:3:end) = aggY;
+      
+      aggSeriesYr = logical([0 0 1]);
+      aggY = grpstats(latentY(aggSeriesYr, :)', timeGroupsYr, 'mean')' .* 12;
+      aggY(:, end) = [];
+      Y(aggSeriesYr, :) = nan;
+      Y(aggSeriesYr, 12:12:end) = aggY;
+      
+      accum = Accumulator.GenerateRegular(Y', {'', 'sum', 'sum'}, [1 3 12]);
+      
+      ss = StateSpace(ssGen.Z, ssGen.d, ssGen.H, ...
+        ssGen.T, ssGen.c, ssGen.R, ssGen.Q);
+      ssA = accum.augmentStateSpace(ss);
+      
     end
     
     function testDetroit(testCase)

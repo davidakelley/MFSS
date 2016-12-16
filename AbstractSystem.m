@@ -4,7 +4,7 @@ classdef (Abstract) AbstractSystem
   
   % David Kelley, 2016
   
-  properties (Hidden)
+  properties (SetAccess = protected, Hidden)
     % Number of observed series
     p
     % Number of states
@@ -18,7 +18,7 @@ classdef (Abstract) AbstractSystem
     timeInvariant
   end
 
-  methods
+  methods (Hidden)
     function returnFlag = checkConformingSystem(obj, sys)
       % Check if the dimensions of a system match the current object
       assert(isa(sys, 'AbstractSystem'));
@@ -32,16 +32,11 @@ classdef (Abstract) AbstractSystem
         assert(obj.n == obj.n, 'Time dimension mismatch (n).');
       end
       
-      assert(obj.usingDefaulta0 == sys.usingDefaulta0, ...
-        'Mismatch in handling of a0.');
-      assert(obj.usingDefaultP0 == sys.usingDefaultP0, ...
-        'Mismatch in handling of P0.');
-      
       returnFlag = true;
     end
   end
   
-    methods (Static)
+  methods (Static)
     %% General utility functions
     function sOut = compileStruct(varargin)
       % Combines variables passed as arguments into a struct
