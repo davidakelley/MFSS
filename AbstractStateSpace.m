@@ -1,4 +1,4 @@
-classdef (Abstract) AbstractStateSpace
+classdef (Abstract) AbstractStateSpace < AbstractSystem
   % Abstract state space for accumulators and utilities 
   % Provides the structural parts of the parameter manipulation and some
   % utility functions.
@@ -10,9 +10,6 @@ classdef (Abstract) AbstractStateSpace
   % 
   % TODO (12/9/16)
   % ---------------
-  %   - Accumulator funcion handles
-  %   - Create utiltiy methods for standard accumulator creation (descriptive
-  %     specification as opposed to explicitly stating phi/Horizon values).
   %   - Which tau should be used for a0 and P0?
   
   properties
@@ -29,17 +26,10 @@ classdef (Abstract) AbstractStateSpace
     usingDefaultP0 = true;
   end
   
-  properties(SetAccess = protected, Hidden)
-    % Dimensions
-    p                 % Number of observed series
-    m                 % Number of states
-    g                 % Number of shocks
-    n                 % Time periods
-    
-    % General options
+  properties (SetAccess = protected, Hidden)
+    % Lists of variables used across methods
     systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'};
     symmetricParams = {'H', 'Q', 'P0', 'P'};
-    timeInvariant     % Indicator for TVP models
   end
   
   methods
@@ -107,27 +97,6 @@ classdef (Abstract) AbstractStateSpace
       vec = vertcat(vectors{:});
     end
 
-    function returnFlag = checkConformingSystem(obj, ss)
-      % Check if the dimensions of a state space match the current object
-      
-      assert(isa(ss, 'AbstractStateSpace') || isa(ss, 'ThetaMap'));
-      assert(obj.p == ss.p, 'Observation dimension mismatch (p).');
-      assert(obj.m == ss.m, 'State dimension mismatch (m).');
-      assert(obj.g == ss.g, 'Shock dimension mismatch (g).');
-      assert(obj.timeInvariant == ss.timeInvariant, ...
-        'Mismatch in time varrying parameters.');
-      if ~obj.timeInvariant
-        assert(obj.n == obj.n, 'Time dimension mismatch (n).');
-      end
-      
-      assert(obj.usingDefaulta0 == ss.usingDefaulta0, ...
-        'Mismatch in handling of a0.');
-      assert(obj.usingDefaultP0 == ss.usingDefaultP0, ...
-        'Mismatch in handling of P0.');
-      
-      returnFlag = true;
-    end
-    
     function setSS = setAllParameters(obj, value)
       % Set all parameter values equal to the scalar provided
       setSS = obj;
@@ -135,6 +104,33 @@ classdef (Abstract) AbstractStateSpace
         setSS.(setSS.systemParam{iP})(:) = value;
       end
     end
+    
+    function [nLags, positions] = LagsInState(obj, varPos)
+      % Finds the lags of a variable in the state space
+      % Input:
+      %   varPos    - linear index of vector position of variable of interest
+      % Output:
+      %   nLags     - number of lags in the state of variable of interest
+      %   positions - linear index position of the lags
+      %
+      % Criteria for determining if a candidate variable is a "lag variable":
+      %   - The variable of interest loads on to the candidate with a 1.
+      %   - All other variables have a loading on the candidate of 0.
+      %   - No shocks are selected for the candidate in R.
+      
+      criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
+        all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
+        all(obj.R(:, :, obj.tau.R(1)) == 0, 2)], 2);
+      
+      nLags = 0;
+      positions = [];
+      while any(criteriaFn(varPos))
+        nLags = nLags + 1;
+        varPos = find(criteriaFn(varPos));
+        positions = [positions; varPos]; %#ok<AGROW>
+      end
+    end
+    
   end
   
   methods (Hidden = true)
@@ -182,7 +178,7 @@ classdef (Abstract) AbstractStateSpace
       end
       
       % T system matrix
-      if isstruct(obj.T)
+      if isstruct(parameters.T)
         obj = obj.setTimeVarrying(length(parameters.T.tauT) - 1);
         obj.tau.T = parameters.T.tauT;
         obj.T = parameters.T.Tt;
@@ -247,294 +243,14 @@ classdef (Abstract) AbstractStateSpace
     
     function obj = setInvariantTau(obj)
       % Set the tau structure for TVP.
-      % FIXME: obj.tau shouldn't be set if it's already defined
       taus = [repmat({ones([1 obj.n])}, [3 1]); ...
         repmat({ones([1 obj.n+1])}, [4 1])];
-      obj.tau = cell2struct(taus, obj.systemParam(1:7));
-    end
-    
-    %% Accumulator helper methods
-    function obj = addAccumulators(obj, accumulator)
-      % Augment system parameters with Harvey accumulators
-      %
-      % Augment Standard State Space with Harvey Accumulator
-      % $\xi$  - $\xi_{h}$ indice vector of each series accumulated
-      % $A$    - selection matrix
-      % $\psi$ - full history of accumulator indicator (for each series)
-      % $\tau$ - number of unique accumulator types
-      %        - Two Cases:'flow'    = 1 Standard Flow variable;
-      %                    'average' = 0 Time-averaged stock variable
       
-      % Based on work by Andrew Butters, 2013
-      
-      if isempty(accumulator)
+      % FIXME: obj.tau shouldn't be set if it's already defined
+      if ~isempty(obj.tau)
         return
       end
-      [accumIndex, calendar, horizon] = obj.parseAccumulator(accumulator);
-      
-      % Set tau
-      if isempty(obj.tau)
-        obj.n = size(calendar, 2) - 1;
-        obj = obj.setInvariantTau();
-      end
-      
-      % There are 2 accumulator "types": sum and average. A sum accumulator is
-      % type == 0, an average accumulator is type == 1 (for both simple and 
-      % triangle averages).      
-      accumulatorTypes = any(calendar == 0, 2);
-      [accumObsDim, accumStateDim] = find(any(obj.Z(accumIndex,:,:) ~= 0, 3));
-      states = unique(accumStateDim);
-
-      [AddLags, ColAdd, RowPos, mNew] = ...
-        obj.accumAugmentedStateDims(horizon, accumObsDim, accumStateDim);
-      
-      if sum(AddLags) ~= 0
-        obj.m = mNew;
-      end
-      
-      % Indentify unique elements of the state that need accumulation
-      possibleRows = [accumStateDim ...
-                      accumulatorTypes(accumObsDim) ...
-                      horizon(accumObsDim, :) ...
-                      calendar(accumObsDim, :)];
-      [APsi, ~, uniqueRows] = unique(possibleRows, 'rows');
-       
-      nTau  = size(APsi, 1);
-      st = APsi(:, 1);
-      accumulatorTypes = APsi(:, 2);
-      Hor = APsi(:, 3:size(horizon,2) + 2);
-      Psi = APsi(:, size(horizon,2) + 3:end);
-      
-      mOld = obj.m;
-      obj.m = obj.m + nTau;
-      
-      % Construct new T matrix
-      if sum(AddLags) == 0
-        newT0 = obj.T;
-      else
-        newT0 = zeros(obj.m + sum(AddLags), obj.m + sum(AddLags), obj.n);
-        newT0(1:obj.m, 1:obj.m,:) = Tt;
-        newT0(sub2ind(size(newT0), (obj.m + 1:mNew)', reshape(ColAdd(ColAdd>0),[],1))) = 1;
-      end
-      Ttypes   = [obj.tau.T' Psi' Hor'];
-      [uniqueTs,~, newtauT] = unique(Ttypes,'rows');
-      NumT = size(uniqueTs, 1);
-      newT = zeros(obj.m, obj.m, NumT);
-      for jj = 1:NumT
-        newT(1:mOld, :, jj) = [newT0(:,:,uniqueTs(jj,1)) zeros(mOld, nTau)];
-        for h = 1:nTau
-          if accumulatorTypes(h) == 1
-            newT(mOld + h, [1:mOld mOld + h],jj) = ...
-              [newT0(APsi(h,1),:,uniqueTs(jj,1)) uniqueTs(jj,1+h)];
-          else
-            newT(mOld+h, [1:mOld mOld+h],jj) =...
-              [(1/uniqueTs(jj,1+h)) * newT0(APsi(h,1),:,uniqueTs(jj,1))...
-              (uniqueTs(jj,1+h)-1)/uniqueTs(jj,1+h)];
-            if uniqueTs(jj, nTau+1+h) > 1
-              cols = RowPos(st(h)==states, 1:uniqueTs(jj,nTau+1+h)-1);
-              newT(mOld+h, cols, jj) = newT(mOld+h,cols,jj) + (1/uniqueTs(jj,1+h));
-            end
-          end
-        end
-      end
-      obj.T = newT;
-      obj.tau.T = newtauT;
-      
-      % Construct new c vector
-      if sum(AddLags)==0
-        newc0 = obj.c;
-      else
-        newc0 = zeros(obj.m + sum(AddLags), obj.n);
-        newc0(1:obj.m,:) = ct;
-      end
-      ctypes   = [obj.tau.c' Psi'];
-      [uniquecs, ~, newtauc] = unique(ctypes,'rows');
-      Numc = size(uniquecs, 1);
-      newc = zeros(obj.m, Numc);
-      for jj = 1:Numc
-        newc(1:mOld, jj) = newc0(:, uniquecs(jj,1));
-        for h = 1:nTau
-          if accumulatorTypes(h) == 1
-            newc(mOld+h, jj) = newc0(APsi(h,1), uniquecs(jj,1));
-          else
-            newc(mOld+h, jj) = (1/uniquecs(jj,1+h)) * newc0(APsi(h,1), uniquecs(jj,1));
-          end
-        end
-      end
-      obj.c = newc;
-      obj.tau.c = newtauc;
-      
-      % Construct new R matrix
-      if sum(AddLags)==0
-        newR0 = obj.R;
-      else
-        newR0 = zeros(obj.m + sum(AddLags), obj.g, obj.n);
-        newR0(1:obj.m, :, :) = Rt;
-      end
-      Rtypes   = [obj.tau.R' Psi'];
-      [uniqueRs, ~, newtauR] = unique(Rtypes,'rows');
-      NumR = size(uniqueRs, 1);
-      newR = zeros(obj.m, obj.g, NumR);
-      for jj = 1:NumR
-        newR(1:mOld,1:obj.g,jj) = newR0(:, :, uniqueRs(jj,1));
-        for h = 1:nTau
-          if accumulatorTypes(h) == 1
-            newR(mOld+h,:,jj) = newR0(APsi(h,1), :, uniqueRs(jj,1));
-          else
-            newR(mOld+h,:,jj) = (1/uniqueRs(jj, 1+h))*...
-              newR0(APsi(h,1), :, uniqueRs(jj,1));
-          end
-        end
-      end
-      obj.R = newR;
-      obj.tau.R = newtauR;
-      
-      % Construct new Z matrix
-      nonZeroZpos = zeros(length(accumIndex), obj.m);
-      nonZeroZpos(sub2ind([length(accumIndex) obj.m], accumObsDim, accumStateDim)) = uniqueRows;
-      
-      if sum(AddLags) == 0
-        newZ0 = obj.Z;
-      else
-        newZ0 = zeros(obj.p, obj.m + sum(AddLags), obj.n);
-        newZ0(:, 1:obj.m,:) = obj.Z;
-      end
-      newZ = zeros(obj.p, obj.m, size(obj.Z,3));
-      for jj = 1:size(obj.Z, 3)
-        newZ(:,1:mOld,jj) = newZ0(:,:,jj);
-        newZ(accumIndex,:,jj) = zeros(length(accumIndex), obj.m);
-        for h = 1:length(accumIndex)
-          cols = find(newZ0(accumIndex(h),:,jj));
-          newZ(accumIndex(h), mOld + nonZeroZpos(h,cols),jj) = newZ0(accumIndex(h),cols,jj);
-        end
-      end
-      obj.Z = newZ;
+      obj.tau = cell2struct(taus, obj.systemParam(1:7));
     end
-    
-    function [AddLags, ColAdd, RowPos, mNew] = ...
-        accumAugmentedStateDims(obj, horizon, accumObs, accumStates)
-      % Checking we have the correct number of lags of the states that need
-      % accumulation to be compatible with Horizon
-      
-      states = unique(accumStates);
-      maxHor = max(horizon, [], 2);
-      
-      AddLags = zeros(length(states), 1);
-      ColAdd  = zeros(length(states), max(maxHor));
-      RowPos  = zeros(length(states), max(maxHor));
-      mNew = obj.m;
-      for jj=1:length(states)
-        mHor = max(maxHor(accumObs(states(jj) == accumStates)));
-        [numlagsjj,lagposjj] = obj.LagsInState(states(jj));
-        
-        AddLags(jj) = max(mHor-1-numlagsjj-1,0);
-        RowPos(jj,1:numlagsjj+1) = [states(jj) lagposjj'];
-        if AddLags(jj) > 0
-          ColAdd(jj,numlagsjj+2) = lagposjj(end);
-          if AddLags(jj)>1
-            ColAdd(jj,numlagsjj+3:numlagsjj+1+AddLags(jj)) = mNew:mNew+AddLags(jj)-1;
-          end
-        end
-        RowPos(jj,numlagsjj+2:numlagsjj+1+AddLags(jj)) = mNew+1:mNew+AddLags(jj);
-        mNew = mNew+AddLags(jj);
-      end
-    end
-    
-    function [nLags, positions] = LagsInState(obj, varPos)
-      % Finds the lags of a variable in the state space
-      % Input:
-      %   varPos    - linear index of vector position of variable of interest
-      % Output:
-      %   nLags     - number of lags in the state of variable of interest
-      %   positions - linear index position of the lags
-      %
-      % Criteria for determining if a candidate variable is a "lag variable":
-      %   - The variable of interest loads on to the candidate with a 1.
-      %   - All other variables have a loading on the candidate of 0.
-      %   - No shocks are selected for the candidate in R.
-      
-      criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
-        all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
-        all(obj.R(:, :, obj.tau.R(1)) == 0, 2)], 2);
-      
-      nLags = 0;
-      positions = [];
-      while any(criteriaFn(varPos))
-        nLags = nLags + 1;
-        varPos = find(criteriaFn(varPos));
-        positions = [positions; varPos]; %#ok<AGROW>
-      end
-    end
-  end
-  
-  methods (Static)
-    %% General utility functions
-    function sOut = compileStruct(varargin)
-      % Combines variables passed as arguments into a struct
-      % struct = compileStruct(a, b, c) will place the variables a, b, & c
-      % in the output variable using the variable names as the field names.
-      sOut = struct;
-      for iV = 1:nargin
-        sOut.(inputname(iV)) = varargin{iV};
-      end
-    end
-    
-    function [Finv, logDetF] = pseudoinv(F, tol)
-      tempF = 0.5 * (F + F');
-      
-      [PSVD, DSDV, PSVDinv] = svd(tempF);
-      
-      % Truncate small singular values
-      firstZero = find(diag(DSDV) < tol, 1, 'first');
-      
-      if ~isempty(firstZero)
-        PSVD = PSVD(:, 1:firstZero - 1);
-        PSVDinv = PSVDinv(:, 1:firstZero - 1);
-        DSDV = DSDV(1:firstZero - 1, 1:firstZero - 1);
-      end
-      
-      Finv = PSVD * (DSDV\eye(length(DSDV))) * PSVDinv';
-      logDetF = sum(log(diag(DSDV)));
-    end
-    
-    function commutation = genCommutation(m)
-      % Generate commutation matrix
-      % A commutation matrix is "a suqare mn-dimensional matrix partitioned
-      % into mn sub-matricies of order (n, m) such that the ijth submatrix
-      % as a 1 in its jith position and zeros elsewhere."
-      E = @(i, j) [zeros(i-1, m); ...
-        zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
-      commutation = zeros(m^2);
-      for iComm = 1:m
-        for jComm = 1:m
-          commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
-        end
-      end
-    end
-    
-  end
-  
-  methods (Static, Hidden)
-    function [accumIndex, calendar, horizon] = parseAccumulator(accumulator)
-      % Validate input
-      if all(ismember(fieldnames(accumulator), {'xi', 'psi', 'Horizon'}))
-        accum.index = accumulator.xi;
-        accum.calendar = accumulator.psi;
-        accum.horizon = accumulator.Horizon;
-        accumulator = accum;
-      end
-      if islogical(accumulator.index)
-        accumulator.index = find(accumulator.index);
-      end
-      assert(all(ismember(fieldnames(accumulator), {'index', 'calendar', 'horizon'})), ...
-        'accumulator must be a structure with fields index, calendar, and horizon');
-      assert(length(accumulator.index) == size(accumulator.calendar, 1));
-      assert(length(accumulator.index) == size(accumulator.horizon, 1));
-      
-      accumIndex = accumulator.index;
-      calendar = accumulator.calendar;
-      horizon = accumulator.horizon;
-    end
-    
   end
 end

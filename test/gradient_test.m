@@ -29,8 +29,9 @@ classdef gradient_test < matlab.unittest.TestCase
   
   methods (Test)
     function testGeneratedLLM(testCase)
-      p = 1; m = 2; timeDim = 500;
+      p = 1; m = 0; timeDim = 500;
       ss = generateARmodel(p, m, false);
+      ss.T = 1;
       y = generateData(ss, timeDim);
       
       tm = ThetaMap.ThetaMapAll(ss);
@@ -45,7 +46,7 @@ classdef gradient_test < matlab.unittest.TestCase
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', 3e-3, 'RelTol', 1e-4);
+      testCase.verifyEqual(numeric, analytic, 'AbsTol', 3e-3, 'RelTol', 1e-4);
     end
     
     function testGeneratedLLMexplicitInitial(testCase)
@@ -71,7 +72,7 @@ classdef gradient_test < matlab.unittest.TestCase
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
         p, m, timeDim, tm.nTheta, 100*(time_a/time_n));
       
-      testCase.verifyEqual(analytic, numeric, 'AbsTol', 4e-5, 'RelTol', 1e-5);
+      testCase.verifyEqual(numeric, analytic, 'AbsTol', 4e-5, 'RelTol', 1e-5);
     end
     
     function testGeneratedSmallDefaultInitial(testCase)
