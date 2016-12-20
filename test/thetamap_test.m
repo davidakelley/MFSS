@@ -93,9 +93,12 @@ classdef thetamap_test < matlab.unittest.TestCase
       ss = StateSpace(Z, d, H, T, c, R, Q);
       ss = ss.setInvariantTau;
       ss = ss.setDefaultInitial;
+      ss.usingDefaulta0 = false;
+      ss.usingDefaultP0 = false;
+
       tm = ThetaMap.ThetaMapAll(ss);
       
-      theta1 = [2;0;2.0986;1;0;1;2.6094];
+      theta1 = [2;0;2.0986;1;0;1;2.6094;1;1];
       
       ss = tm.theta2system(theta1);
       
@@ -117,29 +120,45 @@ classdef thetamap_test < matlab.unittest.TestCase
       ss = StateSpace(Z, d, H, T, c, R, Q);
       ss = ss.setInvariantTau;
       ss = ss.setDefaultInitial;
+      ss.usingDefaulta0 = false;
+      ss.usingDefaultP0 = false;
+
       tm = ThetaMap.ThetaMapAll(ss);
       
       theta = tm.system2theta(ss);
       ssNew = tm.theta2system(theta);
       
-      testCase.verifyEqual(ss, ssNew, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.Z, ssNew.Z, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.d, ssNew.d, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.H, ssNew.H, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.T, ssNew.T, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.c, ssNew.c, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.R, ssNew.R, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.a0, ssNew.a0, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.P0, ssNew.P0, 'AbsTol', 1e-9);
+
     end
     
      function thetasystemthetaBenchmark(testCase)
-      Z = 1;
-      d = 0;
-      H = 3;
-      T = 1;
-      c = 0;
-      R = 1;
-      Q = 5;
+      Z = [1 0 0 0 0 0; 1 0 1 1 0 0; 1 0 1 1 1 0; 1 0 0 0 0 1];
+      d = zeros(4,1);
+      H = zeros(4);
+
+      %% State equations
+      T = [1 1 0 0 0 0; 0 NaN 0 0 0 0; 0 0 1 0 0 0; 0 0 0 NaN 0 0; 0 0 0 0 NaN 0; 0 0 0 0 0 NaN];
+      c = [NaN 0 0 0 0 NaN]'; 
+      Q = [0 0 0 0 0 0; 0 NaN  0 0 0 0; 0 0 NaN  0 0 0; ...
+           0 0 0 NaN 0 0; 0 0 0 0 NaN 0; 0 0 0 0 0 NaN];
+      R = eye(size(Q,1));
       
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      Y = generateData(ss, 60);
       ss = ss.setInvariantTau;
-      ss = ss.setDefaultInitial;
-      tm = ThetaMap.ThetaMapAll(ss);
+      %ss = ss.setDefaultInitial;
+      tm = ThetaMap.ThetaMapEstimation(ss);
       
-      theta1 = [2;0;2.0986;1;0;1;2.6094];
+      theta1 = [2;1;2.0986;1;1;1;2.6094;5;5;6;8];
       
       ss = tm.theta2system(theta1);
       
@@ -150,23 +169,31 @@ classdef thetamap_test < matlab.unittest.TestCase
     end
     
     function systemthetasysteBenchmark(testCase)
-      Z = 1;
-      d = 0;
-      H = 3;
-      T = 1;
-      c = 0;
-      R = 1;
-      Q = 5;
+      Z = [1 0 0 0 0 0; 1 0 1 1 0 0; 1 0 1 1 1 0; 1 0 0 0 0 1];
+      d = zeros(4,1);
+      H = zeros(4);
+
+      %% State equations
+      T = [1 1 0 0 0 0; 0 NaN 0 0 0 0; 0 0 1 0 0 0; 0 0 0 NaN 0 0; 0 0 0 0 NaN 0; 0 0 0 0 0 NaN];
+      c = [NaN 0 0 0 0 NaN]'; 
+      Q = [0 0 0 0 0 0; 0 NaN  0 0 0 0; 0 0 NaN  0 0 0; ...
+           0 0 0 NaN 0 0; 0 0 0 0 NaN 0; 0 0 0 0 0 NaN];
+      R = eye(size(Q,1));
       
-      ss = StateSpace(Z, d, H, T, c, R, Q);
-      ss = ss.setInvariantTau;
-      ss = ss.setDefaultInitial;
-      tm = ThetaMap.ThetaMapAll(ss);
+      T0 = [1 1 0 0 0 0; 0 1 0 0 0 0; 0 0 1 0 0 0; 0 0 0 1 0 0; 0 0 0 0 1 0; 0 0 0 0 0 1];
+      c0 = [2 0 0 0 0 2]'; 
+      Q0 = [0 0 0 0 0 0; 0 1  0 0 0 0; 0 0 2  0 0 0; ...
+           0 0 0 4 0 0; 0 0 0 0 3 0; 0 0 0 0 0 5];
+
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      tm = ss.ThetaMapping;
       
-      theta = tm.system2theta(ss);
+      ss0 = StateSpace(Z, d, H, T0, c0, R, Q0);
+      
+      theta = tm.system2theta(ss0);
       ssNew = tm.theta2system(theta);
       
-      testCase.verifyEqual(ss, ssNew, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss0, ssNew, 'AbsTol', 1e-16);
     end
     
     function testLowerBound(testCase)
