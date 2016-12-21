@@ -489,7 +489,7 @@ classdef StateSpace < AbstractStateSpace
         kronRR(:, :, iR) = kron(obj.R(:,:,iR)', obj.R(:,:,iR)');
       end
       
-      [tauQRrows, ~, tauQR] = unique([obj.tau.R' obj.tau.Q'], 'rows');
+      [tauQRrows, ~, tauQR] = unique([obj.tau.R obj.tau.Q], 'rows');
       kronQRI = zeros(obj.g * obj.m, obj.m * obj.m, max(tauQR));
       for iQR = 1:max(tauQR)
         kronQRI(:, :, iQR) = kron(obj.Q(:,:,tauQRrows(iQR, 2)) * obj.R(:,:,tauQRrows(iQR, 1))', ...

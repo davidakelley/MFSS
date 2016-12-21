@@ -149,7 +149,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % Z system matrix
       if isstruct(parameters.Z)
         obj = obj.setTimeVarrying(length(parameters.Z.tauZ));
-        obj.tau.Z = parameters.Z.tauZ;
+        assert(numel(parameters.Z.tauZ) == obj.n);
+        obj.tau.Z = reshape(parameters.Z.tauZ, obj.n, 1);
         obj.Z = parameters.Z.Zt;
       else
         obj.Z = parameters.Z;
@@ -158,7 +159,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % d system matrix
       if isstruct(parameters.d)
         obj = obj.setTimeVarrying(length(parameters.d.taud));
-        obj.tau.d = parameters.d.taud;
+        assert(numel(parameters.d.taud) == obj.n);
+        obj.tau.d = reshape(parameters.d.taud, obj.n, 1);
         obj.d = parameters.d.dt;
       elseif size(parameters.d, 2) > 1
         obj = obj.setTimeVarrying(size(parameters.d, 2));
@@ -171,7 +173,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % H system matrix
       if isstruct(parameters.H)
         obj = obj.setTimeVarrying(length(parameters.H.tauH));
-        obj.tau.H = parameters.H.tauH;
+        assert(numel(parameters.H.tauH) == obj.n);
+        obj.tau.H = reshape(parameters.H.tauH, obj.n, 1);
         obj.H = parameters.H.Ht;
       else
         obj.H = parameters.H;
@@ -180,7 +183,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % T system matrix
       if isstruct(parameters.T)
         obj = obj.setTimeVarrying(length(parameters.T.tauT) - 1);
-        obj.tau.T = parameters.T.tauT;
+        assert(numel(parameters.T.tauT) == obj.n+1);
+        obj.tau.T = reshape(parameters.T.tauT, obj.n+1, 1);
         obj.T = parameters.T.Tt;
       else
         obj.T = parameters.T;
@@ -189,7 +193,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % c system matrix
       if isstruct(parameters.c)
         obj = obj.setTimeVarrying(length(parameters.c.tauc) - 1);
-        obj.tau.c = parameters.c.tauc;
+        assert(numel(parameters.c.tauc) == obj.n+1);
+        obj.tau.c = reshape(parameters.c.tauc, obj.n+1, 1);
         obj.c = parameters.c.ct;
       elseif size(parameters.c, 2) > 1
         obj = obj.setTimeVarrying(size(parameters.c, 2) - 1);
@@ -202,7 +207,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % R system matrix
       if isstruct(parameters.R)
         obj = obj.setTimeVarrying(length(parameters.R.tauR) - 1);
-        obj.tau.R = parameters.R.tauR;
+        assert(numel(parameters.R.tauR) == obj.n+1);
+        obj.tau.R = reshape(parameters.R.tauR, obj.n+1, 1);
         obj.R = parameters.R.Rt;
       else
         obj.R = parameters.R;
@@ -211,7 +217,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % Q system matrix
       if isstruct(parameters.Q)
         obj = obj.setTimeVarrying(length(parameters.Q.tauQ) - 1);
-        obj.tau.Q = parameters.Q.tauQ;
+        assert(numel(parameters.Q.tauQ) == obj.n+1);
+        obj.tau.Q = reshape(parameters.Q.tauQ, obj.n+1, 1);
         obj.Q = parameters.Q.Qt;
       else
         obj.Q = parameters.Q;
@@ -243,8 +250,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     
     function obj = setInvariantTau(obj)
       % Set the tau structure for TVP.
-      taus = [repmat({ones([1 obj.n])}, [3 1]); ...
-        repmat({ones([1 obj.n+1])}, [4 1])];
+      taus = [repmat({ones([obj.n 1])}, [3 1]); ...
+        repmat({ones([obj.n+1 1])}, [4 1])];
       
       % FIXME: obj.tau shouldn't be set if it's already defined
       if ~isempty(obj.tau)
