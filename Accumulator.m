@@ -1,7 +1,7 @@
 classdef Accumulator < AbstractSystem
   % State space augmenting accumulators, enforcing sum and average aggregation
   %
-  
+  %
   % David Kelley, 2016
   %
   % TODO (12/16/16)
@@ -30,7 +30,7 @@ classdef Accumulator < AbstractSystem
     accumulatorTypes
     
     % Properties used when augmenting a StateSpace
-    augment
+    tempSet
   end
   
   methods
@@ -55,8 +55,10 @@ classdef Accumulator < AbstractSystem
       obj.timeInvariant = false;
     end
     
-    function ss = augmentStateSpace(obj, ss)
+    function ssNew = augmentStateSpace(obj, ss)
       % Augment the state of a system to enforce accumulator constraints
+      %
+      % Note that there will be no initial values set once augmented. 
       
       obj.checkConformingSystem(ss);
       
@@ -68,23 +70,77 @@ classdef Accumulator < AbstractSystem
       obj = obj.setAugmenting(ss);
 
       % Set up structure of new system
-      [Zlag, Tlag, clag, Rlag] = obj.addLags(ss);
+      ssLag = obj.addLags(ss);
       
-      Z.Zt = obj.augmentAccumZ(ss, Zlag);
-      Z.tauZ = ss.tau.Z;
-      d.dt = ss.d;
-      d.taud = ss.tau.d;
-      H.Ht = ss.H;
-      H.tauH = ss.tau.H;
+      Z.Zt = obj.augmentAccumZ(ssLag);
+      Z.tauZ = ssLag.tau.Z;
+      d.dt = ssLag.d;
+      d.taud = ssLag.tau.d;
+      H.Ht = ssLag.H;
+      H.tauH = ssLag.tau.H;
       
-      [T.Tt, T.tauT] = obj.augmentAccumT(ss, Tlag);
-      [c.ct, c.tauc] = obj.augmentAccumc(ss, clag);
-      [R.Rt, R.tauR] = obj.augmentAccumR(ss, Rlag);
-      Q.Qt = ss.Q;
-      Q.tauQ = ss.tau.Q;
+      [T.Tt, T.tauT] = obj.augmentAccumT(ssLag);
+      [c.ct, c.tauc] = obj.augmentAccumc(ssLag);
+      [R.Rt, R.tauR] = obj.augmentAccumR(ssLag);
+      Q.Qt = ssLag.Q;
+      Q.tauQ = ssLag.tau.Q;
       
       % Create new system
-      ss = StateSpace(Z, d, H, T, c, R, Q);      
+      ssNew = StateSpace(Z, d, H, T, c, R, Q);      
+    end
+    
+    function tmNew = augmentThetaMap(obj, tm)
+      % Create a ThetaMap that produces StateSpaces that obey the accumulator.
+      % The size of the theta vector shouldn't change when the state is
+      % augmented. 
+      
+      % Nan values should propogate correctly through augmentStateSpace
+      fixedNew = obj.augmentStateSpace(tm.fixed);
+      
+      % Augment index: For Z we need to move the indexes to the accumulator 
+      % states and replace them with zeros. For T, c and R we need to copy the 
+      % high frequency row to the accumulator state.
+      indexNew = fixedNew.setAllParameters(0);
+      
+      % Move the existing indexes to the same places in the potentially larger 
+      % system. 
+      systemParams = indexNew.systemParam;
+      for iP = 1:length(systemParams)
+        indexNew.(systemParams{iP})(1:iN, 1:iM) = tm.index.(systemParams{ip})(1:iN, 1:iM);
+      end
+      
+      % Move Z elements
+      indexNew.Z = obj.augmentAccumZ(indexNew.Z);
+      
+      % Copy rows of T, c and R to the accumulator states
+      accumStateParam = {'T', 'c', 'R'};
+      for iP = 1:length(accumStateParam)
+        
+      end
+      
+      % The transformation indexes should be constructed somewhat similarly to
+      % the regular transformation indexes. They'll be out of order from what's
+      % normal but it should otherwise just be working through 
+      transformIndexNew = [];
+      
+      augTrans = [];
+      augDerivs = [];
+      augInv = [];
+      transNew = [tm.transformations augTrans];
+      derivNew = [tm.derivatives augDerivs];
+      invNew = [tm.inverses augInv];
+            
+      tmNew = ThetaMap(fixedNew, indexNew, transNew, derivNew, invNew, ...
+        transformIndexNew);
+    end
+    
+    function sseNew = augmentStateSpaceEstimation(obj, sse)
+      % Augment a StateSpaceEstimation to obey the accumulators. 
+      % This is actually simple: augment the system matricies and let the nans
+      % propogate as they should and then augment the ThetaMap. 
+      
+      sseNew = obj.augmentStateSpace(sse);
+      sseNew.ThetaMapping = obj.augmentThetaMap(sse);      
     end
   end
   
@@ -98,8 +154,8 @@ classdef Accumulator < AbstractSystem
       nSeries = size(data, 2);
       [obsMissing, seriesMissing] = find(~isnan(data));
       
-      cal = nan(nPer, nSeries);
-      hor = nan(nPer, nSeries);
+      cal = nan(nPer+1, nSeries);
+      hor = nan(nPer+1, nSeries);
       
       for iSer = unique(seriesMissing)'
         maxCal = unique(diff(obsMissing(seriesMissing == iSer)));
@@ -108,11 +164,11 @@ classdef Accumulator < AbstractSystem
           continue
         end
         if strcmpi(types{iSer}, 'avg')
-          tempCal = repmat((1:maxCal)', [ceil(nPer/maxCal) 1]);
+          tempCal = repmat((1:maxCal)', [ceil(nPer/maxCal)+1 1]);
         else
-          tempCal = repmat([zeros(maxCal-1, 1); 1], [ceil(nPer/maxCal) 1]);
+          tempCal = repmat([zeros(maxCal-1, 1); 1], [ceil(nPer/maxCal)+1 1]);
         end
-        cal(:, iSer) = tempCal(1:nPer);
+        cal(:, iSer) = tempCal(1:nPer+1);
         hor(:, iSer) = horizons(iSer);
       end
       inx = all(~isnan(cal));
@@ -123,211 +179,263 @@ classdef Accumulator < AbstractSystem
   
   methods (Hidden)
     %% Parameter augmentation methods
-    function [Z, T, c, R] = addLags(obj, ss)
+    function ss = addLags(obj, ss)
       % Add the needed lags to the system matricies.
-      aug = obj.augment;
+      [mNew, ColAddLags] = obj.accumAugmentedStateDims(ss);
       
-      if ss.m == aug.mNew
-        % Not adding any lags
-        Z = ss.Z;
-        T = ss.T;
-        c = ss.c;
-        R = ss.R;
-      else
-        % Z - add zeros to the right        
-        Z = zeros(ss.p, aug.mNew, size(ss.Z, 3));
-        Z(:, 1:ss.m, :) = ss.Z;
-        
-        % T - Add ones to transmit lags
-        T = zeros(aug.mNew, aug.mNew, size(ss.T, 3));
-        T(1:ss.m, 1:ss.m, :) = ss.T;        
-        lagIndexes = sub2ind(size(T), (ss.m+1:aug.mNew)', aug.ColAdd);
-        T(lagIndexes) = 1;
-        
-        % c - just add zeros below        
-        c = zeros(aug.mNew, size(ss.c, 3));
-        c(1:ss.m, :) = ss.c;
-        
-        % R - just add zeros below
-        R = zeros(aug.mNew, ss.g, size(ss.R, 3));
-        R(1:ss.m, :, :) = ss.R;
+      if ss.m == mNew
+        % No need to add lags, don't expand the state
+        return
       end
+      
+      % Z - add zeros to the right
+      Z.Zt = zeros(ss.p, mNew, size(ss.Z, 3));
+      Z.Zt(:, 1:ss.m, :) = ss.Z;
+      Z.tauZ = ss.tau.Z;
+      
+      % d and H - do nothing 
+      d.dt = ss.d;
+      d.taud = ss.tau.d;
+      H.Ht = ss.H;
+      H.tauH = ss.tau.H;
+      
+      % T - Add ones to transmit lags
+      T.Tt = zeros(mNew, mNew, size(ss.T, 3));
+      T.Tt(1:ss.m, 1:ss.m, :) = ss.T;
+      lagIndexes = sub2ind([mNew, mNew], (ss.m+1:mNew)', ColAddLags);
+      T.Tt(lagIndexes) = 1;
+      T.tauT = ss.tau.T;
+      
+      % c - just add zeros below
+      c.ct = zeros(mNew, size(ss.c, 3));
+      c.ct(1:ss.m, :) = ss.c;
+      c.tauc = ss.tau.c;
+      
+      % R - just add zeros below
+      R.Rt = zeros(mNew, ss.g, size(ss.R, 3));
+      R.Rt(1:ss.m, :, :) = ss.R;
+      R.tauR = ss.tau.R;
+      
+      % Q - do nothing
+      Q.Qt = ss.Q;
+      Q.tauQ = ss.tau.Q;
+      
+      % Create new system
+      ss = StateSpace(Z, d, H, T, c, R, Q);      
     end
     
-    function [newT, newtauT] = augmentAccumT(obj, ss, T)
+    function [newT, newtauT] = augmentAccumT(obj, ss)
       % Construct new T matrix
-      aug = obj.augment;
+      aug = obj.tempSet;
+      
+      [~, ~, LagRowPos] = obj.accumAugmentedStateDims(ss);
       
       nAccumStates = size(aug.calendar, 2);
       mNew = ss.m + nAccumStates;
 
-      states = unique(aug.accumStates);
+      accumStates = obj.findUsedAccum(ss);
+      states = unique(accumStates);
       
       % Add accumulator elements
-      Ttypes   = [ss.tau.T' aug.calendar aug.horizon];
+      Ttypes   = [ss.tau.T aug.calendar aug.horizon];
       [uniqueTs, ~, newtauT] = unique(Ttypes, 'rows');
-      newTs.tau = uniqueTs(:,1);
-      newTs.cal = uniqueTs(:,2:2);
-      newTs.hor = uniqueTs(:,3:3);
+      oldTs.tau = uniqueTs(:, 1);
+      oldTs.cal = uniqueTs(:, 1 + (1:nAccumStates));
+      oldTs.hor = uniqueTs(:, 1 + nAccumStates + (1:nAccumStates));
       Tslices = size(uniqueTs, 1);
 
       newT = zeros(mNew, mNew, Tslices);
       for iT = 1:Tslices
         % Get the part of T already defined
-        newT(1:ss.m, 1:ss.m, iT) = T(1:ss.m, 1:ss.m, newTs.tau(iT));
+        newT(1:ss.m, 1:ss.m, iT) = ss.T(:, :, oldTs.tau(iT));
         
         % Define the new transition equations for the accumulator states
         for iAccum = 1:nAccumStates
           iState = ss.m + iAccum;
+          iCal = oldTs.cal(iT, iAccum);
+          iHor = oldTs.hor(iT, iAccum);
+          
+          hiFreqTelements = ss.T(aug.states(iAccum), :, oldTs.tau(iT));
+          
           if aug.accumulatorTypes(iAccum) == 1
             % Sum accumulator
-            newT(iState, [1:ss.m iState], iT) = ...
-              [T(aug.states(iAccum), :, newTs.tau(iT)) uniqueTs(iT, 1+iAccum)];
+            newT(iState, 1:ss.m, iT) = hiFreqTelements;
+            newT(iState, iState, iT) = iCal;
+            
           else
             % Average accumulator
-            newT(iState, [1:ss.m iState], iT) = ...
-              [(1/uniqueTs(iT, 1+iAccum)) * T(aug.states(iAccum), :, newTs.tau(iT))...
-              (uniqueTs(iT, 1+iAccum)-1) / uniqueTs(iT, 1+iAccum)];
-            if uniqueTs(iT, nAccumStates+1+iAccum) > 1
-              cols = aug.RowPos(aug.states(iAccum) == states, 1:uniqueTs(iT, nAccumStates+1+iAccum)-1);
+            newT(iState, 1:ss.m, iT) = (1 / iCal) * hiFreqTelements;
+            newT(iState, iState, iT) = (iCal - 1) / iCal;
+            
+            if iHor > 1
+              % Triangle accumulator
+              % What is LagRowPos?
+              % This should really be a call to ss.LagsInState here instead of
+              % carrying LagRowPos around.
+              cols = LagRowPos(aug.states(iAccum) == states, 1:iHor - 1);
               
-              newT(iState, cols, iT) = newT(iState,cols,iT) + (1/uniqueTs(iT,1+iAccum));
+              [~, lagPositions] = ss.LagsInState(aug.states(iAccum));
+              tempLagRowPos = [aug.states(iAccum); lagPositions];
+              cols_dk2 = tempLagRowPos(1:iHor-1);
+              assert(all(cols == cols_dk2'));
+              
+              newT(iState, cols_dk2, iT) = newT(iState, cols_dk2, iT) + (1/iCal);
             end
           end
-          
         end
       end
     end
     
-    function [newc, newtauc] = augmentAccumc(obj, ss, c)
+    function [newc, newtauc] = augmentAccumc(obj, ss)
       % Construct new c vector
-      aug = obj.augment;
-      
+      aug = obj.tempSet;
+      nAccumStates = size(aug.calendar, 2);
+
       % Add accumulator elements
-      ctypes   = [ss.tau.c' aug.calendar];
-      [uniquecs, ~, newtauc] = unique(ctypes,'rows');
-      Numc = size(uniquecs, 1);
+      ctypes   = [ss.tau.c aug.calendar];
+      [uniquecs, ~, newtauc] = unique(ctypes, 'rows');
+      oldcs.tau = uniquecs(:, 1);
+      oldcs.cal = uniquecs(:, 1 + (1:nAccumStates));
+      cSlices = size(uniquecs, 1);
       
       nAccumStates = size(aug.calendar, 2);
       mNew = ss.m + nAccumStates;
       
-      newc = zeros(mNew, Numc);
-      for jj = 1:Numc
-        newc(1:ss.m, jj) = c(:, uniquecs(jj,1));
+      newc = zeros(mNew, cSlices);
+      for jj = 1:cSlices
+        % Get the part of c already defined
+        newc(1:ss.m, jj) = ss.c(:, oldcs.tau(jj));
         for h = 1:nAccumStates
+          hiFreqCelements = ss.c(aug.states(h), oldcs.tau(jj));
+          
           if aug.accumulatorTypes(h) == 1
-            newc(ss.m+h, jj) = c(aug.states(h), uniquecs(jj,1));
+            % Sum accumulator
+            newc(ss.m+h, jj) = hiFreqCelements;
           else
-            newc(ss.m+h, jj) = (1/uniquecs(jj,1+h)) * c(aug.states(h), uniquecs(jj,1));
+            % Average accumulator
+            newc(ss.m+h, jj) = (1/oldcs.cal(jj,h)) * hiFreqCelements;
           end
         end
       end
     end
     
-    function [newR, newtauR] = augmentAccumR(obj, ss, R)
+    function [newR, newtauR] = augmentAccumR(obj, ss)
       % Construct new R matrix
-      aug = obj.augment;
+      aug = obj.tempSet;
+      nAccumStates = size(aug.calendar, 2);
 
       % Add accumulator elements
-      Rtypes   = [ss.tau.R' aug.calendar];
-      [uniqueRs, ~, newtauR] = unique(Rtypes,'rows');
+      Rtypes   = [ss.tau.R aug.calendar];
+      [uniqueRs, ~, newtauR] = unique(Rtypes, 'rows');
+      oldRs.tau = uniqueRs(:, 1);
+      oldRs.cal = uniqueRs(:, 1 + (1:nAccumStates));
       
       nAccumStates = size(aug.calendar, 2);
       mNew = ss.m + nAccumStates;
       
-      NumR = size(uniqueRs, 1);
-      newR = zeros(mNew, ss.g, NumR);
-      for jj = 1:NumR
-        newR(1:ss.m, 1:ss.g, jj) = R(:, :, uniqueRs(jj,1));
+      Rslices = size(uniqueRs, 1);
+      newR = zeros(mNew, ss.g, Rslices);
+      for jj = 1:Rslices
+        % Get the part of R already defined
+        newR(1:ss.m, 1:ss.g, jj) = ss.R(:, :, oldRs.tau(jj));
+        
         for h = 1:nAccumStates
+          hiFreqRElements = ss.R(aug.states(h), :, oldRs.tau(jj));
+          
           if aug.accumulatorTypes(h) == 1
-            newR(ss.m+h,:,jj) = R(aug.accumulatorTypes(h), :, uniqueRs(jj,1));
+            % Sum accumulator
+            newR(ss.m+h,:,jj) = hiFreqRElements;
           else
-            newR(ss.m+h,:,jj) = (1/uniqueRs(jj, 1+h)) * ...
-              R(aug.calendar(h,1), :, uniqueRs(jj,1));
+            % Average accumulator
+            newR(ss.m+h,:,jj) = (1/oldRs.cal(jj,h)) * hiFreqRElements;
           end
         end
       end
     end
     
-    function newZ = augmentAccumZ(obj, ss, Z)
+    function newZ = augmentAccumZ(obj, ss)
       % Construct new Z matrix
-      aug = obj.augment;
+      aug = obj.tempSet;
+      [accumStates, accumObsDims] = obj.findUsedAccum(ss);
 
-      nonZeroZpos = zeros(length(obj.index), aug.mNew);
-      nonZeroZpos(sub2ind([length(obj.index) aug.mNew], aug.accumObsDims, aug.accumStates)) = aug.usedAccumulators;
+      nonZeroZpos = zeros(length(obj.index), ss.m);
+      nonZeroZpos(sub2ind([length(obj.index) ss.m], accumObsDims, accumStates)) = aug.usedAccumulators;
       
-      newZ = zeros(obj.p, aug.mNew, size(Z, 3));
-      for jj = 1:size(Z, 3)
-        newZ(:,:,jj) = Z(:,:,jj);
-        newZ(obj.index,:,jj) = zeros(length(obj.index), aug.mNew);
-        for h = 1:length(obj.index)
-          cols = find(Z(obj.index(h),:,jj));
-          newZ(obj.index(h), ss.m + nonZeroZpos(h,cols), jj) = Z(obj.index(h),cols,jj);
+      % Transfer loadings from where they are to the accumulator we just added
+      nSlices = size(ss.Z, 3);
+      newZ = ss.Z;
+      newZ(obj.index, :, :) = zeros(length(obj.index), ss.m, nSlices);
+      for jSlice = 1:nSlices
+        for iAccum = 1:length(obj.index)
+          % 
+          cols = find(ss.Z(obj.index(iAccum), :, jSlice));
+          newZ(obj.index(iAccum), ss.m + nonZeroZpos(iAccum,cols), jSlice) = ...
+            ss.Z(obj.index(iAccum), cols, jSlice);
         end
       end
     end
     
     %% Accumulator helper methods
-    function obj = setAugmenting(obj, ss)
-      %
-      
+    function [accumStates, accumObsDims] = findUsedAccum(obj, ss)
       % Find the elements of Z that care about the accumulators - anything
       % that loads onto an observation that has an associated accumulator
       usedZaccumLoc = any(ss.Z(obj.index,:,:) ~= 0, 3);
-      [obj.augment.accumObsDims, obj.augment.accumStates] = find(usedZaccumLoc);
+      [accumObsDims, accumStates] = find(usedZaccumLoc);  
+    end
+    
+    function obj = setAugmenting(obj, ss)
+      %
+      [accumStates, accumObsDims] = obj.findUsedAccum(ss);
       
       % Find the different accumulators we need: anything that has the same 
       % (state, type, horizon, calendar) doesn't need to be done twice. 
-      possibleAccumDefs = [obj.augment.accumStates'; ...
-        obj.accumulatorTypes(obj.augment.accumObsDims)'; ...
-        obj.horizon(:, obj.augment.accumObsDims); ...
-        obj.calendar(:, obj.augment.accumObsDims)];
-      [APsi, ~, obj.augment.usedAccumulators] = unique(possibleAccumDefs', 'rows');
+      possibleAccumDefs = [accumStates'; ...
+                           obj.accumulatorTypes(accumObsDims)'; ...
+                           obj.horizon(:, accumObsDims); ...
+                           obj.calendar(:, accumObsDims)];
+      [APsi, ~, obj.tempSet.usedAccumulators] = unique(possibleAccumDefs', 'rows');
       
-      obj.augment.states = APsi(:, 1);
-      obj.augment.accumulatorTypes = APsi(:, 2);
-      obj.augment.horizon = APsi(:, 3:size(obj.horizon, 1) + 2)';
-      obj.augment.calendar = APsi(:, size(obj.horizon, 1) + 3:end)';
-      
-      [mNew, ColAdd, RowPos] = obj.accumAugmentedStateDims(ss);
-      obj.augment.mNew = mNew;
-      obj.augment.ColAdd = ColAdd;
-      obj.augment.RowPos = RowPos;
+      obj.tempSet.states = APsi(:, 1);
+      obj.tempSet.accumulatorTypes = APsi(:, 2);
+      obj.tempSet.horizon = APsi(:, 3:size(obj.horizon, 1) + 2)';
+      obj.tempSet.calendar = APsi(:, size(obj.horizon, 1) + 3:end)';
     end
     
-    function [mNew, LagColPos, LagRowPos] = accumAugmentedStateDims(obj, ss)
+    function [mWLag, LagColPos, LagRowPos] = accumAugmentedStateDims(obj, ss)
       % Checking we have the correct number of lags of the states that need
       % accumulation to be compatible with Horizon
-      aug = obj.augment;
+      
+      aug = obj.tempSet; % TODO: Make this unncessary
+      [accumStates, accumObsDims] = obj.findUsedAccum(ss);
       
       % How many lags we need to add by each state we're concerned with
-      states = unique(aug.accumStates);
-      AddLagsByState = zeros(length(states), 1);
+      usedStates = unique(accumStates);
+      AddLagsByState = zeros(length(usedStates), 1);
 
-      maxHor = max(aug.horizon, [], 2);
+      maxHor = max(aug.horizon, [], 1);
       % Index vectors for new lags we're going to add. The first element of 
       % these will be the state we're making lags of, lags come afterwards
-      LagColPos  = zeros(length(states), max(maxHor));
-      LagRowPos  = zeros(length(states), max(maxHor));
+      LagColPos  = zeros(length(usedStates), max(maxHor));
+      LagRowPos  = zeros(length(usedStates), max(maxHor));
       
-      mNew = ss.m;
-      for iSt = 1:length(states)
+      mWLag = ss.m;
+      for iSt = 1:length(usedStates)
         % We need to find all of the previous lags of a state so that we know
         % which lag is the last one we have so far. Then we can start with that
         % state and add additional lags until we have the number we need. 
-        [nLags, lagPos] = ss.LagsInState(states(iSt));
+        [nLags, lagPos] = ss.LagsInState(usedStates(iSt));
         
         % Add enough lags for this state to get to the max horizon of this
         % accumulator
-        mHor = max(maxHor(aug.accumObsDims(states(iSt) == aug.accumStates)));
+        mHor = max(maxHor(aug.usedAccumulators(accumObsDims(usedStates(iSt) == accumStates))));
+        % 
         AddLagsByState(iSt) = max(mHor-1-nLags-1, 0);
         
         % Locate existing lags states...
-        LagRowPos(iSt, 1:1 + nLags) = [states(iSt) lagPos'];
+        LagRowPos(iSt, 1:1 + nLags) = [usedStates(iSt) lagPos'];
         % ... and add as many as we need past the existing size of the state
         extraLagsInds = 1:AddLagsByState(iSt);
-        LagRowPos(iSt, 1 + nLags + extraLagsInds) = mNew + extraLagsInds;
+        LagRowPos(iSt, 1 + nLags + extraLagsInds) = mWLag + extraLagsInds;
         
         if AddLagsByState(iSt) > 0
           % Find the last lag we have already
@@ -336,11 +444,11 @@ classdef Accumulator < AbstractSystem
         if AddLagsByState(iSt) > 1
           % Stick extra lags on the end of the current state
           tempInx = 1 + nLags + 1 + (1:AddLagsByState(iSt)-1);
-          LagColPos(iSt, tempInx) = mNew + extraLagsInds(1:end-1);
+          LagColPos(iSt, tempInx) = mWLag + extraLagsInds(1:end-1);
         end
         
         % We need to expand the state so the lags we just identified will fit
-        mNew = mNew+AddLagsByState(iSt);
+        mWLag = mWLag + AddLagsByState(iSt);
       end
       
       LagColPos = reshape(LagColPos(LagColPos ~= 0), [], 1);

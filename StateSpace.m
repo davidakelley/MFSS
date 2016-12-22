@@ -97,16 +97,11 @@ classdef StateSpace < AbstractStateSpace
       % containing the neccessary parameters)
       obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
       
-      obj.validateKFilter();
+      obj.validateStateSpace();
       
       % Check if we can use the univariate filter
-      diagH = true;
-      for iH = 1:size(obj.H, 3)
-        if ~isdiag(obj.H(:,:,iH))
-          diagH = false;
-        end
-      end
-      obj.filterUni = diagH;
+      slicesH = num2cell(obj.H, [1 2]);
+      obj.filterUni = ~any(~cellfun(@isdiag, slicesH));
     end
     
     %% State estimation methods 
@@ -114,6 +109,7 @@ classdef StateSpace < AbstractStateSpace
       % Estimate the filtered state
       
       % Make sure data matches observation dimensions
+      obj.validateKFilter();
       obj = obj.checkSample(y);
       
       % Set initial values
@@ -144,6 +140,7 @@ classdef StateSpace < AbstractStateSpace
       % Estimate the smoothed state
       
       % Make sure data matches observation dimensions
+      obj.validateKFilter();
       obj = obj.checkSample(y);
       
       % Set initial values
@@ -178,6 +175,7 @@ classdef StateSpace < AbstractStateSpace
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
       
+      obj.validateKFilter();
       assert(isa(tm, 'ThetaMap'));
       
       obj = obj.checkSample(y);
@@ -209,7 +207,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function validateKFilter(obj)
+    function validateStateSpace(obj)
       % Check dimensions of inputs to Kalman filter.
       if obj.timeInvariant
         maxTaus = ones([7 1]);
@@ -233,8 +231,12 @@ classdef StateSpace < AbstractStateSpace
       validate(obj.c, [obj.m maxTaus(5)], 'c');
       validate(obj.R, [obj.m obj.g maxTaus(6)], 'R');
       validate(obj.Q, [obj.g obj.g maxTaus(7)], 'Q');
+    end
+    
+    function validateKFilter(obj)
+      obj.validateStateSpace();
       
-       % Make sure all of the parameters are known (non-nan)
+      % Make sure all of the parameters are known (non-nan)
       assert(~any(cellfun(@(x) any(any(any(isnan(x)))), obj.parameters)), ...
         ['All parameter values must be known. To estimate unknown '...
         'parameters, see StateSpaceEstimation']);
