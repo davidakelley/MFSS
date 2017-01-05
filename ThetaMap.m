@@ -57,43 +57,47 @@ classdef ThetaMap < AbstractSystem
     % Number of elements in theta vector
     nTheta            
 
-    % StateSpace containing all fixed elements
+    % StateSpace containing all fixed elements. 
+    % Elements of the parameters that will be determined by theta must be set to
+    % zero.
     fixed
     
     % StateSpace of indexes of theta that determines parameter values
     index
     
+    % StateSpace of indexes of transformations applied for parameter values
+    transformationIndex
     % Cell array of transformations of theta to get parameter values
     transformations
     % Derivatives of transformations
     derivatives
     % Inverses of transformations
     inverses
-    % StateSpace of indexes of transformations applied for parameter values
-    transformationIndex
-    
-    % Parameter bounds
-    LowerBound
-    UpperBound
   end
   
   properties (SetAccess = protected, Hidden)
+    % Parameter bounds - set in addRestrictions
+    LowerBound
+    UpperBound
+    
     usingDefaulta0
     usingDefaultP0
   end
   
   methods
     %% Constructor
-    function obj = ThetaMap(fixed, index, ...
-        transformations, derivatives, inverses, transformationIndex)
+    function obj = ThetaMap(fixed, index, transformationIndex, ...
+        transformations, derivatives, inverses)
       % Generate map from elements of theta to StateSpace parameters
       
-      % Make sure dimensions match
+      % Validate inputs
+      assert(isa(fixed, 'StateSpace'));
+      assert(isa(index, 'StateSpace'));
+      assert(isa(transformationIndex, 'StateSpace'));
+      
+      % Dimensions
       index.checkConformingSystem(transformationIndex);
-
-      vectorizedTransformParams = cellfun(@(x) (x(:))', ...
-        transformationIndex.parameters, 'Uniform', false);
-      nTransform = max([vectorizedTransformParams{:}]);
+      nTransform = max(transformationIndex.vectorizedParameters());
       
       assert(length(transformations) >= nTransform, ...
         'Insufficient transformations provided for indexes given.');
@@ -101,31 +105,38 @@ classdef ThetaMap < AbstractSystem
         'Derivatives must be provided for every transformation.');
       assert(length(inverses) == length(derivatives), ...
         'Inverses must be provided for every transformation.');
+
+      vecFixed = fixed.vectorizedParameters();
+      assert(~any(isnan(vecFixed)), 'Nan not allowed in fixed.');
+      vecIndex = index.vectorizedParameters();
+      assert(~any(isnan(vecIndex)), 'Nan not allowed in index.');      
+      assert(isempty(setdiff(1:max(vecIndex), vecIndex)), ...
+        'Index must not skip any elements of theta.');
+      
+      % Validate: non-zero elements of fixed are zero in index and vice-versa.
+      assert(all(~(vecFixed ~= 0 & vecIndex ~= 0)), ...
+        'Parameters determined by theta must be set to 0 in fixed.');
       
       % Set properties
-      assert(isa(fixed, 'AbstractStateSpace'));
       obj.fixed = fixed;
-      assert(isa(index, 'StateSpace'));
       obj.index = index;
+      obj.transformationIndex = transformationIndex;
+      
       obj.transformations = transformations;
       obj.derivatives = derivatives;
       obj.inverses = inverses;
-      assert(isa(transformationIndex, 'StateSpace'));
-      obj.transformationIndex = transformationIndex;
+      
+      obj.usingDefaulta0 = fixed.usingDefaulta0;
+      obj.usingDefaultP0 = fixed.usingDefaultP0;
       
       % Set dimensions
-      vectorizedIndexParams = cellfun(@(x) (x(:))', ...
-        index.parameters, 'Uniform', false);
-      obj.nTheta = max([vectorizedIndexParams{:}]);
+      obj.nTheta = max(vecIndex);
       
-      obj.p = index.p;
-      obj.m = index.m;
-      obj.g = index.g;
-      obj.n = index.n;
-      obj.timeInvariant = index.timeInvariant;
-      
-      obj.usingDefaulta0 = index.usingDefaulta0;
-      obj.usingDefaultP0 = index.usingDefaultP0;
+      obj.p = fixed.p;
+      obj.m = fixed.m;
+      obj.g = fixed.g;
+      obj.n = fixed.n;
+      obj.timeInvariant = fixed.timeInvariant;
       
       % Initialize bounds
       ssLB = fixed.setAllParameters(-Inf);
@@ -133,7 +144,7 @@ classdef ThetaMap < AbstractSystem
       obj.LowerBound = ssLB;
       obj.UpperBound = ssUB;      
       
-      % Set variances to be positive
+      % Set diagonals of variance matricies to be positive
       ssLB.H(1:obj.p+1:end) = eps;
       ssLB.Q(1:obj.m+1:end) = eps;
       if ~obj.usingDefaultP0
@@ -171,9 +182,24 @@ classdef ThetaMap < AbstractSystem
         warning('usingDefaultP0 but P0 already set!');
       end
       
+      % Get fixed elements as a StateSpace
+      % Create a StateSpace with zeros (value doesn't matter) replacing nans.
+      for iP = 1:length(ss.systemParam)
+        ss.(ss.systemParam{iP})(isnan(ss.(ss.systemParam{iP}))) = 0;
+      end
+      
+      fixed = StateSpace(ss.Z, ss.d, ss.H, ss.T, ss.c, ss.R, ss.Q);
+      fixed.tau = ss.tau;
+      
+      fixed.a0 = ss.a0;
+      fixed.usingDefaulta0 = fixed.usingDefaulta0;
+      fixed.P0 = ss.P0;
+      fixed.usingDefaultP0 = fixed.usingDefaultP0;
+      fixed.kappa = ss.kappa;
+      
       % Create object
-      tm = ThetaMap(ss, index, transformations, derivatives, ...
-        inverses, transformationIndex);
+      tm = ThetaMap(fixed, index, transformationIndex, ...
+        transformations, derivatives, inverses);
     end
     
     function tm = ThetaMapAll(ss)
@@ -627,6 +653,8 @@ classdef ThetaMap < AbstractSystem
       % The gradient can be broken up into two main components: 
       %   - A set of progressing diagonals 
       %   - A set of rows that repeat on the primary block diagonal
+      % The only way we were able to figure this out was to write out examples
+      % by hand and then run some numerical tests. 
        
       assert(size(A, 1) == size(A, 2), 'Input must be square.');
       m = size(A, 1);

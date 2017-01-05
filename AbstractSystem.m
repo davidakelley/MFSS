@@ -11,11 +11,14 @@ classdef (Abstract) AbstractSystem
     m
     % Number of shocks
     g
-    % Observed time periods
-    n
-    
+        
     % Indicator for TVP models
     timeInvariant
+  end
+  
+  properties (Hidden)
+    % Observed time periods
+    n
   end
 
   methods (Hidden)
@@ -70,7 +73,7 @@ classdef (Abstract) AbstractSystem
       % Generate commutation matrix
       % A commutation matrix is "a suqare mn-dimensional matrix partitioned
       % into mn sub-matricies of order (n, m) such that the ijth submatrix
-      % as a 1 in its jith position and zeros elsewhere."
+      % has a 1 in its jith position and zeros elsewhere."
       E = @(i, j) [zeros(i-1, m); ...
         zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
       commutation = zeros(m^2);

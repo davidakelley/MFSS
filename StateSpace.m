@@ -7,21 +7,13 @@ classdef StateSpace < AbstractStateSpace
   % Object construction
   % -------------------
   %   ss = StateSpace(Z, d, H, T, c, R, Q)
-  %   ss = StateSpace(Z, d, H, T, C, R, Q, accumulator)
+  %   ss = StateSpace(Z, d, H, T, C, R, Q)
   %
   % The d & c parameters may be entered as empty for convenience.
   %
   % Time varrying parameters may be passed as structures with a field for
   % the parameter values and a vector indicating the timing. Using Z as an
   % example the field names would be Z.Zt and Z.tauZ.
-  %
-  % Accumulators may be defined for each observable series in the accumulator
-  % structure. Three fields need to be defined:
-  %   index     - linear indexes of series needing accumulation
-  %   calendar  - calendar of observations for accumulated series
-  %   horizon   - periods covered by each observation
-  % These fields may also be named xi, psi, and Horizon. For more
-  % information, see the readme.
   %
   % Filtering/smoothing
   % -------------------
@@ -67,10 +59,13 @@ classdef StateSpace < AbstractStateSpace
       % Static function to mimic a static class property of whether the mex 
       % functions should be used (avoids overhead of checking for them every time)
       persistent useMex_persistent;
+      
+      % Setter
       if nargin > 0 && ~isempty(newVal)
         useMex_persistent = newVal;
       end
       
+      % Default setter
       if isempty(useMex_persistent)
         % Check mex files exist
         mexMissing = any([isempty(which('ss_mex.kfilter_uni'));
@@ -85,6 +80,7 @@ classdef StateSpace < AbstractStateSpace
         end
       end
 
+      % Getter
       returnVal = useMex_persistent;
     end
   end

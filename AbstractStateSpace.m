@@ -15,7 +15,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   properties
     Z, d, H           % Observation equation parameters
     T, c, R, Q        % State equation parameters
-    accumulator       % Structure defining accumulated series
     tau               % Structure of time-varrying parameter indexes
     
     a0, P0            % Initial value parameters
@@ -117,6 +116,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       %   - The variable of interest loads on to the candidate with a 1.
       %   - All other variables have a loading on the candidate of 0.
       %   - No shocks are selected for the candidate in R.
+      
+      assert(~isempty(obj.tau), 'tau must be set to find lags in the state.');
       
       criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
         all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
@@ -253,9 +254,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       taus = [repmat({ones([obj.n 1])}, [3 1]); ...
         repmat({ones([obj.n+1 1])}, [4 1])];
       
-      % FIXME: obj.tau shouldn't be set if it's already defined
       if ~isempty(obj.tau)
-        return
+        warning('tau already set.');
       end
       obj.tau = cell2struct(taus, obj.systemParam(1:7));
     end

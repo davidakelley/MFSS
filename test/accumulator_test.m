@@ -1,12 +1,19 @@
 % Test Harvey accumulators for filter/smoother
 
-% David Kelley, 2016
+% David Kelley, 2017
 
 classdef accumulator_test < matlab.unittest.TestCase
   
   properties
-    bbk
-    deai
+    ssGen
+    Y
+    
+    sumAccum
+    sumAug
+    avgAccum
+    avgAug
+    triAccum
+    triAug
   end
   
   methods(TestClassSetup)
@@ -17,247 +24,272 @@ classdef accumulator_test < matlab.unittest.TestCase
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
       
-      testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
-      testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
-    end
-  end
-  
-  methods (Static)
-    function aggY = aggregateY(Y, pers, type)
-      % Aggregate a series evenly every pers periods by sum and average types
-      timeDim = size(Y, 2);
-      timeGroupsPer = sort(repmat((1:ceil(timeDim/pers))', [pers 1]));
-      timeGroupsPer(timeDim+1:end, :) = [];
+      % Basic state space set up
+      p = 3; m = 1; timeDim = 599;
+      testCase.ssGen = generateARmodel(p, m, false);
+      testCase.ssGen.T(1,:) = [0.5 0.3];
+      testCase.ssGen.c = [1 -0.5]';
+
+      testCase.Y = generateData(testCase.ssGen, timeDim)';
+      testCase.ssGen.n = timeDim;
+      testCase.ssGen = testCase.ssGen.setInvariantTau();
+
+      % Sum accum
+      sumData = testCase.Y;
+      sumData(:, 2) = accumulator_test.aggregateY(sumData(:, 2), 3, 'sum');
       
-      if strcmpi(type, 'sum')
-        aggYLowF = grpstats(Y', timeGroupsPer, 'mean')' .* pers;
-      else
-        aggYLowF = grpstats(Y', timeGroupsPer, 'mean')';
-      end
+      testCase.sumAccum = Accumulator.GenerateRegular(sumData, {'', 'sum', ''}, [1 3 1]);
+      testCase.sumAug = testCase.sumAccum.computeAugSpecification(testCase.ssGen);
       
-      if sum(timeGroupsPer == max(timeGroupsPer)) ~= pers
-        aggYLowF(:, end) = [];
-      end
+      % Avg accum
+      avgData = testCase.Y;
+      avgData(:, 2) = accumulator_test.aggregateY(avgData(:, 2), 3, 'avg');
       
-      aggY = nan(size(Y));
-      aggY(:, pers:pers:end) = aggYLowF;
+      testCase.avgAccum = Accumulator.GenerateRegular(avgData, {'', 'avg', ''}, [1 1 1]);
+      testCase.avgAug = testCase.avgAccum.computeAugSpecification(testCase.ssGen);
       
+      % Triangle accumulator
+      testCase.triAccum = Accumulator.GenerateRegular(avgData, {'', 'avg', ''}, [1 3 1]);
+      testCase.triAug = testCase.triAccum.computeAugSpecification(testCase.ssGen);
     end
   end
   
   methods (Test)
-    function testNoAccumWithMissing(testCase)
-      % Run smoother over a dataset with missing observations, check that
-      % its close to a dataset without missing values.
-      p = 10; m = 1; timeDim = 500;
-      ss = generateARmodel(p, m, false);
-      Y = generateData(ss, timeDim);
+    %% Sum accumulator
+    function testSumAugmentedT(testCase)
+      accum = testCase.sumAccum;
+      aug = testCase.sumAug;
+      ss = testCase.ssGen;
       
-      missingMask = logical(randi([0 1], p, timeDim));
-      missingMask(:, sum(missingMask, 1) > 4) = 0;
-      obsY = Y;
-      obsY(missingMask) = nan;
+      newT = accum.augmentParamT(ss, aug);
       
-      alpha = ss.smooth(Y);
-      obsAlpha = ss.smooth(obsY);
+      % There should be 2 slices of T
+      testCase.verifySize(newT, [3 3 2]);
       
-      allowedDiffPeriods = sum(sum(missingMask) > 0);
-      diffPeriods = sum((abs(alpha(1, :)' - obsAlpha(1,:)')) > 0.02);
-      testCase.verifyLessThanOrEqual(diffPeriods, allowedDiffPeriods);
+      % The first 2 states shouldn't have changed
+      testCase.verifyEqual(newT(1:2, 1:2, :), repmat(ss.T, [1 1 2]));
+      testCase.verifyEqual(newT(1:2, 3, :), repmat([0; 0], [1 1 2]));
+      
+      % The last state should use the existing elements of T the same
+      testCase.verifyEqual(newT(3, 1:2, :), repmat(ss.T(1, 1:2), [1 1 2]));
+      
+      % It should have a zero in the non-end-of-period versions
+      testCase.verifyEqual(newT(3, 3, 1), 0);
+      
+      % It should have a one in the end-of-period versions
+      testCase.verifyEqual(newT(3, 3, 2), 1);
     end
     
-    function testSumAccumulatorSmoother(testCase)
-      p = 2; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
+    function testSumAugmentedc(testCase)
+      accum = testCase.sumAccum;
+      aug = testCase.sumAug;
+      ss = testCase.ssGen;
       
-      Y = generateData(ssGen, timeDim);
-      Y(2, :) = accumulator_test.aggregateY(Y(2, :), 3, 'sum');
-
-      accum = Accumulator.GenerateRegular(Y', {'', 'sum'}, [1 3]);
-      ssA = accum.augmentStateSpace(ssGen);
-       
-      % Sizes
-      testCase.verifySize(ssA.Z, [p m+1+1]);
-      testCase.verifySize(ssA.T, [m+2 m+2 2]);
-      testCase.verifySize(ssA.c, [m+2 2]);
-      testCase.verifySize(ssA.R, [m+2 1 2]);
+      newc = accum.augmentParamc(ss, aug);
       
-      % Make sure 0 and 1 elements in the right places
-      testCase.verifyEqual(ssA.T(m+2, m+2, 1), 0);
-      testCase.verifyEqual(ssA.T(m+2, m+2, 2), 1);
+      % There should be 2 slices of c
+      testCase.verifySize(newc, [3 2]);
       
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z(2, m+2), ssGen.Z(2,1));
-      testCase.verifyEqual(ssA.Z(2, 1), 0);
+      % The first 2 states shouldn't have changed
+      testCase.verifyEqual(newc(1:2, :), repmat(ss.c, [1 2]));
       
-      % Make sure the smoother works
-      [~, ll] = ssA.filter(Y);
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-
-%       alpha = ssA.smooth(Y);
-%       latentAlpha = ssGen.smooth(Y);
-%       testCase.verifyGreaterThan(corr(alpha(1,:)', latentAlpha(1,:)'), 0.94);
-%       testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.75, 'RelTol', 0.5);
+      % The last state should use the existing elements of c
+      testCase.verifyEqual(newc(3, :), repmat(ss.c(1), [1 2]));
     end
     
-    function testSumAccumutlatorMultiple(testCase)
-      p = 3; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
-      Y = generateData(ssGen, timeDim);
+    function testSumAugmentedR(testCase)
+      accum = testCase.sumAccum;
+      aug = testCase.sumAug;
+      ss = testCase.ssGen;
       
-      Y(2, :) = accumulator_test.aggregateY(Y(2, :), 3, 'sum');
-      Y(3, :) = accumulator_test.aggregateY(Y(2, :), 12, 'sum');
+      newR = accum.augmentParamR(ss, aug);
       
-      accum = Accumulator.GenerateRegular(Y', {'', 'sum', 'sum'}, [1 3 12]);
+      % There should be 2 slices of R
+      testCase.verifySize(newR, [3 1 2]);
       
-      ssA = accum.augmentStateSpace(ssGen);
+      % The first 2 states shouldn't have changed
+      testCase.verifyEqual(newR(1:2, :, :), repmat(ss.R, [1 1 2]));
       
-      % Sizes
-      testCase.verifySize(ssA.Z, [3 13]);
-      testCase.verifySize(ssA.T, [13 13 3]);
-      testCase.verifySize(ssA.c, [13 3]);
-      testCase.verifySize(ssA.R, [13 1 3]);
-      
-      % Make sure 0 and 1 elements in the right places
-      testCase.verifyEqual(ssA.T(12:13, 12:13, 1), zeros(2, 2));
-      testCase.verifyEqual(ssA.T(12:13, 12:13, 2), [1 0; 0 0]);
-      testCase.verifyEqual(ssA.T(12:13, 12:13, 3), eye(2));
-      
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z(2, 12), ssGen.Z(2,1));
-      testCase.verifyEqual(ssA.Z(3, 13), ssGen.Z(3,1));
-      testCase.verifyEqual(ssA.Z(2, 1), 0);
-      testCase.verifyEqual(ssA.Z(3, 1), 0);
-      
-      % Make sure the smoother works
-      [~, ll] = ssA.filter(Y);
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
+      % The last state should use the existing elements of R
+      testCase.verifyEqual(newR(3, :, :), repmat(ss.R(1, :), [1 1 2]));
     end
     
-    function testAvgAccumulatorSmoother(testCase)
-      p = 10; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
+    function testSumAugmentedZ(testCase)
+      accum = testCase.sumAccum;
+      aug = testCase.sumAug;
+      ss = testCase.ssGen;
       
-      Y = generateData(ssGen, timeDim);
-
-      aggY = Y;
-      aggY(2:3, :) = accumulator_test.aggregateY(Y(2:3, :), 3, 'avg');
-      aggY(4, :) = accumulator_test.aggregateY(Y(4, :), 12, 'avg');
-
-      accum = Accumulator.GenerateRegular(aggY', {'', 'avg', 'avg', 'avg'}, [1 3 3 12]);
-      ssA = accum.augmentStateSpace(ssGen);
-            
-      % Sizes
-      testCase.verifySize(ssA.Z, [p 13]);
-      testCase.verifySize(ssA.T, [13 13 12]);
-      testCase.verifySize(ssA.c, [13 12]);
-      testCase.verifySize(ssA.R, [13 1 12]);
+      newZ = accum.augmentParamZ(ss, aug);
       
-      % Make sure 0 and 1 elements in the right places
-      testCase.verifyEqual(ssA.T(12, 12, 1:4), zeros(1, 1, 4));
-      testCase.verifyEqual(ssA.T(1:1+m, 1:1+m, :), repmat(ssGen.T(1:1+m, 1:1+m), [1 1 12]));
+      % Z should expand to cover the new state
+      testCase.verifySize(newZ, [3 3]);
       
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z(2:3, 12), ssGen.Z(2:3,1));
-      testCase.verifyEqual(ssA.Z(4, 13), ssGen.Z(4,1));
-      testCase.verifyEqual(ssA.Z(2:4, 1), zeros(3, 1));
+      % The states that weren't accumulated shouldn't change
+      testCase.verifyEqual(newZ([1 3], 1:2), ss.Z([1 3], :));
+      testCase.verifyEqual(newZ([1 3], 3), zeros(2, 1));
       
-      % Make sure the smoother works
-      [~, ll] = ssA.filter(Y);
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-      
-%       latentAlpha = ssGen.smooth(Y);
-%       alpha = ssA.smooth(aggY);
-%       testCase.verifyGreaterThan(corr(alpha(1,:)', latentAlpha(1,:)'), 0.96);
-%       testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.75, 'RelTol', 0.5);
+      % The accumulated observation Z elements should be moved
+      testCase.verifyEqual(newZ(2, 1:2), zeros(1, 2));
+      testCase.verifyEqual(newZ(2, 3), ss.Z(2, 1));      
     end
     
-    function testMultipleStateProcess(testCase)
-      p = 7; timeDim = 205;
-      m1 = generateARmodel(p, 1, true);
-      m1.T(1,:) = [0.85 0.05];
-      m2 = generateARmodel(p, 2, true);
-      m2.T(1,:) = [0.85 0.05 -0.2];
-      m = m1.m + m2.m;
-      ssGen = StateSpace([m1.Z m2.Z], zeros(p,1), m1.H, ...
-        blkdiag(m1.T, m2.T), zeros(m, 1), blkdiag(m1.R, m2.R), blkdiag(m1.Q, m2.Q));
+    %% Average accumulator
+    function testAvgAugmentedT(testCase)
+      accum = testCase.avgAccum;
+      aug = testCase.avgAug;
+      ss = testCase.ssGen;
       
-      [Y, trueAlpha] = generateData(ssGen, timeDim);
+      newT = accum.augmentParamT(ss, aug);
+      
+      % We've added a state and there should now be 3 slices 
+      testCase.verifySize(newT, [3 3 3]);
 
-      aggY = Y;
-      aggY(3, :) = accumulator_test.aggregateY(Y(3, :), 3, 'sum');
-%       aggY(4, :) = accumulator_test.aggregateY(Y(3, :), 12, 'sum');
-      aggY(6, :) = accumulator_test.aggregateY(Y(4, :), 3, 'avg');
-      aggY(7, :) = accumulator_test.aggregateY(Y(4, :), 12, 'avg');
-
-      accum = Accumulator.GenerateRegular(aggY', ...
-        {'', '', 'sum', '', '', 'avg', 'avg'}, [1 1 1 1 1 1 1]);
-      ssA = accum.augmentStateSpace(ssGen);
-        
-      % Sizes
-      testCase.verifySize(ssA.Z, [p m+6]);
-      testCase.verifySize(ssA.T, [m+6 m+6 12]);
-      testCase.verifySize(ssA.c, [m+6 12]);
-      testCase.verifySize(ssA.R, [m+6 2 12]);
+      % The first two states shouldn't have changed
+      testCase.verifyEqual(newT(1:2, 1:2, :), repmat(ss.T, [1 1 3]));
+      testCase.verifyEqual(newT(1:2, 3, :), repmat([0; 0], [1 1 3]));
       
-      % Make sure 0 and 1 elements in the right places - not sure about this
-%       testCase.verifyEqual(ssA.T(12, 12, 1), zeros(1, 1, 4));
-%       testCase.verifyEqual(ssA.T(1:1+m, 1:1+m, :), repmat(ssGen.T(1:1+m, 1:1+m), [1 1 12]));
+      % The existing states should load on the accumulator state with T./cal
+      testCase.verifyEqual(newT(3, 1:2, :), ...
+        repmat(ss.T(1, 1:2), [1 1 3]) ./ reshape(1:3, [1 1 3]));
       
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z([3 6 7], [1 3]), zeros(3, 2));
-      testCase.verifyEqual(ssA.Z(3, [8 11]), ssGen.Z(3, [1 3]));
-      testCase.verifyEqual(ssA.Z(6, [6 9]), ssGen.Z(6, [1 3]));
-      testCase.verifyEqual(ssA.Z(7, [7 10]), ssGen.Z(7, [1 3]));
-      
-      % Make sure the smoother works
-      [aFilt, ll] = ssA.filter(Y);
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-      
+      % The accumulator state loads on itself with (cal-1)./cal
+      testCase.verifyEqual(squeeze(newT(3, 3, :)), ((0:2)./(1:3))');
     end
     
-    function testThetaMapAR(testCase)
-      p = 2; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
+    function testAvgAugmentedc(testCase)
+      accum = testCase.avgAccum;
+      aug = testCase.avgAug;
+      ss = testCase.ssGen;
       
-      Y = generateData(ssGen, timeDim);
-      Y(2, :) = accumulator_test.aggregateY(Y(2, :), 3, 'sum');
-
-      accum = Accumulator.GenerateRegular(Y', {'', 'sum'}, [1 3]);
-
-      ssA = accum.augmentStateSpace(ssGen);
+      newc = accum.augmentParamc(ss, aug);
       
-      TssE = ssGen.T;
-      TssE(1,:) = [nan nan];
-      ssE = StateSpaceEstimation(ssGen.Z, ssGen.d, ssGen.H, ...
-        TssE, ssGen.c, ssGen.R, ssGen.Q);
-      tm2 = accum.augmentThetaMap(ssE.ThetaMapping);
+      % We've added a state and there should now be 3 slices
+      testCase.verifySize(newc, [3 3]);
 
-      thetaA = tm2.system2theta(ssA);
-      ssA2 = tm2.theta2system(thetaA);
-      thetaA2 = tm2.system2theta(ssA2);
+      % The first two states shouldn't have changed
+      testCase.verifyEqual(newc(1:2, :), repmat(ss.c, [1 3]));
       
-      testCase.verifyEqual(tm2.nTheta, ssE.ThetaMapping.nTheta);
-      testCase.verifyEqual(thetaA, thetaA2);
+      % The existing states should load on the accumulator state with T./cal
+      testCase.verifyEqual(newc(3, :), ...
+        repmat(ss.c(1), [1 3]) ./ reshape(1:3, [1 3]));
     end
     
-    function testDetroit(testCase)
-      import matlab.unittest.constraints.IsFinite;
-      detroit = testCase.deai;
+    function testAvgAugmentedR(testCase)
+      accum = testCase.avgAccum;
+      aug = testCase.avgAug;
+      ss = testCase.ssGen;
       
-      ss0 = StateSpace(detroit.Z, detroit.d, detroit.H, ...
-        detroit.T, detroit.c, detroit.R, detroit.Q);
+      newR = accum.augmentParamR(ss, aug);
       
-      deaiAccum = Accumulator(detroit.Harvey.xi, detroit.Harvey.psi', detroit.Harvey.Horizon');
-      ss0A = deaiAccum.augmentStateSpace(ss0);
+      % We've added a state and there should now be 3 slices
+      testCase.verifySize(newR, [3 1 3]);
       
-      [~, ll] = ss0A.filter(detroit.Y);
+      % The first 2 states shouldn't have changed
+      testCase.verifyEqual(newR(1:2, :, :), repmat(ss.R, [1 1 3]));
       
-      testCase.verifyThat(ll, IsFinite);
+      % The last state should use the existing elements of R divided by cal
+      testCase.verifyEqual(squeeze(newR(3, :, :)), repmat(ss.R(1, :), [3 1]) ./ (1:3)');
+    end
+    
+    function testAvgAugmentedZ(testCase)
+      accum = testCase.avgAccum;
+      aug = testCase.avgAug;
+      ss = testCase.ssGen;
+      
+      newZ = accum.augmentParamZ(ss, aug);
+      
+      % Z should expand to cover the new state
+      testCase.verifySize(newZ, [3 3]);
+      
+      % The states that weren't accumulated shouldn't change
+      testCase.verifyEqual(newZ([1 3], 1:2), ss.Z([1 3], :));
+      testCase.verifyEqual(newZ([1 3], 3), zeros(2, 1));
+      
+      % The accumulated observation Z elements should be moved
+      testCase.verifyEqual(newZ(2, 1:2), zeros(1, 2));
+      testCase.verifyEqual(newZ(2, 3), ss.Z(2, 1));
+    end
+    
+    %% Triangle average
+    % Z, c and R matricies are computed the same regardless of the horizon of 
+    % the accumulator - see tests above. 
+    
+    function testTriAugmentedT(testCase)
+      accum = testCase.triAccum;
+      aug = testCase.triAug;
+      ss = testCase.ssGen;
+      
+      newT = accum.augmentParamT(ss, aug);
+      
+      % We've added a state and there should now be 3 slices 
+      testCase.verifySize(newT, [3 3 3]);
+
+      % The first two states shouldn't have changed
+      testCase.verifyEqual(newT(1:2, 1:2, :), repmat(ss.T, [1 1 3]));
+      testCase.verifyEqual(newT(1:2, 3, :), repmat([0; 0], [1 1 3]));
+      
+      % The existing states should load on the accumulator state with T./cal
+      testCase.verifyEqual(newT(3, 1:2, :), ...
+        repmat(ss.T(1, 1:2), [1 1 3]) ./ reshape(1:3, [1 1 3]) + reshape(repmat(1./(1:3)', [1 2])', [1 2 3]));
+      
+      % The accumulator state loads on itself with (cal-1)./cal
+      testCase.verifyEqual(squeeze(newT(3, 3, :)), ((0:2)./(1:3))');
+    end
+    
+    %% Utilities
+    function testGenerateRegular(testCase)
+      data = testCase.Y;
+      data(:, 2) = accumulator_test.aggregateY(data(:, 2), 12, 'sum');
+      data(:, 3) = accumulator_test.aggregateY(data(:, 3), 3, 'avg');
+
+      accum = Accumulator.GenerateRegular(data, {'', 'sum', 'avg'}, [1 12 1]);
+
+      % There should be 2 accumulated series
+      testCase.verifyEqual(accum.index, [2 3]);
+      
+      % First calendar: all zeros with ones every 12 places
+      testCase.verifyEqual(accum.calendar(setdiff(1:599, 12:12:599), 1), zeros(550, 1));
+      testCase.verifyEqual(accum.calendar(12:12:end, 1), ones(50, 1));
+      
+      % Second calendar: cycling 1:3
+      testCase.verifyEqual(accum.calendar(1:3:end, 2), ones(200, 1));
+      testCase.verifyEqual(accum.calendar(2:3:end, 2), 2 * ones(200, 1));
+      testCase.verifyEqual(accum.calendar(3:3:end, 2), 3 * ones(200, 1));
+
+      % Horizons: all 12s and 1s
+      testCase.verifyEqual(accum.horizon(:, 1), 12 * ones(600, 1));
+      testCase.verifyEqual(accum.horizon(:, 2), 1 * ones(600, 1));
+    end
+    
+  end
+  
+  %% Utility functions
+  methods (Static)
+    function aggY = aggregateY(Y, pers, type)
+      % Aggregate a series evenly every pers periods by sum and average types
+      % Note: cannot generate triangle averaged data - horizon on avg type
+      % accumulators should always be 1.
+      
+      timeDim = size(Y, 1);
+      timeGroupsPer = sort(repmat((1:ceil(timeDim/pers))', [pers 1]));
+      timeGroupsPer(timeDim+1:end, :) = [];
+      
+      % Generate aggregated data
+      if strcmpi(type, 'sum')
+        aggYLowF = grpstats(Y, timeGroupsPer, 'mean') .* pers;
+      else
+        aggYLowF = grpstats(Y, timeGroupsPer, 'mean');
+      end
+      
+      % Trim aggregated data
+      if sum(timeGroupsPer == max(timeGroupsPer)) ~= pers
+        aggYLowF(end, :) = [];
+      end
+      
+      % Assign to correct timing
+      aggY = nan(size(Y));
+      aggY(pers:pers:end, :) = aggYLowF;
     end
   end
+  
 end
