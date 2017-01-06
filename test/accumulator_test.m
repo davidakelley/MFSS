@@ -61,7 +61,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.sumAug;
       ss = testCase.ssGen;
       
-      newT = accum.augmentParamT(ss, aug);
+      newT = accum.augmentParamT(ss.T, aug);
       
       % There should be 2 slices of T
       testCase.verifySize(newT, [3 3 2]);
@@ -85,7 +85,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.sumAug;
       ss = testCase.ssGen;
       
-      newc = accum.augmentParamc(ss, aug);
+      newc = accum.augmentParamc(ss.c, aug);
       
       % There should be 2 slices of c
       testCase.verifySize(newc, [3 2]);
@@ -102,7 +102,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.sumAug;
       ss = testCase.ssGen;
       
-      newR = accum.augmentParamR(ss, aug);
+      newR = accum.augmentParamR(ss.R, aug);
       
       % There should be 2 slices of R
       testCase.verifySize(newR, [3 1 2]);
@@ -119,7 +119,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.sumAug;
       ss = testCase.ssGen;
       
-      newZ = accum.augmentParamZ(ss, aug);
+      newZ = accum.augmentParamZ(ss.Z, aug);
       
       % Z should expand to cover the new state
       testCase.verifySize(newZ, [3 3]);
@@ -139,7 +139,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.avgAug;
       ss = testCase.ssGen;
       
-      newT = accum.augmentParamT(ss, aug);
+      newT = accum.augmentParamT(ss.T, aug);
       
       % We've added a state and there should now be 3 slices 
       testCase.verifySize(newT, [3 3 3]);
@@ -161,7 +161,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.avgAug;
       ss = testCase.ssGen;
       
-      newc = accum.augmentParamc(ss, aug);
+      newc = accum.augmentParamc(ss.c, aug);
       
       % We've added a state and there should now be 3 slices
       testCase.verifySize(newc, [3 3]);
@@ -179,7 +179,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.avgAug;
       ss = testCase.ssGen;
       
-      newR = accum.augmentParamR(ss, aug);
+      newR = accum.augmentParamR(ss.R, aug);
       
       % We've added a state and there should now be 3 slices
       testCase.verifySize(newR, [3 1 3]);
@@ -196,7 +196,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.avgAug;
       ss = testCase.ssGen;
       
-      newZ = accum.augmentParamZ(ss, aug);
+      newZ = accum.augmentParamZ(ss.Z, aug);
       
       % Z should expand to cover the new state
       testCase.verifySize(newZ, [3 3]);
@@ -219,7 +219,7 @@ classdef accumulator_test < matlab.unittest.TestCase
       aug = testCase.triAug;
       ss = testCase.ssGen;
       
-      newT = accum.augmentParamT(ss, aug);
+      newT = accum.augmentParamT(ss.T, aug);
       
       % We've added a state and there should now be 3 slices 
       testCase.verifySize(newT, [3 3 3]);

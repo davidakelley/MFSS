@@ -229,6 +229,12 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       
     end
     
+    function testAccumExistingTVP(testCase)
+      % Check to make sure we can add an accumulator to a StateSpace that's got
+      % slices of T, c or R. Easiest way to test this is to add 2 accumulators
+      % to a StateSpace separately.
+    end
+    
     function testDetroit(testCase)
       import matlab.unittest.constraints.IsFinite;
       detroit = testCase.deai;
@@ -264,36 +270,54 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       tm2 = accum.augmentThetaMap(tm);
-
-      thetaA = tm2.system2theta(ssA);
-      ssA2 = tm2.theta2system(thetaA);
-      thetaA2 = tm2.system2theta(ssA2);
       
+      % Test system -> theta
       testCase.verifyEqual(tm2.nTheta, tm.nTheta);
-      testCase.verifyEqual(thetaA, thetaA2);
+      thetaOrig = tm.system2theta(ssGen);
+      thetaAug = tm2.system2theta(ssA);
+      testCase.verifyEqual(thetaOrig, thetaAug);
+      
+      % Test theta -> system
+      thetaTest = [12, -7.4]';
+      ssTestAug = tm2.theta2system(thetaTest);
+      thetaTestAug = tm2.system2theta(ssTestAug);
+      testCase.verifyEqual(thetaTest, thetaTestAug);
+      
+      ssNew = tm.theta2system(thetaTest);
+      ssNewAug = accum.augmentStateSpace(ssNew);
+      testCase.verifyEqual(ssTestAug, ssNewAug);      
     end
    
-    function testThetaMapARAll(testCase)
+    function testThetaMapARAllAvg(testCase)
       p = 2; m = 1; timeDim = 599;
       ssGen = generateARmodel(p, m, false);
       ssGen.T(1,:) = [0.5 0.3];
       
       Y = generateData(ssGen, timeDim)';
-      Y(:, 2) = accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 2) = accumulator_test.aggregateY(Y(:, 2), 3, 'avg');
 
-      accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
+      accum = Accumulator.GenerateRegular(Y, {'', 'avg'}, [1 3]);
 
       ssA = accum.augmentStateSpace(ssGen);
       
       tm = ThetaMap.ThetaMapAll(ssGen);
-      t2 = accum.augmentThetaMap(tm);
+      tm2 = accum.augmentThetaMap(tm);
 
-      thetaA = tm2.system2theta(ssA);
-      ssA2 = tm2.theta2system(thetaA);
-      thetaA2 = tm2.system2theta(ssA2);
-      
+      % Test system -> theta
       testCase.verifyEqual(tm2.nTheta, tm.nTheta);
-      testCase.verifyEqual(thetaA, thetaA2);
+      thetaOrig = tm.system2theta(ssGen);
+      thetaAug = tm2.system2theta(ssA);
+      testCase.verifyEqual(thetaOrig, thetaAug);
+      
+      % Test theta -> system
+      thetaTest = [12, -7.4]';
+      ssTestAug = tm2.theta2system(thetaTest);
+      thetaTestAug = tm2.system2theta(ssTestAug);
+      testCase.verifyEqual(thetaTest, thetaTestAug);
+      
+      ssNew = tm.theta2system(thetaTest);
+      ssNewAug = accum.augmentStateSpace(ssNew);
+      testCase.verifyEqual(ssTestAug, ssNewAug);      
     end
     
   end

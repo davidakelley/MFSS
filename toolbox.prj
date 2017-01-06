@@ -1,5 +1,5 @@
 <deployment-project plugin="plugin.toolbox" plugin-version="1.0">
-  <configuration file="C:\Users\g1dak02\Documents\MATLAB\MFSS\MFSS.prj" location="C:\Users\g1dak02\Documents\MATLAB\MFSS" name="MFSS" target="target.toolbox" target-name="Package Toolbox">
+  <configuration file="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\..\toolbox.prj" location="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\.." name="toolbox" target="target.toolbox" target-name="Package Toolbox">
     <param.appname>MFSS</param.appname>
     <param.authnamewatermark>David Kelley</param.authnamewatermark>
     <param.email>david.kelley@chi.frb.org</param.email>
@@ -14,16 +14,16 @@
     <param.products.version />
     <param.platforms />
     <param.guid>f799a48a-807a-452c-9db8-32d58e8bea94</param.guid>
-    <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude
-% from packaging.  
+    <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude from packaging.  
 
-% Ignore the git repo
-.gitignore 
-.git/
+      % Ignore the git repo
+      .gitignore 
+      .git/
 
-mex/
+      build/
+      mex/
 
-*.asv</param.exclude.filters>
+      *.asv</param.exclude.filters>
     <param.examples />
     <param.demosxml />
     <param.apps />
@@ -69,7 +69,7 @@ mex/
     <fileset.depfun.excluded />
     <fileset.package />
     <build-deliverables>
-      <file location="C:\Users\g1dak02\Documents\MATLAB\MFSS" name="MFSS.mltbx" optional="false">C:\Users\g1dak02\Documents\MATLAB\MFSS\MFSS.mltbx</file>
+      <file location="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\.." name="MFSS.mltbx" optional="false">C:\Users\g1dak02\Documents\MATLAB\MFSS\build\..\MFSS.mltbx</file>
     </build-deliverables>
     <workflow />
     <matlab>

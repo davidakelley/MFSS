@@ -232,6 +232,8 @@ classdef ThetaMap < AbstractSystem
       % Output 
       %   ss:    A StateSpace
       
+      % FIXME: Account for tau
+      
       % Handle inputs
       assert(all(size(theta) == [obj.nTheta 1]), ...
         'Size of theta does not match ThetaMap.');
@@ -257,7 +259,14 @@ classdef ThetaMap < AbstractSystem
           jTheta = theta(obj.index.(iName)(jF));
           constructedParamMat(jF) = jTrans(jTheta);
         end
-        knownParams{iP} = constructedParamMat;
+        if isempty(obj.fixed.tau) || strcmpi(iName, 'a0') || strcmpi(iName, 'P0')
+          knownParams{iP} = constructedParamMat;
+        else
+          paramStruct = struct;
+          paramStruct.([iName 't']) = constructedParamMat;
+          paramStruct.(['tau' iName]) = obj.fixed.tau.(iName);
+          knownParams{iP} = paramStruct;
+        end        
       end
       
       % Create StateSpace using parameters just constructed
@@ -316,6 +325,8 @@ classdef ThetaMap < AbstractSystem
       % Outputs
       %   G:     Structure of gradients for each state space parameter. Each 
       %          gradient will be nTheta X (elements in a slice) X tau_x.
+      
+      % TODO: Does this function handle TVP correctly?
       
       % Since every element of the parameter matricies is a function of a 
       % single element of theta and we have derivatives of those functions, 
@@ -497,6 +508,8 @@ classdef ThetaMap < AbstractSystem
     
     function obj = checkThetaMap(obj)
       % Verify that the ThetaMap is valid after user modifications. 
+      
+      % TODO
       
       % Minimize the size of theta needed after edits have been made to index:
       % If the user changes an element to be a function of a different theta

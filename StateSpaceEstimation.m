@@ -136,6 +136,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     function obj = em_estimate(obj, y, ss0, varargin)
       % Estimate parameters through pseudo-maximum likelihood EM algoritm
+      
+      % TODO
+      
       assert(obj.timeInvariant, ...
         'EM Algorithm only developed for time-invariant cases.');
       

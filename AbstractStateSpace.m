@@ -255,7 +255,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         repmat({ones([obj.n+1 1])}, [4 1])];
       
       if ~isempty(obj.tau)
-        warning('tau already set.');
+        cellTau = struct2cell(obj.tau);
+        assert(max(cat(1, cellTau{:})) == 1, 'Existing tau not invariant.');
       end
       obj.tau = cell2struct(taus, obj.systemParam(1:7));
     end
