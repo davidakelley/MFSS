@@ -1,0 +1,95 @@
+<deployment-project plugin="plugin.toolbox" plugin-version="1.0">
+  <configuration file="C:\Users\g1dak02\Documents\MATLAB\MFSS\MFSS.prj" location="C:\Users\g1dak02\Documents\MATLAB\MFSS" name="MFSS" target="target.toolbox" target-name="Package Toolbox">
+    <param.appname>MFSS</param.appname>
+    <param.authnamewatermark>David Kelley</param.authnamewatermark>
+    <param.email>david.kelley@chi.frb.org</param.email>
+    <param.company>Federal Reserve Bank of Chicago</param.company>
+    <param.summary>Mixed-Frequency State Space Modeling</param.summary>
+    <param.description />
+    <param.screenshot />
+    <param.version>1.0.0</param.version>
+    <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
+    <param.products.name />
+    <param.products.id />
+    <param.products.version />
+    <param.platforms />
+    <param.guid>f799a48a-807a-452c-9db8-32d58e8bea94</param.guid>
+    <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude
+% from packaging.  
+
+% Ignore the git repo
+.gitignore 
+.git/
+
+mex/
+
+*.asv</param.exclude.filters>
+    <param.examples />
+    <param.demosxml />
+    <param.apps />
+    <param.docs />
+    <param.matlabpath.excludes>
+      <item>/examples</item>
+      <item>/test</item>
+    </param.matlabpath.excludes>
+    <param.javaclasspath.excludes />
+    <unset>
+      <param.authnamewatermark />
+      <param.email />
+      <param.company />
+      <param.description />
+      <param.screenshot />
+      <param.output />
+      <param.products.name />
+      <param.products.id />
+      <param.products.version />
+      <param.platforms />
+      <param.examples />
+      <param.demosxml />
+      <param.apps />
+      <param.docs />
+      <param.javaclasspath.excludes />
+    </unset>
+    <fileset.rootdir>
+      <file>C:\Users\g1dak02\Documents\MATLAB\MFSS</file>
+    </fileset.rootdir>
+    <fileset.rootfiles>
+      <file>${PROJECT_ROOT}\+mfss_mex</file>
+      <file>${PROJECT_ROOT}\AbstractStateSpace.m</file>
+      <file>${PROJECT_ROOT}\AbstractSystem.m</file>
+      <file>${PROJECT_ROOT}\Accumulator.m</file>
+      <file>${PROJECT_ROOT}\docs</file>
+      <file>${PROJECT_ROOT}\examples</file>
+      <file>${PROJECT_ROOT}\StateSpace.m</file>
+      <file>${PROJECT_ROOT}\StateSpaceEstimation.m</file>
+      <file>${PROJECT_ROOT}\test</file>
+      <file>${PROJECT_ROOT}\ThetaMap.m</file>
+    </fileset.rootfiles>
+    <fileset.depfun.included />
+    <fileset.depfun.excluded />
+    <fileset.package />
+    <build-deliverables>
+      <file location="C:\Users\g1dak02\Documents\MATLAB\MFSS" name="MFSS.mltbx" optional="false">C:\Users\g1dak02\Documents\MATLAB\MFSS\MFSS.mltbx</file>
+    </build-deliverables>
+    <workflow />
+    <matlab>
+      <root>C:\Program Files\MATLAB\R2016b</root>
+      <toolboxes />
+    </matlab>
+    <platform>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
+      <win2k>false</win2k>
+      <winxp>false</winxp>
+      <vista>false</vista>
+      <linux>false</linux>
+      <solaris>false</solaris>
+      <osver>6.1</osver>
+      <os32>false</os32>
+      <os64>true</os64>
+      <arch>win64</arch>
+      <matlab>true</matlab>
+    </platform>
+  </configuration>
+</deployment-project>

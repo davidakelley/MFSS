@@ -10,7 +10,7 @@ clear mex; %#ok<CLMEX>
 % Get folders
 baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
   struct('type', '{}', 'subs', {{1}})) 'MFSS'];
-outputFolder = fullfile(baseDir, '+ss_mex');
+outputFolder = fullfile(baseDir, '+mfss_mex');
 if ~exist(outputFolder, 'dir')
   mkdir(outputFolder);
 end

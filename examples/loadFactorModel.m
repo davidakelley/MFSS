@@ -21,7 +21,6 @@ opts.targets = {'GDPH'};
 [opts, dims] = getTargetSpec(opts, dims);
 [data, opts, dims] = loadData(opts, dims, paths);
 cd(ssDir);
-resetPath;
 
 save(saveFile, 'data', 'opts', 'dims');
 
