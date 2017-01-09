@@ -4,10 +4,10 @@
     <param.authnamewatermark>David Kelley</param.authnamewatermark>
     <param.email>david.kelley@chi.frb.org</param.email>
     <param.company>Federal Reserve Bank of Chicago</param.company>
-    <param.summary>Mixed-Frequency State Space Modeling</param.summary>
+    <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.0.0</param.version>
+    <param.version>1.0.2</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
     <param.products.name />
     <param.products.id />
