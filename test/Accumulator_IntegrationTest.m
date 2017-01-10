@@ -2,7 +2,7 @@
 
 % David Kelley, 2016
 
-classdef accumulatorIntegration_test < matlab.unittest.TestCase
+classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
   
   properties
     bbk
@@ -50,7 +50,7 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       ssGen.T(1,:) = [0.5 0.3];
       
       Y = generateData(ssGen, timeDim)';
-      Y(:, 2) = accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
 
       accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
       ssA = accum.augmentStateSpace(ssGen);
@@ -85,8 +85,8 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       ssGen.T(1,:) = [0.5 0.3];
       Y = generateData(ssGen, timeDim)';
       
-      Y(:, 2) = accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
-      Y(:, 3) = accumulator_test.aggregateY(Y(:, 3), 12, 'sum');
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 3) = Accumulator_test.aggregateY(Y(:, 3), 12, 'sum');
       
       accum = Accumulator.GenerateRegular(Y, {'', 'sum', 'sum'}, [1 3 12]);
       
@@ -122,7 +122,7 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       Y = generateData(ssGen, timeDim)';
 
       aggY = Y;
-      aggY(:, 2:3) = accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
+      aggY(:, 2:3) = Accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
 
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg', 'avg'}, [1 3 3]);
       ssA = accum.augmentStateSpace(ssGen);
@@ -138,7 +138,7 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       Y = generateData(ssGen, timeDim)';
 
       aggY = Y;
-      aggY(:, 2) = accumulator_test.aggregateY(Y(:, 2), 6, 'avg');
+      aggY(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 6, 'avg');
 
       % Not really the right horizon for this data, but we need a test for lags
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg', ''}, [1 6 1]);
@@ -155,8 +155,8 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       Y = generateData(ssGen, timeDim)';
 
       aggY = Y;
-      aggY(:, 2:3) = accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
-      aggY(:, 4) = accumulator_test.aggregateY(Y(:, 4), 12, 'avg');
+      aggY(:, 2:3) = Accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
+      aggY(:, 4) = Accumulator_test.aggregateY(Y(:, 4), 12, 'avg');
 
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg', 'avg', 'avg'}, [1 3 3 12]);
       ssA = accum.augmentStateSpace(ssGen);
@@ -199,9 +199,9 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       [Y, trueAlpha] = generateData(ssGen, timeDim);
 
       aggY = Y';
-      aggY(:, 3) = accumulator_test.aggregateY(Y(3, :)', 3, 'sum');
-      aggY(:, 6) = accumulator_test.aggregateY(Y(4, :)', 3, 'avg');
-      aggY(:, 7) = accumulator_test.aggregateY(Y(4, :)', 12, 'avg');
+      aggY(:, 3) = Accumulator_test.aggregateY(Y(3, :)', 3, 'sum');
+      aggY(:, 6) = Accumulator_test.aggregateY(Y(4, :)', 3, 'avg');
+      aggY(:, 7) = Accumulator_test.aggregateY(Y(4, :)', 12, 'avg');
 
       accum = Accumulator.GenerateRegular(aggY, ...
         {'', '', 'sum', '', '', 'avg', 'avg'}, [1 1 3 1 1 1 1]);
@@ -257,7 +257,7 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       ssGen.T(1,:) = [0.5 0.3];
       
       Y = generateData(ssGen, timeDim)';
-      Y(:, 2) = accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
 
       accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
 
@@ -294,30 +294,43 @@ classdef accumulatorIntegration_test < matlab.unittest.TestCase
       ssGen.T(1,:) = [0.5 0.3];
       
       Y = generateData(ssGen, timeDim)';
-      Y(:, 2) = accumulator_test.aggregateY(Y(:, 2), 3, 'avg');
-
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'avg');
       accum = Accumulator.GenerateRegular(Y, {'', 'avg'}, [1 3]);
 
+      % Create augmented StateSpace
       ssA = accum.augmentStateSpace(ssGen);
       
+      % Generate ThetaMap
       tm = ThetaMap.ThetaMapAll(ssGen);
+      tm.index.Z(:, 2) = 0;
+      tm.index.T(2, :) = 0;
+      tm.fixed.T(2, 1) = 1;   
+      tm.index.c(2) = 0;
+      tm.index.R(2, 1) = 0;
+      tm = tm.validateThetaMap();
+      
       tm2 = accum.augmentThetaMap(tm);
-
-      % Test system -> theta
+      tm2 = tm2.validateThetaMap();
       testCase.verifyEqual(tm2.nTheta, tm.nTheta);
-      thetaOrig = tm.system2theta(ssGen);
-      thetaAug = tm2.system2theta(ssA);
-      testCase.verifyEqual(thetaOrig, thetaAug);
       
       % Test theta -> system
-      thetaTest = [12, -7.4]';
-      ssTestAug = tm2.theta2system(thetaTest);
+      thetaOrig = tm.system2theta(ssGen);
+
+      ssTestAug = tm2.theta2system(thetaOrig);
+      testCase.verifyEqual(ssTestAug.Z, ssA.Z, 'AbsTol', 1e-14);
+      testCase.verifyEqual(ssTestAug.d, ssA.d, 'AbsTol', 1e-14);
+      testCase.verifyEqual(ssTestAug.H, ssA.H, 'AbsTol', 1e-14);
+      testCase.verifyEqual(ssTestAug.T, ssA.T, 'AbsTol', 1e-14);
+      testCase.verifyEqual(ssTestAug.c, ssA.c, 'AbsTol', 1e-14);
+      testCase.verifyEqual(ssTestAug.R, ssA.R, 'AbsTol', 1e-14);
+      testCase.verifyEqual(ssTestAug.Q, ssA.Q, 'AbsTol', 1e-14);
+      
+      % Test system -> theta
+      thetaAug = tm2.system2theta(ssA);
+      testCase.verifyEqual(thetaOrig, thetaAug); 
+      
       thetaTestAug = tm2.system2theta(ssTestAug);
       testCase.verifyEqual(thetaTest, thetaTestAug);
-      
-      ssNew = tm.theta2system(thetaTest);
-      ssNewAug = accum.augmentStateSpace(ssNew);
-      testCase.verifyEqual(ssTestAug, ssNewAug);      
     end
     
   end

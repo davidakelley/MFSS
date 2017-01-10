@@ -34,29 +34,23 @@ classdef ThetaMap < AbstractSystem
   %   have an integer value between 1 and the total number of transformations
   %   provided, indicating which function will be used to transform the value of
   %   theta(i) before placing it in the appropriate parameter matrix.
-  
-  % David Kelley, 2016
   %
-  % TODO (12/12/2016)
+  % David Kelley, 2016-2017
+  %
+  % TODO (1/10/17)
   % ---------------
-  %   - Write checkThetaMap or write setters for most properties
-  %   - Write a test class specifically for ThetaMap. It should verify: 
-  %     - We can go system -> theta -> system and get the same thing both when
-  %       a0 and P0 are defined and when they're not.
+  %   - Write tests for ThetaMap. They should verify: 
   %     - Check a generated system obeys bounds. 
   %     - Creating a system with accumulators is the same as generating a system
   %       without accumulators and adding the accumulators in afterward. 
-  %     - checkThetaMap purpose: Can we eliminate an element from the map and
-  %       get a reduced size theta?
-  %   - Move initialValuesGradients to StateSpace?
+  %   - Function comparison of transformations: if a string match of the
+  %     functions() function fields match and the workspaces match, the 
+  %     transformations are the same and can be combined. 
   %   - Optional: Allow inverses to be passed empty and do the line-search 
   %     to find the numeric inverse. 
   %   - Write documentation on initial values derivation
   
-  properties (SetAccess = protected)
-    % Number of elements in theta vector
-    nTheta            
-
+  properties 
     % StateSpace containing all fixed elements. 
     % Elements of the parameters that will be determined by theta must be set to
     % zero.
@@ -75,11 +69,16 @@ classdef ThetaMap < AbstractSystem
     inverses
   end
   
+  properties (SetAccess = protected)
+    nTheta                          % Number of elements in theta vector
+  end
+  
   properties (SetAccess = protected, Hidden)
     % Parameter bounds - set in addRestrictions
     LowerBound
     UpperBound
     
+    % Initial state conditions
     usingDefaulta0
     usingDefaultP0
   end
@@ -90,32 +89,8 @@ classdef ThetaMap < AbstractSystem
         transformations, derivatives, inverses)
       % Generate map from elements of theta to StateSpace parameters
       
-      % Validate inputs
-      assert(isa(fixed, 'StateSpace'));
-      assert(isa(index, 'StateSpace'));
-      assert(isa(transformationIndex, 'StateSpace'));
-      
-      % Dimensions
-      index.checkConformingSystem(transformationIndex);
-      nTransform = max(transformationIndex.vectorizedParameters());
-      
-      assert(length(transformations) >= nTransform, ...
-        'Insufficient transformations provided for indexes given.');
-      assert(length(transformations) == length(derivatives), ...
-        'Derivatives must be provided for every transformation.');
-      assert(length(inverses) == length(derivatives), ...
-        'Inverses must be provided for every transformation.');
-
-      vecFixed = fixed.vectorizedParameters();
-      assert(~any(isnan(vecFixed)), 'Nan not allowed in fixed.');
-      vecIndex = index.vectorizedParameters();
-      assert(~any(isnan(vecIndex)), 'Nan not allowed in index.');      
-      assert(isempty(setdiff(1:max(vecIndex), vecIndex)), ...
-        'Index must not skip any elements of theta.');
-      
-      % Validate: non-zero elements of fixed are zero in index and vice-versa.
-      assert(all(~(vecFixed ~= 0 & vecIndex ~= 0)), ...
-        'Parameters determined by theta must be set to 0 in fixed.');
+      ThetaMap.validateInputs(fixed, index, transformationIndex, ...
+        transformations, derivatives, inverses);
       
       % Set properties
       obj.fixed = fixed;
@@ -130,7 +105,7 @@ classdef ThetaMap < AbstractSystem
       obj.usingDefaultP0 = fixed.usingDefaultP0;
       
       % Set dimensions
-      obj.nTheta = max(vecIndex);
+      obj.nTheta = max(index.vectorizedParameters);
       
       obj.p = fixed.p;
       obj.m = fixed.m;
@@ -151,6 +126,10 @@ classdef ThetaMap < AbstractSystem
         ssLB.P0(1:obj.m+1:end) = eps;
       end
       obj = obj.addRestrictions(ssLB, ssUB);
+      
+      % Validate
+      obj = obj.validateThetaMap();
+      
     end
   end
   
@@ -506,32 +485,146 @@ classdef ThetaMap < AbstractSystem
       end
     end
     
-    function obj = checkThetaMap(obj)
+    function obj = validateThetaMap(obj)
       % Verify that the ThetaMap is valid after user modifications. 
-      
-      % TODO
       
       % Minimize the size of theta needed after edits have been made to index:
       % If the user changes an element to be a function of a different theta
       % value, remove the old theta value - effectively shift all indexes down 
       % by 1.
-      if ~isempty(setdiff(1:obj.nTheta, obj.index.vectorizedParameters))
-        
-      end
-      
-      
-      % Remove unused transformations (and reset transformationIndexes too)
-      
+      obj.index = ThetaMap.eliminateUnusedIndexes(obj.index);
+
       % Reset nTheta if we've added/removed elements
-      
+      obj.nTheta = max(obj.index.vectorizedParameters());
+            
+      % Remove duplicate and unused transformations
+      obj = obj.compressTransformations();      
+
       % Make sure the lower bound is actually below the upper bound and
       % other error checking?
-      
+      assert(all(obj.LowerBound.vectorizedParameters() <= ...
+        obj.UpperBound.vectorizedParameters()), ...
+        'Elements of LowerBound are greater than UpperBound.');
     end
+    
+    function obj = compressTransformations(obj)
+      % Removes unused or duplicate transformations.
+      % For duplicates, set their indexes to the lower-indexed version and 
+      % delete the higher-indexed version.
+      
+      % Remove unused transformations:
+      % this should be very similar to removing missing index elements but
+      % we also need to delete the transformations
+      [obj.transformationIndex, unusedTransforms] = ...
+        ThetaMap.eliminateUnusedIndexes(obj.transformationIndex);
+      obj.transformations(unusedTransforms) = [];
+      obj.derivatives(unusedTransforms) = [];
+      obj.inverses(unusedTransforms) = [];
+      
+      % Remove duplicate transformations: 
+      % Progress through the list searching for other transformations that match
+      % the current transformation. When one is found, fix all indexes that
+      % match that transformation, then delete it.
+      iTrans = 0;
+      while iTrans < length(obj.transformations)-1
+        iTrans = iTrans + 1;
+        
+        % Check all transformations after the current entry
+        duplicateTrans = ThetaMap.isequalTransform(...
+          obj.transformations{iTrans}, obj.transformations(iTrans+1:end));
+        duplicatesForRemoval = find([zeros(1, iTrans), duplicateTrans]);
+        if isempty(duplicatesForRemoval)
+          continue
+        end
+        
+        % Reset the indexes of any transformations found to be duplicate
+        paramNames = obj.transformationIndex.systemParam;
+        for iP = 1:length(paramNames)
+          dupInds = arrayfun(@(x) any(x == duplicatesForRemoval), ...
+            obj.transformationIndex.(paramNames{iP}));
+          obj.transformationIndex.(paramNames{iP})(dupInds) = iTrans;
+        end
+        
+        % Compress indexes
+        [obj.transformationIndex, unusedTransforms] = ...
+          ThetaMap.eliminateUnusedIndexes(obj.transformationIndex);
+        assert(isempty(unusedTransforms) || ...
+          all(unusedTransforms == duplicatesForRemoval));
+        
+        % Remove duplicates
+        obj.transformations(duplicatesForRemoval) = [];
+        obj.derivatives(duplicatesForRemoval) = [];
+        obj.inverses(duplicatesForRemoval) = [];
+      end
+    end
+    
   end
   
   methods (Static, Hidden)
-    %% Alternate constructor helper functions
+    %% Constructor helper functions
+    function validateInputs(fixed, index, transformationIndex, ...
+        transformations, derivatives, inverses)
+      % Validate inputs
+      assert(isa(fixed, 'StateSpace'));
+      assert(isa(index, 'StateSpace'));
+      assert(isa(transformationIndex, 'StateSpace'));
+      
+      % Dimensions
+      index.checkConformingSystem(transformationIndex);
+      nTransform = max(transformationIndex.vectorizedParameters());
+      
+      assert(length(transformations) >= nTransform, ...
+        'Insufficient transformations provided for indexes given.');
+      assert(length(transformations) == length(derivatives), ...
+        'Derivatives must be provided for every transformation.');
+      assert(length(inverses) == length(derivatives), ...
+        'Inverses must be provided for every transformation.');
+
+      vecFixed = fixed.vectorizedParameters();
+      assert(~any(isnan(vecFixed)), 'Nan not allowed in fixed.');
+      vecIndex = index.vectorizedParameters();
+      assert(~any(isnan(vecIndex)), 'Nan not allowed in index.'); 
+      
+      % Non-zero elements of fixed are zero in index and vice-versa.
+      assert(all(~(vecFixed ~= 0 & vecIndex ~= 0)), ...
+        'Parameters determined by theta must be set to 0 in fixed.');
+      
+    end
+    
+    function [indexSS, missingInx] = eliminateUnusedIndexes(indexSS)
+      % Decrement index values of a StateSpace so that therer are no unused
+      % integer values from 1 to the maximum value in the system.
+      
+      assert(isa(indexSS, 'StateSpace'));
+      vecIndex = indexSS.vectorizedParameters();
+      maxVal = max(vecIndex);
+      missingInx = setdiff(1:maxVal, vecIndex);
+      if isempty(missingInx)
+        return
+      end
+      
+      paramNames = indexSS.systemParam;
+
+      if ~isempty(missingInx)
+        for iP = 1:length(paramNames)
+          % We need to collapse down through every element that's missing. To do
+          % this, count how many "missing" indexes each index is greater than
+          % and subtract that number from the existing indexes.
+          indexSubtract = arrayfun(@(x) sum(x > missingInx), indexSS.(paramNames{iP}));
+          indexSS.(paramNames{iP}) = indexSS.(paramNames{iP}) - indexSubtract;
+        end
+      end
+      
+      % The new maximum value will be the current maximum value minus the number
+      % of missing integers from 1:maxInx;
+      newMax = maxVal - length(missingInx);
+      newVecIndex = indexSS.vectorizedParameters();
+      
+      assert(newMax == max(newVecIndex));
+      assert(isempty(setdiff(1:newMax, newVecIndex)), ...
+        'Development error. Index cannot skip elements of theta.');
+    end
+    
     function index = IndexStateSpace(ss)
       % Set up index StateSpace for default case where all unknown elements of 
       % the parameters are to be estimated individually
@@ -598,7 +691,7 @@ classdef ThetaMap < AbstractSystem
       
       % Create StateSpace with system parameters
       transIndex = ThetaMap.cellParams2ss(transIndParams, ss);
-    end
+    end  
   end
   
   methods (Static, Hidden)
@@ -636,6 +729,43 @@ classdef ThetaMap < AbstractSystem
         deriv = @(x) 1;
         inver = @(x) x;
       end      
+    end
+    
+    function result = isequalTransform(fn1, fn2)
+      % Determines if two function handles represent the same function
+      % 
+      % Also accepts cell arrays of function handles. If only one element is a
+      % cell array, each is checked to see if they are equal to the non-cell
+      % array input. If both elements are cell arrays, they must be the same
+      % size and will be checked element-wise.
+      
+      % David Kelley, 2017
+
+      nComp = max(length(fn1), length(fn2));
+      if iscell(fn1) && iscell(fn2)
+        assert(size(fn1) == size(fn2), 'Cell array inputs must be the same size.');
+      end
+      
+      if iscell(fn1)
+        fnInfo1 = cellfun(@functions, fn1);
+        fn1Strs = cellfun(@(x) x.function, fnInfo1, 'Uniform', false);
+        fn1Workspace = cellfun(@(x) x.workspace{1}, fnInfo1);
+      else
+        fnInfo1 = functions(fn1);
+        fn1Strs = repmat({fnInfo1.function}, [1 nComp]);
+        fn1Workspace = repmat({fnInfo1.workspace{1}}, [1 nComp]);
+      end
+      if iscell(fn2)
+        fnInfo2 = cellfun(@functions, fn2, 'Uniform', false);
+        fn2Strs = cellfun(@(x) x.function, fnInfo2, 'Uniform', false);
+        fn2Workspace = cellfun(@(x) x.workspace{1}, fnInfo2, 'Uniform', false);
+      else
+        fnInfo2 = functions(fn2);
+        fn2Strs = repmat({fnInfo2.function}, [1 nComp]);
+        fn2Workspace = repmat({fnInfo2.workspace{1}}, [1 nComp]);
+      end
+      
+      result = strcmp(fn1Strs, fn2Strs) & cellfun(@isequal, fn1Workspace, fn2Workspace);      
     end
     
     function ssNew = cellParams2ss(cellParams, ssOld)

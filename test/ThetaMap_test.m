@@ -4,7 +4,7 @@
 
 % David Kelley & Bill Kluender, 2016-2017
 
-classdef thetamap_test < matlab.unittest.TestCase
+classdef ThetaMap_test < matlab.unittest.TestCase
   
   properties
     data = struct;
@@ -40,7 +40,7 @@ classdef thetamap_test < matlab.unittest.TestCase
   
   methods (Test)
     
-    % thetamap_tests
+    %% Tests converting between theta vectors and StateSpaces
     function thetaSystemThetaSimple(testCase)
       % Test that we can go from a theta to a system and back.
       Z = 1;
@@ -155,15 +155,36 @@ classdef thetamap_test < matlab.unittest.TestCase
       testCase.verifyEqual(ss.P0, ssNew.P0, 'AbsTol', 1e-9);
     end
     
-    
+    %% Test that the map obeys bounds
     function testLowerBound(testCase)
       % Test that we get an error with a StateSpace with elements below the
       % lower bound of a ThetaMap
+      error();
     end
     
     function testUpperBound(testCase)
       % Test that we get an error with a StateSpace with elements above the
       % upper bound of a ThetaMap
+      error();
+    end
+    
+    %% Test that we can edit a ThetaMap and remove elements from theta
+    function testRemoveThetaElements(testCase)
+      % Test that we can zero out an element of index and let validate collapse
+      % the theta vector.
+      
+      % Create ThetaMap
+      p = 2; m = 1; 
+      ssGen = generateARmodel(p, m, false);
+      tm = ThetaMap.ThetaMapAll(ssGen);
+      
+      % Edit and validate
+      tmNew = tm;
+      tmNew.index.T(2, :) = 0;
+      tmNew.fixed.T(2, :) = [1 0];
+      tmNew = tmNew.validateThetaMap();
+      
+      testCase.verifyEqual(tmNew.nTheta, tm.nTheta - 2);      
     end
     
   end

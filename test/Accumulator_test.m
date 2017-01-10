@@ -36,14 +36,14 @@ classdef Accumulator_test < matlab.unittest.TestCase
 
       % Sum accum
       sumData = testCase.Y;
-      sumData(:, 2) = accumulator_test.aggregateY(sumData(:, 2), 3, 'sum');
+      sumData(:, 2) = Accumulator_test.aggregateY(sumData(:, 2), 3, 'sum');
       
       testCase.sumAccum = Accumulator.GenerateRegular(sumData, {'', 'sum', ''}, [1 3 1]);
       testCase.sumAug = testCase.sumAccum.computeAugSpecification(testCase.ssGen);
       
       % Avg accum
       avgData = testCase.Y;
-      avgData(:, 2) = accumulator_test.aggregateY(avgData(:, 2), 3, 'avg');
+      avgData(:, 2) = Accumulator_test.aggregateY(avgData(:, 2), 3, 'avg');
       
       testCase.avgAccum = Accumulator.GenerateRegular(avgData, {'', 'avg', ''}, [1 1 1]);
       testCase.avgAug = testCase.avgAccum.computeAugSpecification(testCase.ssGen);
@@ -239,8 +239,8 @@ classdef Accumulator_test < matlab.unittest.TestCase
     %% Utilities
     function testGenerateRegular(testCase)
       data = testCase.Y;
-      data(:, 2) = accumulator_test.aggregateY(data(:, 2), 12, 'sum');
-      data(:, 3) = accumulator_test.aggregateY(data(:, 3), 3, 'avg');
+      data(:, 2) = Accumulator_test.aggregateY(data(:, 2), 12, 'sum');
+      data(:, 3) = Accumulator_test.aggregateY(data(:, 3), 3, 'avg');
 
       accum = Accumulator.GenerateRegular(data, {'', 'sum', 'avg'}, [1 12 1]);
 

@@ -102,8 +102,16 @@ classdef Accumulator < AbstractSystem
       aug = obj.computeAugSpecification(fullSys); 
       
       % Since everything is elementwise in the augmentation, augmenting the
-      % fixed system will work just the same as a regular StateSpace. 
+      % fixed system will work almost the same as a regular StateSpace. 
+      
       fixedNew = obj.buildAccumulatorStateSpace(tm.fixed, aug);
+      
+      % But we will need to delete the accumulated state elements that have 
+      % gotten the (1/cal) elements added so they don't conflict with the index 
+      % elements.
+      accumulatedStates = aug.m.withLag + 1:aug.m.final;
+      indexElems = 1:aug.m.withLag;
+      fixedNew.T(accumulatedStates, indexElems, :) = 0;
       
       % Augmenting the index is different. We need to simply copy the rows as
       % with the normal augmentation.
@@ -202,11 +210,11 @@ classdef Accumulator < AbstractSystem
       [augmentedStates, indexUsedInx] = obj.findUsedAccum(ss);
             
       if size(augmentedStates, 2) > 1
-        warning('Flip!');
+        warning('Flip! Don''t know why this is happening.');
         augmentedStates = augmentedStates';
       end
       if size(indexUsedInx, 2) > 1
-        warning('Flip!');
+        warning('Flip! Don''t know why this is happening.');
         indexUsedInx = indexUsedInx';
       end
       
@@ -242,7 +250,7 @@ classdef Accumulator < AbstractSystem
       % Compute where Z elements should be moved from and to (linear indexes)
       % Original Z elements: any nonzero elements of rows of Z for used
       % accumulated observables
-      accumulatorObservationsZinx = obj.index(indexUsedInx(usedDefinitions))';
+      accumulatorObservationsZinx = reshape(obj.index(indexUsedInx(usedDefinitions)), [], 1);
       
       Zspec.originIndexes = sub2ind(size(ss.Z), ...
         accumulatorObservationsZinx, augSpec.baseFreqState');
@@ -331,12 +339,18 @@ classdef Accumulator < AbstractSystem
       % them with zeros - this is taken care of with the standard augmentation.
       % For T, c and R we simply need to copy the high frequency row to the 
       % correct accumulator state.
-            
+      
       newIndex = obj.buildAccumulatorStateSpace(index, aug);
+      
+      % Delete any "indexes" for lag states we just added
+      lagStates = aug.m.original + 1: aug.m.withLag;
+      newIndex.T(lagStates, :, :) = 0;
+      newIndex.c(lagStates, :, :) = 0;
+      newIndex.R(lagStates, :, :) = 0;
       
       % Both accumulators are the same here. We're just copying integers.
       for iAccum = 1:aug.nAccumulatorStates
-        iAccumState = aug.m.original + iAccum;
+        iAccumState = aug.m.withLag + iAccum;
         
         % Copy rows of base part of T, c & R to the accumulator states
         newIndex.T(iAccumState, :, :) = newIndex.T(aug.baseFreqState(iAccum), :, :);
@@ -351,96 +365,62 @@ classdef Accumulator < AbstractSystem
       % the associated transformations to enforce the accumulators. 
       %
       % For Z, we're just moving elements so there's no change to the
-      % transformations. For T, c & R, the transformation indexes propogate the 
-      % same as the theta indexes. 
+      % transformations. 
+      % For T, c & R, the transformation indexes almost propogate the same as 
+      % the theta indexes. 
       % The sum accumulators only copy parameters so we don't need to alter the 
       % transformations. The average accumulators require the application of the
       % same linear transformation that is applied during a StateSpace 
       % augmentation after the existing transformations are made. 
       
       transIndex = obj.augmentIndex(tm.transformationIndex, aug);
-      
-      for iAcc = 1:aug.nAccumulatorStates
-        if aug.accumulatorTypes(iAcc) ~= 1
-          % No alteration to transformations neccessary for sum accumulators
-          continue
-        end
-        
-        iState = aug.m.withLag + iAcc;
-        
-        % Modify T transformations
-        vec = @(M) reshape(M, [], 1);
+      nTrans = max(tm.transformationIndex.vectorizedParameters());
+      augStates = aug.m.withLag + (1:aug.nAccumulatorStates);
 
-        nCol = aug.m.original;
-        nSlices = size(transIndex.T, 3);
-        nTTrans = nCol * nSlices;
-        Tinds = sub2ind(size(transIndex.T), ...
-          repmat(iState, [nTTrans 1]), vec(repmat(1:nCol, [nSlices 1])'), ...
-          vec(repmat(1:size(transIndex.T, 3), [nCol 1])));
-        
-        % Figure out what elements of T are getting added to them and mutliplied
-        % by to create the new parameters:
-        addendT = obj.augmentParamT(zeros(size(tm.fixed.T)), aug);
-        factorT = obj.augmentParamT(ones(size(tm.fixed.T)), aug) - addendT;        
-        
-        % Compose new functions that take into account the transformation
-        % occuring in the augmentation:
-        newTrans = cell(1, numel(Tinds));
-        newDeriv = cell(1, numel(Tinds));
-        newInv = cell(1, numel(Tinds));
-        for iTrans = 1:numel(Tinds)
-          iT = Tinds(iTrans);
-          iTransInd = transIndex.T(iT);
-          
-          if iTransInd == 0
-            % Not a function of theta
-            continue
-          end
-          if factorT(iT) == 1 && addendT(iT) == 0
-            % Simply copy of elements, don't nest the function 
-            continue
-          end
-          
-          % Compose transformation by multiplying then adding
-          newTrans{iTrans} = obj.composeLinearFunc(...
-            tm.transformations{iTransInd}, factorT(iT), addendT(iT));
-          % Compose the derivative with the chain rule
-          newDeriv{iTrans} = obj.composeLinearFunc(...
-            tm.derivatives{iTransInd}, factorT(iT), 0);
-          % "Undo" the linear transformation by first subtracting what was added
-          % then dividing by what was multiplied. % TODO: simplify
-          invTemp = obj.composeLinearFunc(...
-            tm.inverses{iTransInd}, 1, -addendT(iT)); 
-          newInv{iTrans} = obj.composeLinearFunc(...
-            invTemp, 1/factorT(iT), 0);
-          
-          % Move transformationIndex of the element we just changed
-          nTransformations = max(transIndex.vectorizedParameters());
-          transIndex.T(iT) = nTransformations + 1;
-        end
-                
-        % Append the used transformations to the lists:
-        trans = [tm.transformations newTrans(~cellfun(@isempty, newTrans))];
-        deriv = [tm.derivatives newDeriv(~cellfun(@isempty, newDeriv))];
-        inv = [tm.inverses newInv(~cellfun(@isempty, newInv))];
-      end
+      % Modify T transformations
+      % The transformations are linear. THe full definitions are then given by 
+      % what elements of T are getting added to them and mutliplied by:
+      addendT = Accumulator.augmentParamT(zeros(size(tm.fixed.T)), aug);
+      factorT = Accumulator.augmentParamT(ones(size(tm.fixed.T)), aug) - addendT;
+      isAugElemT = false(size(transIndex.T));
+      isAugElemT(augStates, 1:aug.m.original, :) = true;
+      [transIndex.T, newTransT, newDerivT, newInvT] = Accumulator.computeNewTrans(...
+        transIndex.T, factorT, addendT, find(isAugElemT), tm, nTrans); %#ok<FNDSB>
       
+      % Modify c transformations (similar structure to T transformations)
+      addendc = Accumulator.augmentParamc(zeros(size(tm.fixed.c)), aug);
+      factorc = Accumulator.augmentParamc(ones(size(tm.fixed.c)), aug) - addendc;
+      isAugElemc = false(size(transIndex.c));
+      isAugElemc(augStates, :) = true;
+      [transIndex.c, newTransc, newDerivc, newInvc] = Accumulator.computeNewTrans(...
+        transIndex.c, factorc, addendc, find(isAugElemc), tm, ...
+        nTrans + length(newTransT)); %#ok<FNDSB>
+      
+      % Modify R transformations (similar structure to T transformations)
+      addendR = Accumulator.augmentParamc(zeros(size(tm.fixed.c)), aug);
+      factorR = Accumulator.augmentParamc(ones(size(tm.fixed.c)), aug) - addendR;
+      isAugElemR = false(size(transIndex.R));
+      isAugElemR(augStates, :, :) = true;
+      [transIndex.R, newTransR, newDerivR, newInvR] = Accumulator.computeNewTrans(...
+        transIndex.R, factorR, addendR, find(isAugElemR), tm, ...
+        nTrans + length(newTransT) + length(newTransc)); %#ok<FNDSB>
+      
+      trans = [tm.transformations newTransT newTransc newTransR];
+      deriv = [tm.derivatives newDerivT newDerivc newDerivR];
+      inv = [tm.inverses newInvT newInvc newInvR];
     end
     
-    function newFunc = composeLinearFunc(func, A, B)
-      % A helper function for performing a linear transformation to the result
-      % from an arbitrary function handle.
-      % Provides g(x) = A * f(x) + B
-      
-      newFunc = @(x) A * func(x) + B;
-    end
-    
-    %% Accumulator helper methods
+    %% Helper methods
     function [accumulatedStates, indexUsedInx] = findUsedAccum(obj, ss)
       % Find the elements of Z that care about the accumulators - anything
       % that loads onto an observation that has an associated accumulator
       usedZaccumLoc = any(ss.Z(obj.index,:,:) ~= 0, 3);
-      [indexUsedInx, accumulatedStates] = find(usedZaccumLoc);  
+      [indexUsedInx, accumulatedStates] = find(usedZaccumLoc);
+      
+      % Make sure we return column vectors since find gives row vectors for row
+      % vector inputs:
+      indexUsedInx = reshape(indexUsedInx, [], 1);
+      accumulatedStates = reshape(accumulatedStates, [], 1);
     end
     
     function [lagsColPos, lagRowPos, mWLag] = determineNeededLags(obj, ...
@@ -515,7 +495,6 @@ classdef Accumulator < AbstractSystem
       lagsColPos = reshape(lagsColPos(lagsColPos ~= 0), [], 1);
     end
     
-    %% Helper methods
     function returnFlag = checkConformingSystem(obj, sys)
       % Check if the dimensions of a system match the current object
       assert(isa(sys, 'AbstractSystem'));
@@ -682,5 +661,62 @@ classdef Accumulator < AbstractSystem
       Z(aug.Z.originIndexes) = 0;
       newZ(1:size(Z, 1), 1:size(Z, 2), :) = Z;      
     end
+    
+    %% ThetaMap augmentation methods
+    function [newParamMat, newTrans, newDeriv, newInv] = ...
+        computeNewTrans(augParamMat, factor, addend, indexElems, tm, nTrans)
+      % Compose new functions that take into account the linear transformation
+      % occuring in the augmentation. 
+
+      newTrans = cell(1, numel(indexElems));
+      newDeriv = cell(1, numel(indexElems));
+      newInv = cell(1, numel(indexElems));
+      
+      newParamMat = augParamMat;
+      for iTrans = 1:numel(indexElems)
+        iElem = indexElems(iTrans);
+        iTransInd = augParamMat(iElem);
+        
+        if iTransInd == 0
+          % Not a function of theta
+          continue
+        end
+        if factor(iElem) == 1 && addend(iElem) == 0
+          % Simply copy of elements, don't nest the function
+          continue
+        end
+        
+        % Compose transformation by multiplying then adding
+        newTrans{iTrans} = Accumulator.composeLinearFunc(...
+          tm.transformations{iTransInd}, factor(iElem), addend(iElem));
+        % Compose the derivative with the chain rule
+        newDeriv{iTrans} = Accumulator.composeLinearFunc(...
+          tm.derivatives{iTransInd}, factor(iElem), 0);
+        % "Undo" the linear transformation by first subtracting what was added
+        % then dividing by what was multiplied. % TODO: simplify
+        invTemp = Accumulator.composeLinearFunc(...
+          tm.inverses{iTransInd}, 1, -addend(iElem));
+        newInv{iTrans} = Accumulator.composeLinearFunc(...
+          invTemp, 1/factor(iElem), 0);
+        
+        % Move transformationIndex of the element we just changed
+        newParamMat(iElem) = nTrans + 1;
+        nTrans = nTrans + 1;
+      end
+      
+      % Concentrate out unused new transformations
+      newTrans = newTrans(~cellfun(@isempty, newTrans));
+      newDeriv = newDeriv(~cellfun(@isempty, newDeriv));
+      newInv = newInv(~cellfun(@isempty, newInv));
+    end
+    
+    function newFunc = composeLinearFunc(func, A, B)
+      % A helper function for performing a linear transformation to the result
+      % from an arbitrary function handle.
+      % Provides g(x) = A * f(x) + B
+      
+      newFunc = @(x) A * func(x) + B;
+    end
+    
   end
 end
