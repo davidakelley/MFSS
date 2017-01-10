@@ -156,16 +156,53 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     end
     
     %% Test that the map obeys bounds
-    function testLowerBound(testCase)
-      % Test that we get an error with a StateSpace with elements below the
-      % lower bound of a ThetaMap
-      error();
+    function testThetaBounds(testCase)
+      % Test that we get the established bounds with -Inf or Inf theta elements.
+      p = 3; m = 1; 
+      ss = generateARmodel(p, m, false);
+      tm = ThetaMap.ThetaMapAll(ss);
+      
+      ssLB = ss.setAllParameters(-Inf);
+      ssLB.T(1, 1) = -1;
+      
+      ssUB = ss.setAllParameters(Inf);
+      ssUB.T(1, 1) = 1;
+      
+      tm = tm.addRestrictions(ssLB, ssUB);
+      
+      theta = tm.system2theta(ss);
+      
+      % Test that ThetaMap obeys lower bounds
+      ssMin = tm.theta2system(repmat(-1e16, size(theta)));
+      testCase.verifyEqual(ssMin.T(1,1), -1);
+      
+      % Test that ThetaMap obeys upper bounds
+      ssMax = tm.theta2system(repmat(1e16, size(theta)));
+      testCase.verifyEqual(ssMax.T(1,1), 1);
     end
     
-    function testUpperBound(testCase)
-      % Test that we get an error with a StateSpace with elements above the
-      % upper bound of a ThetaMap
-      error();
+    function testStateSpaceBounds(testCase)
+      % Test that trying to get a theta from a system that voilates the bounds
+      % results in an error.
+      p = 3; m = 1; 
+      ss = generateARmodel(p, m, false);
+      tm = ThetaMap.ThetaMapAll(ss);
+      
+      ssLB = ss.setAllParameters(-Inf);
+      ssLB.T(1, 1) = 0;
+      
+      ssUB = ss.setAllParameters(Inf);
+      ssUB.T(1, 1) = 1;
+      
+      tm = tm.addRestrictions(ssLB, ssUB);
+      
+      ssTooLow = ss;
+      ssTooLow.T(1,1) = -0.5;
+      testCase.verifyError(@() tm.system2theta(ssTooLow), 'system2theta:LBound');
+      
+      ssTooHigh = ss;
+      ssTooHigh.T(1,1) = 2;
+      testCase.verifyError(@() tm.system2theta(ssTooHigh), 'system2theta:UBound');
     end
     
     %% Test that we can edit a ThetaMap and remove elements from theta

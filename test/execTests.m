@@ -5,7 +5,7 @@ function result = execTests(tests)
 
 % David Kelley, 2016 
 
-defaultTests = {'basic', 'mex', 'accumulator', 'gradient', 'thetamap', 'ml'};
+defaultTests = {'basic', 'mex', 'Accumulator', 'gradient', 'ThetaMap', 'ml'};
 if nargin == 0
   tests = defaultTests;
 end
