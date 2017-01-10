@@ -7,11 +7,23 @@
     <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.0.2</param.version>
+    <param.version>1.0.4</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
-    <param.products.name />
-    <param.products.id />
-    <param.products.version />
+    <param.products.name>
+      <item>MATLAB</item>
+      <item>Optimization Toolbox</item>
+      <item>Statistics and Machine Learning Toolbox</item>
+    </param.products.name>
+    <param.products.id>
+      <item>1</item>
+      <item>6</item>
+      <item>19</item>
+    </param.products.id>
+    <param.products.version>
+      <item>9.1</item>
+      <item>7.5</item>
+      <item>11.0</item>
+    </param.products.version>
     <param.platforms />
     <param.guid>f799a48a-807a-452c-9db8-32d58e8bea94</param.guid>
     <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude from packaging.  
@@ -40,9 +52,6 @@
       <param.description />
       <param.screenshot />
       <param.output />
-      <param.products.name />
-      <param.products.id />
-      <param.products.version />
       <param.platforms />
       <param.examples />
       <param.demosxml />

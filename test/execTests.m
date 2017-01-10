@@ -24,10 +24,10 @@ testDir = [baseDir '\test'];
 basicTests = TestSuite.fromFile(fullfile(testDir, 'AbstractSystem_test.m'));
 mexTests = [TestSuite.fromFile(fullfile(testDir, 'mex_univariate_test.m')), ...
             TestSuite.fromFile(fullfile(testDir, 'mex_multivariate_test.m'))];
-accumulatorTests = [TestSuite.fromFile(fullfile(testDir, 'accumulator_test.m')), ...
-                    TestSuite.fromFile(fullfile(testDir, 'accumulatorIntegration_test.m'))];
+accumulatorTests = [TestSuite.fromFile(fullfile(testDir, 'Accumulator_test.m')), ...
+                    TestSuite.fromFile(fullfile(testDir, 'Accumulator_IntegrationTest.m'))];
 gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_test.m'));
-thetaMapTests = TestSuite.fromFile(fullfile(testDir, 'thetamap_test.m'));
+thetaMapTests = TestSuite.fromFile(fullfile(testDir, 'ThetaMap_test.m'));
 mlTests = TestSuite.fromFile(fullfile(testDir, 'estimate_test.m'));
           
 alltests = {basicTests mexTests accumulatorTests gradientTests thetaMapTests mlTests};

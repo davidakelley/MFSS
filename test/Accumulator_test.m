@@ -2,7 +2,7 @@
 
 % David Kelley, 2017
 
-classdef accumulator_test < matlab.unittest.TestCase
+classdef Accumulator_test < matlab.unittest.TestCase
   
   properties
     ssGen

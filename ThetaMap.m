@@ -192,9 +192,9 @@ classdef ThetaMap < AbstractSystem
       fixed.tau = ss.tau;
       
       fixed.a0 = ss.a0;
-      fixed.usingDefaulta0 = fixed.usingDefaulta0;
+      fixed.usingDefaulta0 = ss.usingDefaulta0;
       fixed.P0 = ss.P0;
-      fixed.usingDefaultP0 = fixed.usingDefaultP0;
+      fixed.usingDefaultP0 = ss.usingDefaultP0;
       fixed.kappa = ss.kappa;
       
       % Create object
@@ -259,7 +259,7 @@ classdef ThetaMap < AbstractSystem
           jTheta = theta(obj.index.(iName)(jF));
           constructedParamMat(jF) = jTrans(jTheta);
         end
-        if isempty(obj.fixed.tau) || strcmpi(iName, 'a0') || strcmpi(iName, 'P0')
+        if obj.fixed.timeInvariant || strcmpi(iName, 'a0') || strcmpi(iName, 'P0')
           knownParams{iP} = constructedParamMat;
         else
           paramStruct = struct;
@@ -515,14 +515,17 @@ classdef ThetaMap < AbstractSystem
       % If the user changes an element to be a function of a different theta
       % value, remove the old theta value - effectively shift all indexes down 
       % by 1.
+      if ~isempty(setdiff(1:obj.nTheta, obj.index.vectorizedParameters))
+        
+      end
+      
       
       % Remove unused transformations (and reset transformationIndexes too)
       
       % Reset nTheta if we've added/removed elements
       
-      % Make sure the lower bound is actually below the upper bound
-      
-      % Other error checking?
+      % Make sure the lower bound is actually below the upper bound and
+      % other error checking?
       
     end
   end

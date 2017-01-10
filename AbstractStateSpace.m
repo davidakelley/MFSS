@@ -8,7 +8,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   
   % David Kelley, 2016
   % 
-  % TODO (12/9/16)
+  % TODO (1/9/17)
   % ---------------
   %   - Which tau should be used for a0 and P0?
   

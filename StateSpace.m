@@ -4,10 +4,16 @@ classdef StateSpace < AbstractStateSpace
   % Includes filtering/smoothing algorithms and maximum likelihood
   % estimation of parameters with restrictions.
   %
+  % StateSpace Properties:
+  %   Z, d, H - Observation equation parameters
+  %   T, c, R, Q - Transition equation parameters
+  %   a0, P0 - Initial value parameters
+  %
+  % StateSpace Methods:
+  %   
   % Object construction
   % -------------------
   %   ss = StateSpace(Z, d, H, T, c, R, Q)
-  %   ss = StateSpace(Z, d, H, T, C, R, Q)
   %
   % The d & c parameters may be entered as empty for convenience.
   %
@@ -47,6 +53,7 @@ classdef StateSpace < AbstractStateSpace
   %   - TVP in gradient function 
   %   - mex version of the gradient function (?)
   %   - Add filter/smoother weight decompositions
+  %   - Add IRF/historical decompositions
   
   properties
     % Use univarite filter if appropriate (H is diagonal)

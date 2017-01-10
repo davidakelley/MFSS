@@ -1,24 +1,18 @@
 classdef (Abstract) AbstractSystem
-  % A class of general systems containing measurements and states. Mainly used
-  % to make sure various dimensions match. 
-  
+  % A class of general systems containing measurements and states. 
+    
   % David Kelley, 2016
   
   properties (SetAccess = protected, Hidden)
-    % Number of observed series
-    p
-    % Number of states
-    m
-    % Number of shocks
-    g
+    p               % Number of observed series
+    m               % Number of states
+    g               % Number of shocks
         
-    % Indicator for TVP models
-    timeInvariant
+    timeInvariant   % Indicator for TVP models
   end
   
   properties (Hidden)
-    % Observed time periods
-    n
+    n               % Observed time periods
   end
 
   methods (Hidden)
@@ -43,8 +37,10 @@ classdef (Abstract) AbstractSystem
     %% General utility functions
     function sOut = compileStruct(varargin)
       % Combines variables passed as arguments into a struct
+      % 
       % struct = compileStruct(a, b, c) will place the variables a, b, & c
       % in the output variable using the variable names as the field names.
+      
       sOut = struct;
       for iV = 1:nargin
         sOut.(inputname(iV)) = varargin{iV};
@@ -52,6 +48,11 @@ classdef (Abstract) AbstractSystem
     end
     
     function [Finv, logDetF] = pseudoinv(F, tol)
+      % Returns the pseudo-inverse and log determinent of F 
+      % 
+      % [Finv, logDetF] = pseudoinv(F, tol) finds the inverse and log
+      % determinent of F. Elements of the SVD of F less than tol are taken as 0.
+      
       tempF = 0.5 * (F + F');
       
       [PSVD, DSDV, PSVDinv] = svd(tempF);
@@ -69,20 +70,26 @@ classdef (Abstract) AbstractSystem
       logDetF = sum(log(diag(DSDV)));
     end
     
-    function commutation = genCommutation(m)
+    function K = genCommutation(m)
       % Generate commutation matrix
-      % A commutation matrix is "a suqare mn-dimensional matrix partitioned
-      % into mn sub-matricies of order (n, m) such that the ijth submatrix
-      % has a 1 in its jith position and zeros elsewhere."
+      % 
+      % K = genCommutation(m) returns a commutation matrix for a
+      % square matrix A of size m such that K * vec(A) = vec(A'). 
+      
+      % From Magnus & Neudecker (1979), Definition 3.1, a commutation matrix is 
+      % "a suqare mn-dimensional matrix partitioned into mn sub-matricies of 
+      % order (n, m) such that the ij-th submatrix has a 1 in its ji-th position 
+      % and zeros elsewhere."
+      
       E = @(i, j) [zeros(i-1, m); ...
         zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
-      commutation = zeros(m^2);
+      K = zeros(m^2);
       for iComm = 1:m
         for jComm = 1:m
-          commutation = commutation + kron(E(iComm, jComm), E(iComm, jComm)');
+          K = K + kron(E(iComm, jComm), E(iComm, jComm)');
         end
       end
     end
+    
   end
-
 end
