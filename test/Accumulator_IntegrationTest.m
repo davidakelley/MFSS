@@ -310,13 +310,13 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       tm = tm.validateThetaMap();
       
       tm2 = accum.augmentThetaMap(tm);
-      tm2 = tm2.validateThetaMap();
+      
       testCase.verifyEqual(tm2.nTheta, tm.nTheta);
       
       % Test theta -> system
-      thetaOrig = tm.system2theta(ssGen);
+      thetaGen = tm.system2theta(ssGen);
 
-      ssTestAug = tm2.theta2system(thetaOrig);
+      ssTestAug = tm2.theta2system(thetaGen);
       testCase.verifyEqual(ssTestAug.Z, ssA.Z, 'AbsTol', 1e-14);
       testCase.verifyEqual(ssTestAug.d, ssA.d, 'AbsTol', 1e-14);
       testCase.verifyEqual(ssTestAug.H, ssA.H, 'AbsTol', 1e-14);
@@ -326,11 +326,10 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       testCase.verifyEqual(ssTestAug.Q, ssA.Q, 'AbsTol', 1e-14);
       
       % Test system -> theta
-      thetaAug = tm2.system2theta(ssA);
-      testCase.verifyEqual(thetaOrig, thetaAug); 
-      
       thetaTestAug = tm2.system2theta(ssTestAug);
-      testCase.verifyEqual(thetaTest, thetaTestAug);
+      testCase.verifyEqual(thetaGen, thetaTestAug);
+      thetaAug = tm2.system2theta(ssA);
+      testCase.verifyEqual(thetaGen, thetaAug); 
     end
     
   end

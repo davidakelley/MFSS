@@ -127,9 +127,8 @@ classdef ThetaMap < AbstractSystem
       end
       obj = obj.addRestrictions(ssLB, ssUB);
       
-      % Validate
+      % Validate & remove duplicate transformations
       obj = obj.validateThetaMap();
-      
     end
   end
   
@@ -286,8 +285,8 @@ classdef ThetaMap < AbstractSystem
         iTransformIndexes = vecTransIndexes(iIndexes);
         
         % Get the optimal theta value for each parameter, make sure they match
-        iInverse = obj.inverses{iTransformIndexes};
-        thetaVals = arrayfun(@(x) iInverse(iParamValues(x)), 1:nParam);        
+        iInverses = obj.inverses(iTransformIndexes);
+        thetaVals = arrayfun(@(x) iInverses{x}(iParamValues(x)), 1:nParam);        
         assert(all(thetaVals - thetaVals(1) < 1e4 * eps | isnan(thetaVals)), ...
           'Transformation inverses result in differing values of theta.');
         theta(iTheta) = thetaVals(1);
@@ -557,7 +556,6 @@ classdef ThetaMap < AbstractSystem
         obj.inverses(duplicatesForRemoval) = [];
       end
     end
-    
   end
   
   methods (Static, Hidden)
