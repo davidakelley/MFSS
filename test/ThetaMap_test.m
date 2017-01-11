@@ -39,7 +39,6 @@ classdef ThetaMap_test < matlab.unittest.TestCase
   end
   
   methods (Test)
-    
     %% Tests converting between theta vectors and StateSpaces
     function thetaSystemThetaSimple(testCase)
       % Test that we can go from a theta to a system and back.
@@ -224,5 +223,175 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       testCase.verifyEqual(tmNew.nTheta, tm.nTheta - 2);      
     end
     
+    %% Basic parameters gradient computation
+    function testParamGradZ(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+
+      ssE = StateSpaceEstimation(nan(size(ss.Z)), ss.d, ss.H, ss.T, ss.c, ss.R, ss.Q);
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.Z, eye(4));
+    end
+    
+    function testParamGradd(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+
+      ssE = StateSpaceEstimation(ss.Z, nan(size(ss.d)), ss.H, ss.T, ss.c, ss.R, ss.Q);
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.d, eye(2));
+    end
+    
+    function testParamGradH(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+      ss.H = 0.333 * eye(2);
+      
+      ssE = StateSpaceEstimation(ss.Z, ss.d, nan(size(ss.H)), ss.T, ss.c, ss.R, ss.Q);
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.H(1,1), ss.H(1), 'AbsTol', 1e-14);
+      testCase.verifyEqual(G.H(2, 2:3), ones(1, 2));
+      testCase.verifyEqual(G.H(3,4), ss.H(2,2), 'AbsTol', 1e-14);
+    end
+    
+    function testParamGradT(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+
+      ssE = StateSpaceEstimation(ss.Z, ss.d, ss.H, nan(size(ss.T)), ss.c, ss.R, ss.Q);
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.T, eye(4));
+    end
+    
+    function testParamGradc(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+
+      ssE = StateSpaceEstimation(ss.Z, ss.d, ss.H, ss.T, nan(size(ss.c)), ss.R, ss.Q);
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.c, eye(2));
+    end
+    
+    function testParamGradR(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+
+      ssE = StateSpaceEstimation(ss.Z, ss.d, ss.H, ss.T, ss.c, nan(size(ss.R)), ss.Q);
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.R, eye(2));
+    end
+    
+    function testParamGradQ(testCase)
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+
+      ssE = StateSpaceEstimation(ss.Z, ss.d, ss.H, ss.T, ss.c, ss.R, nan(size(ss.Q)));
+      tm = ssE.ThetaMapping;
+      theta = tm.system2theta(ss);
+      
+      G = tm.parameterGradients(theta);
+      
+      testCase.verifyEqual(G.Q, ss.Q, 'AbsTol', 1e-14);
+    end
+    
+    %% Initial value gradient computation
+    function testParamGrada0(testCase)
+      % Test that Ga0 output from ThetaMap.initialuValuesGradients is correct
+      p = 2; m = 1;
+      ss = generateARmodel(p, m, false);
+      ss.c(1) = 0.1;
+      tm = ThetaMap.ThetaMapAll(ss);
+      theta = tm.system2theta(ss);
+      G = tm.parameterGradients(theta);
+      
+      Ga0analytic = tm.initialValuesGradients(ss, G);
+      
+      % Compute numeric gradient by adding a small number to theta and remaking
+      % the system, then computing the initial state.
+      ss = ss.setInvariantTau;
+      ss = ss.setDefaultInitial;
+      basea0 = ss.a0;      
+      epsilon = 1e-8;
+      Ga0numeric = nan(size(Ga0analytic));
+      for iT = 1:tm.nTheta
+        iTheta = theta;
+        iTheta(iT) = theta(iT) + epsilon;
+        ssNew = tm.theta2system(iTheta);
+        ssNew = ssNew.setInvariantTau;
+        ssNew = ssNew.setDefaultInitial();
+        Ga0numeric(iT, :) = (ssNew.a0 - basea0) ./ epsilon;
+      end
+      
+      testCase.verifyEqual(Ga0analytic, Ga0numeric, 'AbsTol', 1e-8);
+    end
+    
+    function testParamGradP0(testCase)
+      % Test that GP0 output from ThetaMap.initialuValuesGradients is correct
+      p = 2; m = 1; 
+      ss = generateARmodel(p, m, false);
+      ss.c(1) = 0.1;
+      tm = ThetaMap.ThetaMapAll(ss);
+      theta = tm.system2theta(ss);
+      G = tm.parameterGradients(theta);
+      
+      [~, GP0analytic] = tm.initialValuesGradients(ss, G);
+      
+      % Compute numeric gradient by adding a small number to theta and remaking
+      % the system, then computing the initial state.
+      ss = ss.setInvariantTau;
+      ss = ss.setDefaultInitial;
+      baseP0 = ss.P0;      
+      epsilon = 1e-8;
+      GP0numeric = nan(size(GP0analytic));
+      for iT = 1:tm.nTheta
+        iTheta = theta;
+        iTheta(iT) = theta(iT) + epsilon;
+        ssNew = tm.theta2system(iTheta);
+        ssNew = ssNew.setInvariantTau;
+        ssNew = ssNew.setDefaultInitial();
+        GP0numeric(iT, :) = reshape((ssNew.P0 - baseP0), [], 1) ./ epsilon;
+      end
+      
+      testCase.verifyEqual(GP0analytic, GP0numeric, 'AbsTol', 1e-8);
+    end
+  
+    function testParamGradDiffuse(testCase)
+      % Test that Ga0 output from ThetaMap.initialuValuesGradients is correct
+      p = 2; m = 1;
+      ss = generateARmodel(p, m, false);
+      ss.T(1, :) = [1 0.2];
+      tm = ThetaMap.ThetaMapAll(ss);
+      theta = tm.system2theta(ss);
+      G = tm.parameterGradients(theta);
+      
+      [Ga0, GP0] = tm.initialValuesGradients(ss, G);
+      
+      testCase.verifyEqual(Ga0, zeros(size(Ga0)));
+      testCase.verifyEqual(GP0, zeros(size(GP0)));
+    end
   end
 end

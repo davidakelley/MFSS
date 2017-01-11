@@ -4,6 +4,10 @@
 \setlength{\parindent}{0pt}
 \pagenumbering{gobble}
 
+
+\newcommand{\Gt}{G_\theta}
+\newcommand{\vecop}[0]{\text{vec}}
+
 \begin{document}
 
 \section*{State Space Loglikelihood Gradient Calculation}
@@ -12,10 +16,13 @@ Using the preferred (Harvey 1989) timing for the state space model,
 y_t = Z_t \alpha_t + d_t + \epsilon_t &\qquad \epsilon_t \sim N(0,H_t) \\ 
 \alpha_{t} = T_t \alpha_{t-1} + c_t + R_t \eta_t &\qquad \eta_t \sim N(0, Q_t)
 \end{align*}
+
 the likelihood of of data $\mathbf{Y}_t$ is given by $L_n \equiv \sum_{t=1}^n \ell_t$ where 
-\begin{align}
+
+\begin{align*}
 \ell_t = -\frac{p}{2} \log(2\pi) - \frac{1}{2} \log|F_t| + v_t^\prime F_t^{-1}v_t
-\end{align}
+\end{align*}
+
 \begin{align*}
 a_t = T_t a_{t-1} + c_t + K_t v_t &\qquad
 P_t = T_t P_{t-1}L_{t-1} + R_t Q_t R_t^\prime \\
@@ -27,55 +34,69 @@ L_t = T_{t+1} - K_t Z_t &\qquad
 w_t = F_t^{-1} v_t 
 \end{align*} 
 
-\newcommand{\vecop}[0]{\text{vec}}
 
 From Nagakura (working paper), we can get the gradient:
-\begin{align}
-\begin{split}
-G_\theta(\ell_t) &= G_\theta(a_t) Z_t' w_t  \\
- &+ \frac{1}{2} G_\theta(P_t) \vecop (Z_t^\prime w_t w_t^\prime Z_t - Z_t^\prime F_t^{-1} Z_t) \\
- &+ G_\theta(d_t) w_t \\
- &+ G_\theta(Z_t) \vecop (w_t a_t^\prime + w_t v_t^\prime M_t^\prime - M_t^\prime) \\
- &+ \frac{1}{2} G_\theta(H_t) \vecop (w_t w_t^\prime - F_t^{-1})
-\end{split}
-\end{align}
+\begin{align*}
+\Gt(\ell_t) &= \Gt(a_t) Z_t' w_t  \\
+ &+ \frac{1}{2} \Gt(P_t) \vecop (Z_t^\prime w_t w_t^\prime Z_t - Z_t^\prime F_t^{-1} Z_t) \\
+ &+ \Gt(d_t) w_t \\
+ &+ \Gt(Z_t) \vecop (w_t a_t^\prime + w_t v_t^\prime M_t^\prime - M_t^\prime) \\
+ &+ \frac{1}{2} \Gt(H_t) \vecop (w_t w_t^\prime - F_t^{-1})
+\end{align*}
 
 where 
 \begin{align*}
-\begin{split}
-G_\theta(a_{t+1}) &= G_\theta(a_t)L_t^\prime \\ 	
- &+ G_\theta(P_t) (Z_t^\prime w_t \otimes L_t^\prime) \\
- &+ G_\theta(c_{t+1}) \\
- &- G_\theta(d_t) K_t^\prime \\ 
- &+ G_\theta(Z_t) [P_tL_t^\prime \otimes w_t - (a_t + M_t v_t) \otimes K_t^\prime] \\
- &- G_\theta(H_t) (w_t \otimes K_t^\prime) \\ 
- &+ G_\theta(T_{t+1})[(a_t + M_t v_t) \otimes I_m]
-\end{split} \\
-\begin{split}
-G_\theta(P_{t+1}) &= G_\theta(P_t) (L_t^\prime \otimes L_t^\prime) \\
- &+ G_\theta(H_t)(K_t^\prime \otimes K_t^\prime) \\
- &+ G_\theta(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
- &+ [G_\theta(T_{t+1})(P_t L_t^\prime \otimes I_m) \\
- &\qquad - G_\theta(Z_t)(P_t L_t^\prime \otimes K_t^\prime) \\
- &\qquad + G_\theta(R_{t+1})(Q_{t+1}R_{t+1}^\prime \otimes I_m) ] N_m
-\end{split}
+\Gt(a_{t+1}) &= \Gt(a_t)L_t^\prime \\ 	
+ &+ \Gt(P_t) (Z_t^\prime w_t \otimes L_t^\prime) \\
+ &+ \Gt(c_{t+1}) \\
+ &- \Gt(d_t) K_t^\prime \\ 
+ &+ \Gt(Z_t) [P_tL_t^\prime \otimes w_t - (a_t + M_t v_t) \otimes K_t^\prime] \\
+ &- \Gt(H_t) (w_t \otimes K_t^\prime) \\ 
+ &+ \Gt(T_{t+1})[(a_t + M_t v_t) \otimes I_m]
+\end{align*}
+\begin{align*}
+\Gt(P_{t+1}) &= \Gt(P_t) (L_t^\prime \otimes L_t^\prime) \\
+ &+ \Gt(H_t)(K_t^\prime \otimes K_t^\prime) \\
+ &+ \Gt(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
+ &+ [\Gt(T_{t+1})(P_t L_t^\prime \otimes I_m) \\
+ &\qquad - \Gt(Z_t)(P_t L_t^\prime \otimes K_t^\prime) \\
+ &\qquad + \Gt(R_{t+1})(Q_{t+1}R_{t+1}^\prime \otimes I_m) ] N_m
 \end{align*}
 
 
 The initial conditions for the recursion are given by a simplification of the expressions above: 
 \begin{align*}
-\begin{split}
-G_\theta(a_1) &= G_\theta(a_0) T_1^\prime \\ 
- &+ G_\theta(c_1)  \\
- &+ G_\theta(T_1)[a_0 \otimes I_m]
-\end{split} \\
-\begin{split}
-G_\theta(P_1) &= G_\theta(P_0) (T_t^\prime \otimes T_t^\prime) \\
- &+ G_\theta(Q_1)(R_1^\prime \otimes R_1^\prime) \\
- &+ [G_\theta(T_1)(P_0 T_1^\prime \otimes I_m) \\
- &\qquad + G_\theta(R_1)(Q_1 R_1^\prime \otimes I_m) ] N_m
-\end{split}
+\Gt(a_1) &= \Gt(a_0) T_1^\prime \\ 
+ &+ \Gt(c_1)  \\
+ &+ \Gt(T_1)[a_0 \otimes I_m]
 \end{align*}
+\begin{align*}
+\Gt(P_1) &= \Gt(P_0) (T_t^\prime \otimes T_t^\prime) \\
+ &+ \Gt(Q_1)(R_1^\prime \otimes R_1^\prime) \\
+ &+ [\Gt(T_1)(P_0 T_1^\prime \otimes I_m) \\
+ &\qquad + \Gt(R_1)(Q_1 R_1^\prime \otimes I_m) ] N_m
+\end{align*}
+
+
+To determine $\Gt(a_0)$ and $\Gt(P_0)$ when $a_0$ and $P_0$ are set as the unconditional mean and variance of the state (i.e., when they are not explicitly provided and the system is stationary) use the definitions of the unconditional state:
+\begin{align*}
+a_0 &= (I_m - T)^{-1} c \\
+\Gt(a_0) &= \Gt([I_m - T]^{-1} c) \\ 
+	&= \Gt([I_m - T]^{-1}) (c \otimes I_m) + \Gt(c) (I_1 \otimes [(I_m - T)^{-1})]^\prime \\ 
+	&= -\Gt(I_m - T) [(I_m - T)^{-1} \otimes (I_m - T)^{-1} ](c \otimes I_m) +  \Gt(c) (I_m - T)^{\prime-1} \\ 
+	&= \Gt(T) [(I_m - T)^{-1} \otimes (I_m - T)^{-1}] (c \otimes I_m) +  \Gt(c) (I_m - T)^{\prime-1} 
+\end{align*}
+\begin{align*}
+\vecop(P_0) &= (I_{m^2} - T \otimes T)^{-1} \vecop(RQR^\prime) \\ 
+\Gt(P_0) &= \Gt(\vecop(P_0)) \\
+	&= \Gt(S  \quad \vecop(RQR^\prime))\\
+	&= \Gt(S) [\vecop(RQR^\prime) \otimes I_{m^2}] + \Gt(\vecop(RQR^\prime))(I_1 \otimes S) \\
+	&= -\Gt(I_{m^2} - T \otimes T)(S \otimes S^\prime) [\vecop(RQR^\prime) \otimes I_{m^2}]\\ 
+	&\qquad + [\Gt(R)(QR^\prime \otimes I_m) N_m + \Gt(Q)(R^\prime \otimes R^\prime)] S^\prime \\
+	&= \Gt(T \otimes T)(S \otimes S^\prime) [\vecop(RQR^\prime) \otimes I_{m^2}] \\
+	&\qquad + [\Gt(R)(QR^\prime \otimes I_m) N_m + \Gt(Q)(R^\prime \otimes R^\prime)] S^\prime
+\end{align*}
+where $S = (I_{m^2} - T \otimes T)^{-1}$. Note that $\Gt(T \otimes T)$ must be computed separately.
 
 % \section*{Derivation}
 

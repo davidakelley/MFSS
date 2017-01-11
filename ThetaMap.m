@@ -399,7 +399,7 @@ classdef ThetaMap < AbstractSystem
         IminusTPrimeInv = inv((eye(obj.m) - T1)');
         Ga0 = G.T * kron(IminusTinv, IminusTPrimeInv) * ...
           kron(ss.c(:,:,1), eye(obj.m)) + ...
-          G.c / (eye(obj.m) - T1);
+          G.c / (eye(obj.m) - T1)';
       end
       
       % GP0
@@ -420,11 +420,11 @@ classdef ThetaMap < AbstractSystem
         GTkronT(obj.index.T(usedT), :) = rawGTkronT(vec(usedT), :);
         
         IminusTkronTInv = inv(eye(obj.m^2) - kron(T1, T1));
-        IminusTkronTPrimeInv = inv(eye(obj.m^2) - kron(T1, T1)');
-        GP0 = GTkronT * kron(IminusTkronTInv, IminusTkronTPrimeInv) * ...
+
+        GP0 = GTkronT * kron(IminusTkronTInv, IminusTkronTInv') * ...
           kron(vec(R1 * Q1 * R1'), eye(obj.m^2)) + ...
-          G.R * (kron(Q1 * R1', eye(obj.m))) * Nm + ...
-          G.Q * kron(R1', R1');
+          (G.R * (kron(Q1 * R1', eye(obj.m))) * Nm + ...
+          G.Q * kron(R1', R1')) * IminusTkronTInv';
       end
     end
 
