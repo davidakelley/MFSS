@@ -18,11 +18,9 @@ y_t = Z_t \alpha_t + d_t + \epsilon_t &\qquad \epsilon_t \sim N(0,H_t) \\
 \end{align*}
 
 the likelihood of of data $\mathbf{Y}_t$ is given by $L_n \equiv \sum_{t=1}^n \ell_t$ where 
-
 \begin{align*}
 \ell_t = -\frac{p}{2} \log(2\pi) - \frac{1}{2} \log|F_t| + v_t^\prime F_t^{-1}v_t
 \end{align*}
-
 \begin{align*}
 a_t = T_t a_{t-1} + c_t + K_t v_t &\qquad
 P_t = T_t P_{t-1}L_{t-1} + R_t Q_t R_t^\prime \\
@@ -31,7 +29,7 @@ F_t = Z_t P_t Z_t^\prime + H_t \\
 M_t = P_t Z_t^\prime F_t^{-1} &\qquad
 K_t = T_{t+1} M_t \\
 L_t = T_{t+1} - K_t Z_t &\qquad
-w_t = F_t^{-1} v_t 
+w_t = F_t^{-1} v_t \\
 \end{align*} 
 
 
@@ -64,7 +62,7 @@ where
 \end{align*}
 
 
-The initial conditions for the recursion are given by a simplification of the expressions above: 
+The initial conditions for the recursion are given by a simplification of the expressions above (which can also be easily derived from the explicit expressions for $a_1$ and $P_1$): 
 \begin{align*}
 \Gt(a_1) &= \Gt(a_0) T_1^\prime \\ 
  &+ \Gt(c_1)  \\
@@ -89,8 +87,8 @@ a_0 &= (I_m - T)^{-1} c \\
 \begin{align*}
 \vecop(P_0) &= (I_{m^2} - T \otimes T)^{-1} \vecop(RQR^\prime) \\ 
 \Gt(P_0) &= \Gt(\vecop(P_0)) \\
-	&= \Gt(S  \quad \vecop(RQR^\prime))\\
-	&= \Gt(S) [\vecop(RQR^\prime) \otimes I_{m^2}] + \Gt(\vecop(RQR^\prime))(I_1 \otimes S) \\
+	&= \Gt(S \ \vecop(RQR^\prime))\\
+	&= \Gt(S) [\vecop(RQR^\prime) \otimes I_{m^2}] + \Gt(\vecop(RQR^\prime))(I_1 \otimes S^\prime) \\
 	&= -\Gt(I_{m^2} - T \otimes T)(S \otimes S^\prime) [\vecop(RQR^\prime) \otimes I_{m^2}]\\ 
 	&\qquad + [\Gt(R)(QR^\prime \otimes I_m) N_m + \Gt(Q)(R^\prime \otimes R^\prime)] S^\prime \\
 	&= \Gt(T \otimes T)(S \otimes S^\prime) [\vecop(RQR^\prime) \otimes I_{m^2}] \\
