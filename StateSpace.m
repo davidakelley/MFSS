@@ -21,14 +21,10 @@ classdef StateSpace < AbstractStateSpace
   % the parameter values and a vector indicating the timing. Using Z as an
   % example the field names would be Z.Zt and Z.tauZ.
   %
-  % Filtering/smoothing
-  % -------------------
+  % Filtering & smoothing
+  % ---------------------
   %   [a, logl] = ss.filter(y)
-  %   [a, logl] = ss.filter(y, a0, P0)
-  %   [a, logl, filterValues] = ss.filter(...)
   %   alpha = ss.smooth(y)
-  %   alpha = ss.smooth(y, a0, P0)
-  %   [alpha, smootherValues] = ss.smooth(...)
   %
   % Additional estimates from the filter (P, v, F, M, K, L) and
   % smoother (eta, r, N, a0tilde) are returned in the filterValues and
@@ -109,7 +105,18 @@ classdef StateSpace < AbstractStateSpace
     
     %% State estimation methods 
     function [a, logli, filterOut] = filter(obj, y, a0, P0)
-      % Estimate the filtered state
+      % FILTER Estimate the filtered state
+      % 
+      % a = StateSpace.FILTER(y) returns the filtered state given the data y. 
+      %
+      % a = StateSpace.FILTER(y, a0) 
+      % a = StateSpace.FILTER(y, a0, P0) returns the filtered state given the 
+      % data y and initial state estimates a0 and P0. 
+      %
+      % [a, logli] = StateSpace.FILTER(...) also returns the log-likelihood of
+      % the data. 
+      % [a, logli, filterOut] = StateSpace.FILTER(...) returns an additional
+      % structure of intermediate computations useful in other functions. 
       
       % Make sure data matches observation dimensions
       obj.validateKFilter();
