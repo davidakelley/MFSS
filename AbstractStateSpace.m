@@ -23,6 +23,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     % Indicators for if initial values have been specified:
     usingDefaulta0 = true;
     usingDefaultP0 = true;
+    
+    filterUni         % Use univarite filter if appropriate (H is diagonal)
   end
   
   properties (SetAccess = protected, Hidden)
@@ -46,6 +48,10 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       end
       
       obj = obj.setSystemParameters(parameters);
+      
+      % Check if we can use the univariate filter
+      slicesH = num2cell(obj.H, [1 2]);
+      obj.filterUni = ~any(~cellfun(@isdiag, slicesH));
     end
     
     %% Initialization

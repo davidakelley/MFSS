@@ -51,11 +51,6 @@ classdef StateSpace < AbstractStateSpace
   %   - Add filter/smoother weight decompositions
   %   - Add IRF/historical decompositions
   
-  properties
-    % Use univarite filter if appropriate (H is diagonal)
-    filterUni
-  end
-  
   methods (Static)
     %% Static properties
     function returnVal = useMex(newVal)

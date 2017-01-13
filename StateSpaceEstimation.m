@@ -28,7 +28,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     % ML-estimation tolerances
     tol = 1e-10;      % Final estimation tolerance
     stepTol = 1e-11;  % Step-size tolerance for ML theta elements
-    iterTol = 1e-6;   % EM tolerance
+    iterTol = 1e-11;   % EM tolerance
     
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
@@ -124,7 +124,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
             @optimplotstepsize, @optimplotconstrviolation};
           
           options = optimoptions(@fminunc, ...
-            'Algorithm', 'trust-region', ...
+            'Algorithm', 'quasi-newton', ...
             'SpecifyObjectiveGradient', obj.useGrad, ...
             'Display', displayType, ...
             'MaxFunctionEvaluations', 50000, ...
@@ -215,6 +215,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     function [negLogli, gradient] = minimizeFun(obj, theta, y)
       % Get the likelihood of
       ss1 = obj.ThetaMapping.theta2system(theta);
+      ss1.filterUni = obj.filterUni;
       
       try
         if obj.useGrad
