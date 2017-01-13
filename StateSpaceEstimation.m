@@ -21,7 +21,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   properties
     % Screen output during ML estimation
-    verbose = false;
+    verbose = true;
+    
+    solver = 'fminunc';
     
     % ML-estimation tolerances
     tol = 1e-10;      % Final estimation tolerance
@@ -30,7 +32,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
-    useGrad = false;   % Indicator for use of analytic gradient
+    useGrad = true;   % Indicator for use of analytic gradient
   end
   
   methods
@@ -71,7 +73,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     %% Estimation methods
-    function [obj, flag, gradient] = estimate(obj, y, ss0)
+    function [ss_out, flag, gradient] = estimate(obj, y, ss0)
       % Estimate missing parameter values via maximum likelihood.
       %
       % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
@@ -84,6 +86,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       assert(isnumeric(y), 'y must be numeric.');
       assert(isa(ss0, 'StateSpace'));
       
+      assert(obj.ThetaMapping.nTheta > 0, 'All parameters known. Unable to estimate.');
+      
       % Initialize
       obj.checkConformingSystem(ss0);
 
@@ -94,44 +98,74 @@ classdef StateSpaceEstimation < AbstractStateSpace
       minfunc = @(theta) obj.minimizeFun(theta, y);
       nonlconFn = @obj.nlConstraintFun;
       
-      plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
-        @optimplotstepsize, @optimplotconstrviolation};
       if obj.verbose
         displayType = 'iter-detailed';
       else
         displayType = 'none';
       end
-      options = optimoptions(@fmincon, ...
-        'Algorithm', 'interior-point', ...
-        'SpecifyObjectiveGradient', obj.useGrad, ...
-        'Display', displayType, ...
-        'MaxFunctionEvaluations', 50000, ...
-        'MaxIterations', 10000, ...
-        'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
-        'StepTolerance', obj.stepTol, ...
-        'PlotFcns', plotFcns, ...
-        'TolCon', 0);
+      
+      switch obj.solver
+        case 'fmincon'
+          plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
+            @optimplotstepsize, @optimplotconstrviolation};
+          
+          options = optimoptions(@fmincon, ...
+            'Algorithm', 'interior-point', ...
+            'SpecifyObjectiveGradient', obj.useGrad, ...
+            'Display', displayType, ...
+            'MaxFunctionEvaluations', 50000, ...
+            'MaxIterations', 10000, ...
+            'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
+            'StepTolerance', obj.stepTol, ...
+            'PlotFcns', plotFcns, ...
+            'TolCon', 0);
+        case 'fminunc'
+          plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
+            @optimplotstepsize, @optimplotconstrviolation};
+          
+          options = optimoptions(@fminunc, ...
+            'Algorithm', 'trust-region', ...
+            'SpecifyObjectiveGradient', obj.useGrad, ...
+            'Display', displayType, ...
+            'MaxFunctionEvaluations', 50000, ...
+            'MaxIterations', 10000, ...
+            'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
+            'StepTolerance', obj.stepTol, ...
+            'PlotFcns', plotFcns);
+        case 'fminsearch'
+          plotFcns = {@optimplotfval, @optimplotx};
+          
+          options = optimset('Display', displayType, ...
+            'MaxFunEvals', 5000, ...
+            'MaxIter', 500, ...
+            'PlotFcns', plotFcns);
+      end
       
       warning off MATLAB:nearlySingularMatrix;
       
-%       obj.iterDisplay([]);
-      iter = 0; lolgli = []; logli0 = []; % lineLen = [];
-      while iter < 2 || logli0 - lolgli > obj.iterTol
+      iter = 0; logli = []; logli0 = []; 
+      while iter < 2 || logli0 - logli > obj.iterTol
         iter = iter + 1;
-        logli0 = lolgli;
+        logli0 = logli;
         
-        [thetaHat, lolgli, flag, ~, ~, gradient] = fmincon(minfunc, ...
-          theta0, [], [], [], [], [], [], nonlconFn, options);
+        switch obj.solver
+          case 'fminunc'
+            [thetaHat, logli, flag, ~, ~, gradient] = fminunc(...
+              minfunc, theta0, options);
+          case 'fmincon'
+            
+          case 'fminsearch'
+            [thetaHat, logli, flag] = fminsearch(...
+              minfunc, theta0, options);
+        end
         
-        % lineLen = obj.iterDisplay(iter, lolgli, logli0, lineLen);
         theta0 = thetaHat;
       end
       
       warning on MATLAB:nearlySingularMatrix;
-%       obj.iterDisplay(-1);
   
       % Save estimated system to current object
-      obj = obj.ThetaMapping.theta2system(thetaHat);
+      ss_out = obj.ThetaMapping.theta2system(thetaHat);
     end
     
     function obj = em_estimate(obj, y, ss0, varargin)
