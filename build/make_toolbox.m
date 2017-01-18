@@ -11,7 +11,7 @@ prjFile = fullfile(buildDir, '..', 'toolbox.prj');
 prjText = fileread(prjFile);
 
 prjVers = regexp(prjText, ...
-  '<param.version>([\d*])\.([\d*])\.([\d*])<\/param.version>', 'tokens');
+  '<param.version>([\d*]*)\.([\d*]*)\.([\d*]*)<\/param.version>', 'tokens');
 oldMajor = str2double(prjVers{1}{1});
 oldMinor = str2double(prjVers{1}{2});
 oldBuild = str2double(prjVers{1}{3});

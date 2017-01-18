@@ -13,10 +13,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
   %
   % Initial work on implementing a general EM algorithm.
   
-  % David Kelley, 2016
+  % David Kelley, 2016-2017
   %
-  % TODO (12/9/16)
+  % TODO (1/17/17)
   % ---------------
+  %   - Write "combo" solver option that runs fminunc first then fminsearch. 
   %   - EM algorithm
   
   properties
@@ -137,7 +138,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           
           options = optimset('Display', displayType, ...
             'MaxFunEvals', 5000, ...
-            'MaxIter', 500, ...
+            'MaxIter', 50 * obj.ThetaMapping.nTheta, ...
             'PlotFcns', plotFcns);
       end
       
@@ -150,13 +151,15 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch obj.solver
           case 'fminunc'
-            [thetaHat, logli, flag, ~, ~, gradient] = fminunc(...
+            [thetaHat, logli, flag, ~, gradient] = fminunc(...
               minfunc, theta0, options);
           case 'fmincon'
-            
+            [thetaHat, logli, flag, ~, ~, gradient] = fmincon(... 
+              minfunc, theta0, [], [], [], [], [], [], nonlconFn);
           case 'fminsearch'
             [thetaHat, logli, flag] = fminsearch(...
               minfunc, theta0, options);
+            gradient = [];
         end
         
         theta0 = thetaHat;

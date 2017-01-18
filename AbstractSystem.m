@@ -1,7 +1,7 @@
 classdef (Abstract) AbstractSystem
   % A class of general systems containing measurements and states. 
     
-  % David Kelley, 2016
+  % David Kelley, 2016-2017
   
   properties (SetAccess = protected, Hidden)
     p               % Number of observed series

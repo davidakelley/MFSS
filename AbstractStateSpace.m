@@ -6,12 +6,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   % Two current subclasses: StateSpace (for systems with known parameters) and
   % StateSpaceEstimation (to estimate unknown parameters of a system).
   
-  % David Kelley, 2016
-  % 
-  % TODO (1/9/17)
-  % ---------------
-  %   - Which tau should be used for a0 and P0?
-  
+  % David Kelley, 2016-2017
+
   properties
     Z, d, H           % Observation equation parameters
     T, c, R, Q        % State equation parameters

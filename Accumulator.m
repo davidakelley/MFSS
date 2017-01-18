@@ -9,11 +9,10 @@ classdef Accumulator < AbstractSystem
   % These fields may also be named xi, psi, and Horizon. For more
   % information, see the readme.
   %
-  % David Kelley, 2016
+  % David Kelley, 2016-2017
   %
-  % TODO (12/16/16)
+  % TODO (1/17/17)
   % ---------------
-  %   - Generate funcion handles for ThetaMap
   %   - Create utiltiy methods for standard accumulator creation (descriptive
   %     specification as opposed to explicitly stating calendar/horizon values)
   %   - Write method that checks if a dataset follows the pattern an accumulator
@@ -76,46 +75,21 @@ classdef Accumulator < AbstractSystem
       
       obj.checkConformingSystem(tm);
 
-      % The augmentation spec we need to use is from the combined elements of 
-      % fixed and index to make sure we get all of the accumulators (ie, taking 
-      % into account the elements of Z that are possibly nonzero) and lags we 
-      % need (ie, making sure the lag states are detected correctly).
-      fullSys = tm.fixed;
-
-      % A placeholder of 1 could potentially mess up LagsInState.
-      placeholder = 0.5;
-      
-      % Add placeholders
-      fullZ = tm.fixed.Z;
-      fullZ(tm.index.Z ~= 0) = placeholder;
-      fullSys.Z = fullZ;
-      fullT = tm.fixed.T;
-      fullT(tm.index.T ~= 0) = placeholder;
-      fullSys.T = fullT;
-      fullc = tm.fixed.c;
-      fullc(tm.index.c ~= 0) = placeholder;
-      fullSys.c = fullc;
-      fullR = tm.fixed.R;
-      fullR(tm.index.R ~= 0) = placeholder;
-      fullSys.R = fullR;
-      
-      aug = obj.computeAugSpecification(fullSys); 
+      aug = obj.comptueThetaMapAugSpecification(tm);
       
       % Since everything is elementwise in the augmentation, augmenting the
       % fixed system will work almost the same as a regular StateSpace. 
       
       fixedNew = obj.buildAccumulatorStateSpace(tm.fixed, aug);
       
-      % But we will need to delete the accumulated state elements that have 
-      % gotten the (1/cal) elements added so they don't conflict with the index 
-      % elements.
-      accumulatedStates = aug.m.withLag + 1:aug.m.final;
-      indexElems = 1:aug.m.withLag;
-      fixedNew.T(accumulatedStates, indexElems, :) = 0;
-      
       % Augmenting the index is different. We need to simply copy the rows as
       % with the normal augmentation.
       indexNew = obj.augmentIndex(tm.index, aug);
+      
+      % We will need to delete the accumulated state elements in fixed that have 
+      % gotten the (1/cal) elements added so they don't conflict with the index 
+      % elements.
+      fixedNew.T(indexNew.T ~= 0) = 0;
       
       % The transformation indexes should be constructed somewhat similarly to
       % the regular indexes. They also need to take into acount the appropriate 
@@ -133,8 +107,28 @@ classdef Accumulator < AbstractSystem
       % This is actually simple: augment the system matricies (and let the nans
       % propogate) and augment the ThetaMap. 
       
-      sseNew = obj.augmentStateSpace(sse);
-      sseNew.ThetaMapping = obj.augmentThetaMap(sse.ThetaMapping);      
+      % Agument the ThetaMap
+      newTM = obj.augmentThetaMap(sse.ThetaMapping);
+      
+      % Augment the parameters but make sure to use the correct aug spec. 
+      aug = obj.comptueThetaMapAugSpecification(sse.ThetaMapping);
+      ssNew = obj.buildAccumulatorStateSpace(sse, aug);
+  
+      % Create new StateSpaceEstimation
+      sseNew = sse;
+      sseNew.Z = ssNew.Z;
+      sseNew.T = ssNew.T;
+      sseNew.c = ssNew.c;
+      sseNew.R = ssNew.R;
+      
+      sseNew.tau = ssNew.tau;
+      
+      sseNew.ThetaMapping = newTM;
+      
+      sseNew.m = aug.m.final;
+      sseNew.timeInvariant = ssNew.timeInvariant;
+      sseNew.n = ssNew.n;
+      sseNew.tau = ssNew.tau;
     end
   end
   
@@ -296,6 +290,35 @@ classdef Accumulator < AbstractSystem
       
       augSpec.R = Rspec;
     end
+
+    function augSpec = comptueThetaMapAugSpecification(obj, tm)
+      % Determine how to augment a ThetaMap. 
+      
+      % The augmentation spec we need to use is from the combined elements of 
+      % fixed and index to make sure we get all of the accumulators (ie, taking 
+      % into account the elements of Z that are possibly nonzero) and lags we 
+      % need (ie, making sure the lag states are detected correctly).
+      fullSys = tm.fixed;
+
+      % A placeholder of 1 could potentially mess up LagsInState.
+      placeholder = 0.5;
+      
+      % Add placeholders
+      fullZ = tm.fixed.Z;
+      fullZ(tm.index.Z ~= 0) = placeholder;
+      fullSys.Z = fullZ;
+      fullT = tm.fixed.T;
+      fullT(tm.index.T ~= 0) = placeholder;
+      fullSys.T = fullT;
+      fullc = tm.fixed.c;
+      fullc(tm.index.c ~= 0) = placeholder;
+      fullSys.c = fullc;
+      fullR = tm.fixed.R;
+      fullR(tm.index.R ~= 0) = placeholder;
+      fullSys.R = fullR;
+      
+      augSpec = obj.computeAugSpecification(fullSys); 
+    end
     
     function ssNew = buildAccumulatorStateSpace(obj, ss, aug)
       % Compute the new state parameters given a specification of which states
@@ -378,18 +401,18 @@ classdef Accumulator < AbstractSystem
       augStates = aug.m.withLag + (1:aug.nAccumulatorStates);
 
       % Modify T transformations
-      % The transformations are linear. THe full definitions are then given by 
+      % The transformations are linear. The full definitions are then given by 
       % what elements of T are getting added to them and mutliplied by:
-      addendT = Accumulator.augmentParamT(zeros(size(tm.fixed.T)), aug);
-      factorT = Accumulator.augmentParamT(ones(size(tm.fixed.T)), aug) - addendT;
+      addendT = Accumulator.augmentParamT(zeros(aug.m.withLag), aug);
+      factorT = Accumulator.augmentParamT(ones(aug.m.withLag), aug) - addendT; % FIXME: dimensions
       isAugElemT = false(size(transIndex.T));
       isAugElemT(augStates, 1:aug.m.original, :) = true;
       [transIndex.T, newTransT, newDerivT, newInvT] = Accumulator.computeNewTrans(...
         transIndex.T, factorT, addendT, find(isAugElemT), tm, nTrans); %#ok<FNDSB>
       
       % Modify c transformations (similar structure to T transformations)
-      addendc = Accumulator.augmentParamc(zeros(size(tm.fixed.c)), aug);
-      factorc = Accumulator.augmentParamc(ones(size(tm.fixed.c)), aug) - addendc;
+      addendc = Accumulator.augmentParamc(zeros(aug.m.withLag, 1), aug);
+      factorc = Accumulator.augmentParamc(ones(aug.m.withLag, 1), aug) - addendc;
       isAugElemc = false(size(transIndex.c));
       isAugElemc(augStates, :) = true;
       [transIndex.c, newTransc, newDerivc, newInvc] = Accumulator.computeNewTrans(...
@@ -397,8 +420,8 @@ classdef Accumulator < AbstractSystem
         nTrans + length(newTransT)); %#ok<FNDSB>
       
       % Modify R transformations (similar structure to T transformations)
-      addendR = Accumulator.augmentParamc(zeros(size(tm.fixed.c)), aug);
-      factorR = Accumulator.augmentParamc(ones(size(tm.fixed.c)), aug) - addendR;
+      addendR = Accumulator.augmentParamc(zeros(aug.m.withLag, tm.g), aug);
+      factorR = Accumulator.augmentParamc(ones(aug.m.withLag, tm.g), aug) - addendR;
       isAugElemR = false(size(transIndex.R));
       isAugElemR(augStates, :, :) = true;
       [transIndex.R, newTransR, newDerivR, newInvR] = Accumulator.computeNewTrans(...

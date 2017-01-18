@@ -37,15 +37,8 @@ classdef ThetaMap < AbstractSystem
   %
   % David Kelley, 2016-2017
   %
-  % TODO (1/10/17)
+  % TODO (1/17/17)
   % ---------------
-  %   - Write tests for ThetaMap. They should verify: 
-  %     - Check a generated system obeys bounds. 
-  %     - Creating a system with accumulators is the same as generating a system
-  %       without accumulators and adding the accumulators in afterward. 
-  %   - Function comparison of transformations: if a string match of the
-  %     functions() function fields match and the workspaces match, the 
-  %     transformations are the same and can be combined. 
   %   - Optional: Allow inverses to be passed empty and do the line-search 
   %     to find the numeric inverse. 
   %   - Write documentation on initial values derivation
@@ -121,7 +114,7 @@ classdef ThetaMap < AbstractSystem
       
       % Set diagonals of variance matricies to be positive
       ssLB.H(1:obj.p+1:end) = eps;
-      ssLB.Q(1:obj.m+1:end) = eps;
+      ssLB.Q(1:obj.g+1:end) = eps;
       if ~obj.usingDefaultP0
         ssLB.P0(1:obj.m+1:end) = eps;
       end
@@ -331,15 +324,33 @@ classdef ThetaMap < AbstractSystem
       for iP = 1:nParameterMats
         iName = obj.fixed.systemParam{iP};
         
-        paramGrad = zeros(obj.nTheta, numel(obj.index.(iName)(:,:,1)), ...
-          size(obj.index.(iName), 3));
+        % Allocate: all parameter gradients are 3D (inc. vectors)
+        if any(strcmpi(iName, {'d', 'c'}))
+          nSlices = size(obj.index.(iName), 2);
+          sliceElems = numel(obj.index.(iName)(:,1));
+          paramGrad = zeros(obj.nTheta, sliceElems, nSlices);
+        else
+          nSlices = size(obj.index.(iName), 3);
+          sliceElems = numel(obj.index.(iName)(:,:,1));
+          paramGrad = zeros(obj.nTheta, sliceElems, nSlices);
+        end
         
-        freeValues = reshape(find(logical(obj.index.(iName))), 1, []);
-        for jF = freeValues
-          freeIndex = obj.index.(iName)(jF);
-          jTrans = obj.derivatives{obj.transformationIndex.(iName)(jF)};
-          jTheta = theta(freeIndex);
-          paramGrad(freeIndex, jF) = jTrans(jTheta);
+        % Create gradients of each slice
+        for iSlice = 1:nSlices
+          % Move through each parameter element determined by theta and compute
+          % the derivative:
+          if any(strcmpi(iName, {'d', 'c'}))
+            freeValues = reshape(find(logical(obj.index.(iName)(:,iSlice))), 1, []);
+          else
+            freeValues = reshape(find(logical(obj.index.(iName)(:,:,iSlice))), 1, []);
+          end
+          
+          for jF = freeValues
+            freeIndex = obj.index.(iName)(jF);
+            jTrans = obj.derivatives{obj.transformationIndex.(iName)(jF)};
+            jTheta = theta(freeIndex);
+            paramGrad(freeIndex, jF, iSlice) = jTrans(jTheta);
+          end
         end
         
         G.(iName) = paramGrad;

@@ -42,14 +42,14 @@ classdef StateSpace < AbstractStateSpace
   % Mex versions will be used unless ss.useMex is set to false or the mex
   % files cannot be found.
   
-  % David Kelley, 2016
+  % David Kelley, 2016-2017
   %
-  % TODO (12/11/16)
+  % TODO (1/17/17)
   % ---------------
   %   - TVP in gradient function 
-  %   - mex version of the gradient function (?)
   %   - Add filter/smoother weight decompositions
   %   - Add IRF/historical decompositions
+  %   - mex version of the gradient function (?)
   
   methods (Static)
     %% Static properties
@@ -99,7 +99,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     %% State estimation methods 
-    function [a, logli, filterOut] = filter(obj, y, a0, P0)
+    function [a, logli, filterOut] = filter(obj, y)
       % FILTER Estimate the filtered state
       % 
       % a = StateSpace.FILTER(y) returns the filtered state given the data y. 
@@ -118,11 +118,6 @@ classdef StateSpace < AbstractStateSpace
       obj = obj.checkSample(y);
       
       % Set initial values
-      if nargin > 3
-        obj = obj.setInitial(a0, P0);
-      elseif nargin > 2
-        obj = obj.setInitial(a0);
-      end
       obj = setDefaultInitial(obj);
 
       % Determine which version of the filter to run
@@ -141,7 +136,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [alpha, smootherOut] = smooth(obj, y, a0, P0)
+    function [alpha, smootherOut] = smooth(obj, y)
       % Estimate the smoothed state
       
       % Make sure data matches observation dimensions
@@ -149,11 +144,6 @@ classdef StateSpace < AbstractStateSpace
       obj = obj.checkSample(y);
       
       % Set initial values
-      if nargin > 3
-        obj = obj.setInitial(a0, P0);
-      elseif nargin > 2
-        obj = obj.setInitial(a0);
-      end
       obj = setDefaultInitial(obj);
       
       % Get the filtered estimates for use in the smoother
@@ -176,7 +166,7 @@ classdef StateSpace < AbstractStateSpace
       smootherOut.logli = logli;
     end
     
-    function [logli, gradient] = gradient(obj, y, tm, a0, P0)
+    function [logli, gradient] = gradient(obj, y, tm, theta)
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
       
@@ -184,12 +174,12 @@ classdef StateSpace < AbstractStateSpace
       assert(isa(tm, 'ThetaMap'));
       
       obj = obj.checkSample(y);
-      if nargin > 3
-        obj = obj.setInitial(a0, P0);
-      end
+
       obj = setDefaultInitial(obj);
       
-      theta = tm.system2theta(obj);
+      if nargin < 4
+        theta = tm.system2theta(obj);
+      end
       
       [logli, gradient] = obj.gradient_multi_filter(y, tm, theta);
     end
@@ -464,9 +454,8 @@ classdef StateSpace < AbstractStateSpace
     
     function [logli, gradient] = gradient_multi_filter(obj, y, tm, theta)
       % Gradient algorithm from Diasuke Nagakura (SSRN # 1634552).
-      
-      % TODO: First think about G.x carefully.
-      assert(obj.timeInvariant, 'TVP gradient not developed yet.'); 
+
+      % Note that G.x is 3D for everything except a and P. 
       
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
@@ -505,12 +494,12 @@ classdef StateSpace < AbstractStateSpace
       
       % Initial period: G.a and G.P capture effects of a0, T
       G.a = G.a * obj.T(:,:,obj.tau.T(1))' + ...
-        G.c + ...
-        G.T * kron(obj.a0, eye(obj.m));
+        G.c(:, :, obj.tau.c(1)) + ... % Yes, G.c is 3D.
+        G.T(:,:,obj.tau.T(1)) * kron(obj.a0, eye(obj.m));
       G.P = G.P * kron(obj.T(:,:,obj.tau.T(1))', obj.T(:,:,obj.tau.T(1))') + ...
-        G.Q * kron(obj.R(:,:,obj.tau.R(1))', obj.R(:,:,obj.tau.R(1))') + ...
-        (G.T * kron(obj.P0 * obj.T(:,:,obj.tau.T(1))', eye(obj.m)) + ...
-        G.R * kron(obj.Q(:,:,obj.tau.Q(1)) * ...
+        G.Q(:,:,obj.tau.Q(1)) * kron(obj.R(:,:,obj.tau.R(1))', obj.R(:,:,obj.tau.R(1))') + ...
+        (G.T(:,:,obj.tau.T(1)) * kron(obj.P0 * obj.T(:,:,obj.tau.T(1))', eye(obj.m)) + ...
+        G.R(:,:,obj.tau.R(1)) * kron(obj.Q(:,:,obj.tau.Q(1)) * ...
         obj.R(:,:,obj.tau.R(1))', eye(obj.m))) * ...
         (eye(obj.m^2) + commutation);
       
@@ -531,29 +520,29 @@ classdef StateSpace < AbstractStateSpace
         gradient = gradient + ...
           G.a * Zii' * fOut.w(ind,ii) + ...
           0.5 * G.P * vec(Zii' * ww * Zii - Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
-          G.d * W' * fOut.w(ind,ii) + ...
-          G.Z * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
+          G.d(:,:,obj.tau.d(1)) * W' * fOut.w(ind,ii) + ...
+          G.Z(:,:,obj.tau.Z(1)) * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
             fOut.w(ind,ii) * Mv' - fOut.M(:,ind,ii)')) + ...
-          0.5 * G.H * kronWW * vec(ww - fOut.Finv(ind,ind,ii));
+          0.5 * G.H(:,:,obj.tau.H(1)) * kronWW * vec(ww - fOut.Finv(ind,ind,ii));
         
         % Set t+1 values
         PL = fOut.P(:,:,ii) * fOut.L(:,:,ii)';
         
         G.a = G.a * fOut.L(:,:,ii)' + ...
           G.P * kron(Zii' * fOut.w(ind,ii), fOut.L(:,:,ii)') + ...
-          G.c - ...
-          G.d * fOut.K(:,:,ii)' + ...
-          G.Z * (kron(PL, fOut.w(:,ii)) - ...
+          G.c(:,:,obj.tau.c(1)) - ...
+          G.d(:,:,obj.tau.d(1)) * fOut.K(:,:,ii)' + ...
+          G.Z(:,:,obj.tau.Z(1)) * (kron(PL, fOut.w(:,ii)) - ...
             kron(fOut.a(:,ii) + Mv, fOut.K(:,:,ii)')) - ...
-          G.H * kron(fOut.w(:,ii), fOut.K(:,:,ii)') + ...
-          G.T * kron(fOut.a(:,ii) + Mv, eye(obj.m));
+          G.H(:,:,obj.tau.H(1)) * kron(fOut.w(:,ii), fOut.K(:,:,ii)') + ...
+          G.T(:,:,obj.tau.T(1)) * kron(fOut.a(:,ii) + Mv, eye(obj.m));
         
         G.P = G.P * kron(fOut.L(:,:,ii)', fOut.L(:,:,ii)') + ...
-          G.H * kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)') + ...
-          G.Q * kronRR(:,:, obj.tau.R(ii+1)) + ...
-          (G.T * kron(PL, eye(obj.m)) - ...
-            G.Z * kron(PL, fOut.K(:,:,ii)') + ...
-            G.R * kronQRI(:, :, tauQR(ii))) * ...
+          G.H(:,:,obj.tau.H(1)) * kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)') + ...
+          G.Q(:,:,obj.tau.Q(1)) * kronRR(:,:, obj.tau.R(ii+1)) + ...
+          (G.T(:,:,obj.tau.T(1)) * kron(PL, eye(obj.m)) - ...
+            G.Z(:,:,obj.tau.Z(1)) * kron(PL, fOut.K(:,:,ii)') + ...
+            G.R(:,:,obj.tau.R(1)) * kronQRI(:, :, tauQR(ii))) * ...
             Nm;
       end
     end
