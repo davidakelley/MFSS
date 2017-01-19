@@ -34,6 +34,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
     useGrad = true;   % Indicator for use of analytic gradient
+    
+    % Stationarity Restriction
+    stationaryStates = [];
   end
   
   methods
@@ -116,7 +119,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
             'Display', displayType, ...
             'MaxFunctionEvaluations', 50000, ...
             'MaxIterations', 10000, ...
-            'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
+            'FunctionTolerance', obj.tol, ...
+            'OptimalityTolerance', obj.tol, ...
             'StepTolerance', obj.stepTol, ...
             'PlotFcns', plotFcns, ...
             'TolCon', 0);
@@ -130,7 +134,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
             'Display', displayType, ...
             'MaxFunctionEvaluations', 50000, ...
             'MaxIterations', 10000, ...
-            'FunctionTolerance', obj.tol, 'OptimalityTolerance', obj.tol, ...
+            'FunctionTolerance', obj.tol, ...
+            'OptimalityTolerance', obj.tol, ...
             'StepTolerance', obj.stepTol, ...
             'PlotFcns', plotFcns);
         case 'fminsearch'
@@ -138,7 +143,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           
           options = optimset('Display', displayType, ...
             'MaxFunEvals', 5000, ...
-            'MaxIter', 50 * obj.ThetaMapping.nTheta, ...
+            'MaxIter', 500 * obj.ThetaMapping.nTheta, ...
             'PlotFcns', plotFcns);
       end
       
@@ -155,7 +160,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
               minfunc, theta0, options);
           case 'fmincon'
             [thetaHat, logli, flag, ~, ~, gradient] = fmincon(... 
-              minfunc, theta0, [], [], [], [], [], [], nonlconFn);
+              minfunc, theta0, [], [], [], [], [], [], nonlconFn, options);
           case 'fminsearch'
             [thetaHat, logli, flag] = fminsearch(...
               minfunc, theta0, options);
@@ -211,6 +216,16 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       obj = ss0;
     end
+    
+    function obj = setInitial(obj, a0, P0)
+      % Set a0 and P0 for the system
+      
+      % Set the avaliable values
+      obj = setInitial@AbstractStateSpace(obj, a0, P0);
+      
+      % Make sure the ThetaMap gets updated
+      obj.ThetaMapping = obj.ThetaMapping.updateInitial(a0, P0);      
+    end
   end
   
   methods (Hidden = true)
@@ -256,12 +271,21 @@ classdef StateSpaceEstimation < AbstractStateSpace
     	deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
                  det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
       if ~obj.usingDefaultP0
-        deltaCX = [deltaCX; det(ss1.P0) * G.P0 * vec(inv(ss1.P0))];
+        deltaCX = [deltaCX det(ss1.P0) * G.P0 * vec(inv(ss1.P0))];
       end
       warning on MATLAB:nearlySingularMatrix
       warning on MATLAB:singularMatrix
       
       deltaCeqX = sparse(0);
+      
+      % Constrain a submatrix of T to be stationary: 
+      % c(x) should be abs(max(eig(T))) - 1
+      if ~isempty(obj.stationaryStates)
+        eigs = eig(ss1.T(obj.stationaryStates,obj.stationaryStates,obj.tau.T(1)));
+        stationaryCx = scale * (max(abs(eigs)) - 1);
+        cx = [cx; stationaryCx];
+        deltaCX = [];
+      end
     end
     
     %% EM Algorithm Helper functions

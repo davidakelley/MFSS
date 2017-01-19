@@ -1,18 +1,44 @@
 function [Y, alpha, eta, epsilon] = generateData(ss, timeDim)
 % Generate test data from a state-space model
 
-% Generate data
-eta = ss.R * ss.Q^(1/2) * randn(ss.g, timeDim);
-alpha = nan(ss.m, timeDim);
-alpha(:,1) = eta(:,1);
-for iT = 2:timeDim
-  alpha(:,iT) = ss.T * alpha(:,iT-1) + eta(:,iT);
+% Make sure StateSpace is set up
+if isempty(ss.tau)
+  ss.n = timeDim;
+  ss = ss.setInvariantTau();
 end
 
-epsilon = ss.H^(1/2) * randn(ss.p, timeDim);
+if isempty(ss.a0) || isempty(ss.P0)
+  ss = ss.setDefaultInitial();
+end
+
+% Generate data
+eta = nan(ss.g, timeDim);
+rawEta = randn(ss.g, timeDim);
+alpha = nan(ss.m, timeDim);
+
+eta(:,1) = ss.Q(:,:,ss.tau.Q(1))^(1/2) * rawEta(:,1);
+
+alpha(:,1) = ss.T(:,:,ss.tau.T(1)) * ss.a0 + ...
+  ss.c(:,ss.tau.c(1)) + ...
+  ss.R(:,:,ss.tau.R(1)) * eta(:,1);
+
+for iT = 2:timeDim
+  eta(:,iT) = ss.Q(:,:,ss.tau.Q(iT))^(1/2) * rawEta(:, iT);
+  
+  alpha(:,iT) = ss.T(:,:,ss.tau.T(iT)) * alpha(:,iT-1) + ...
+    ss.c(:,ss.tau.c(iT)) + ...
+    ss.R(:,:,ss.tau.R(iT)) * eta(:,iT);
+end
+
+epsilon = nan(ss.p, timeDim);
+rawEpsilon = randn(ss.p, timeDim);
 Y = nan(ss.p, timeDim);
 for iT = 1:timeDim
-  Y(:,iT) = ss.Z * alpha(:,iT) + epsilon(:,iT);
+  epsilon(:,iT) = ss.H(:,:,ss.tau.H(iT))^(1/2) * rawEpsilon(:,iT);
+  
+  Y(:,iT) = ss.Z(:,:,ss.tau.Z(iT)) * alpha(:,iT) + ...
+    ss.d(:,ss.tau.d(1)) + ...
+    epsilon(:,iT);
 end
 
 end

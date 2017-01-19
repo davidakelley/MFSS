@@ -203,8 +203,6 @@ classdef ThetaMap < AbstractSystem
       % Output 
       %   ss:    A StateSpace
       
-      % FIXME: Account for tau
-      
       % Handle inputs
       assert(all(size(theta) == [obj.nTheta 1]), ...
         'Size of theta does not match ThetaMap.');
@@ -475,7 +473,7 @@ classdef ThetaMap < AbstractSystem
         
         % Alter any transformations neccessary
         for iElem = 1:numel(newLBmat)
-          if newLBmat(iElem) ~= oldLBmat(iElem) || newUBmat(iElem) ~= oldUBmat(iElem);
+          if newLBmat(iElem) ~= oldLBmat(iElem) || newUBmat(iElem) ~= oldUBmat(iElem)
             [trans, deriv, inver] = ...
               ThetaMap.boundedTransform(newLBmat(iElem), newUBmat(iElem));
             
@@ -566,6 +564,101 @@ classdef ThetaMap < AbstractSystem
         obj.derivatives(duplicatesForRemoval) = [];
         obj.inverses(duplicatesForRemoval) = [];
       end
+    end
+    
+    function obj = updateInitial(obj, a0, P0)
+      % Set the initial values a0 and P0. 
+      %
+      % Inputs may contain nans indicating the elements to be estimated
+      
+      % Get the identity transformation to add later
+      [trans, deriv, inverse] = obj.boundedTransform(-Inf, Inf);
+        
+      % Alter a0
+      if ~isempty(a0) 
+        validateattributes(a0, {'numeric'}, {'size', [obj.m 1]});
+        
+        % Set the fixed elements
+        obj.fixed.a0 = a0;
+        obj.fixed.a0(isnan(a0)) = 0;
+        
+        % Add to the indexes for the *potentially* new elements of a0
+        obj.index.a0 = zeros(size(a0));
+        obj.index.a0(isnan(a0)) = obj.nTheta + (1:sum(isnan(a0)));
+        
+        % Add an identity transformation for all of the elements just added
+        obj.transformationIndex.a0 = zeros(size(a0));
+        nTransform = length(obj.transformations);
+        obj.transformationIndex.a0(isnan(a0)) = nTransform + 1;
+        
+        obj.transformations = [obj.transformations {trans}];
+        obj.derivatives = [obj.derivatives {deriv}];
+        obj.inverses = [obj.inverses {inverse}];
+        
+        
+        obj.LowerBound.a0 = -Inf * ones(size(a0));
+        obj.UpperBound.a0 = Inf * ones(size(a0));
+        
+        % Make sure we're using a0
+        obj.usingDefaulta0 = false;
+        obj.fixed.usingDefaulta0 = false;
+        obj.index.usingDefaulta0 = false;
+        obj.transformationIndex.usingDefaulta0 = false;
+        obj.UpperBound.usingDefaulta0 = false;
+        obj.LowerBound.usingDefaulta0 = false;
+      else
+        obj.usingDefaulta0 = true;
+      end
+      
+      % Alter P0
+      if ~isempty(P0) 
+        validateattributes(P0, {'numeric'}, {'size', [obj.m obj.m]});
+        
+        % Set the fixed elements
+        obj.fixed.P0 = P0;
+        obj.fixed.P0(isnan(P0)) = 0;
+        
+        % Add to the indexes for the *potentially* new elements of a0
+        obj.index.P0 = zeros(size(P0));
+        obj.index.P0(isnan(P0)) = obj.nTheta + (1:sum(isnan(P0)));
+        
+        % Add an identity transformation for all of the elements just added
+        obj.transformationIndex.a0 = zeros(size(P0));
+        nTransform = length(obj.transformations);
+        obj.transformationIndex.P0(isnan(P0)) = nTransform + 1;
+
+        obj.transformations = [obj.transformations {trans}];
+        obj.derivatives = [obj.derivatives {deriv}];
+        obj.inverses = [obj.inverses {inverse}];
+        
+        obj.usingDefaultP0 = false;
+        
+        % Restrict diagonal to be positive
+        ssLB = obj.fixed.setAllParameters(-Inf);
+        ssUB = obj.fixed.setAllParameters(Inf);
+        
+        ssLB.P0(1:obj.m+1:end) = eps;
+        
+        obj.LowerBound.P0 = -Inf * ones(size(P0));
+        obj.UpperBound.P0 = Inf * ones(size(P0));
+        
+        % Make sure we're using P0
+        obj.usingDefaultP0 = false;
+        obj.fixed.usingDefaultP0 = false;
+        obj.index.usingDefaultP0 = false;
+        obj.transformationIndex.usingDefaultP0 = false;
+        obj.UpperBound.usingDefaultP0 = false;
+        obj.LowerBound.usingDefaultP0 = false;
+        
+        obj = obj.addRestrictions(ssLB, ssUB);
+      else
+        obj.usingDefaultP0 = true;
+      end
+      
+      % Validate & remove duplicate transformations and potentially unused
+      % indexes we just added.
+      obj = obj.validateThetaMap();
+      
     end
   end
   
