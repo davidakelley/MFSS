@@ -326,12 +326,11 @@ classdef ThetaMap < AbstractSystem
         if any(strcmpi(iName, {'d', 'c'}))
           nSlices = size(obj.index.(iName), 2);
           sliceElems = numel(obj.index.(iName)(:,1));
-          paramGrad = zeros(obj.nTheta, sliceElems, nSlices);
         else
           nSlices = size(obj.index.(iName), 3);
           sliceElems = numel(obj.index.(iName)(:,:,1));
-          paramGrad = zeros(obj.nTheta, sliceElems, nSlices);
         end
+        paramGrad = zeros(obj.nTheta, sliceElems, nSlices);
         
         % Create gradients of each slice
         for iSlice = 1:nSlices
@@ -345,7 +344,8 @@ classdef ThetaMap < AbstractSystem
           
           for jF = freeValues
             freeIndex = obj.index.(iName)(jF);
-            jTrans = obj.derivatives{obj.transformationIndex.(iName)(jF)};
+            [iRow, jCol] = ind2sub(size(obj.index.(iName)(:,:,1)), jF);
+            jTrans = obj.derivatives{obj.transformationIndex.(iName)(iRow, jCol, iSlice)};
             jTheta = theta(freeIndex);
             paramGrad(freeIndex, jF, iSlice) = jTrans(jTheta);
           end
