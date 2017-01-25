@@ -9,7 +9,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-#include "O:\PROJ_LIB\FTVAR\lmjtoolbox\ABFilters\mex\src\include\armadillo"
+#include "armadillo.hpp"
 #include <mex.h>
 #include <mat.h>
 #include <cstring>
