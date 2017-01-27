@@ -24,12 +24,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
     % Screen output during ML estimation
     verbose = true;
     
-    solver = 'fminunc';
+    solver = {'fmincon', 'fminsearch'};
+    solveIterMax = 20;
     
     % ML-estimation tolerances
     tol = 1e-10;      % Final estimation tolerance
     stepTol = 1e-11;  % Step-size tolerance for ML theta elements
-    iterTol = 1e-11;   % EM tolerance
+    solveTol = 1e-11;   % EM tolerance
     
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
@@ -108,64 +109,69 @@ classdef StateSpaceEstimation < AbstractStateSpace
         displayType = 'none';
       end
       
-      switch obj.solver
-        case 'fmincon'
-          plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
-            @optimplotstepsize, @optimplotconstrviolation};
-          
-          options = optimoptions(@fmincon, ...
-            'Algorithm', 'interior-point', ...
-            'SpecifyObjectiveGradient', obj.useGrad, ...
-            'Display', displayType, ...
-            'MaxFunctionEvaluations', 50000, ...
-            'MaxIterations', 10000, ...
-            'FunctionTolerance', obj.tol, ...
-            'OptimalityTolerance', obj.tol, ...
-            'StepTolerance', obj.stepTol, ...
-            'PlotFcns', plotFcns, ...
-            'TolCon', 0);
-        case 'fminunc'
-          plotFcns = {@optimplotfval, @optimplotfirstorderopt, ...
-            @optimplotstepsize, @optimplotconstrviolation};
-          
-          options = optimoptions(@fminunc, ...
-            'Algorithm', 'quasi-newton', ...
-            'SpecifyObjectiveGradient', obj.useGrad, ...
-            'Display', displayType, ...
-            'MaxFunctionEvaluations', 50000, ...
-            'MaxIterations', 10000, ...
-            'FunctionTolerance', obj.tol, ...
-            'OptimalityTolerance', obj.tol, ...
-            'StepTolerance', obj.stepTol, ...
-            'PlotFcns', plotFcns);
-        case 'fminsearch'
-          plotFcns = {@optimplotfval, @optimplotx};
-          
-          options = optimset('Display', displayType, ...
-            'MaxFunEvals', 5000, ...
-            'MaxIter', 500 * obj.ThetaMapping.nTheta, ...
-            'PlotFcns', plotFcns);
-      end
+      plotFcnsCon = {@optimplotfval, @optimplotfirstorderopt, ...
+        @optimplotx, @optimplotconstrviolation};
+      optFMinCon = optimoptions(@fmincon, ...
+        'Algorithm', 'interior-point', ...
+        'SpecifyObjectiveGradient', obj.useGrad, ...
+        'Display', displayType, ...
+        'MaxFunctionEvaluations', 50000, ...
+        'MaxIterations', 10000, ...
+        'FunctionTolerance', obj.tol, ...
+        'OptimalityTolerance', obj.tol, ...
+        'StepTolerance', obj.stepTol, ...
+        'PlotFcns', plotFcnsCon, ...
+        'TolCon', 0);
+      optFMinUnc = optimoptions(@fminunc, ...
+        'Algorithm', 'quasi-newton', ...
+        'SpecifyObjectiveGradient', obj.useGrad, ...
+        'Display', displayType, ...
+        'MaxFunctionEvaluations', 50000, ...
+        'MaxIterations', 10000, ...
+        'FunctionTolerance', obj.tol, ...
+        'OptimalityTolerance', obj.tol, ...
+        'StepTolerance', obj.stepTol, ...
+        'PlotFcns', plotFcnsCon);
+      
+      plotFcnsSearch = {@optimplotfval, @optimplotx};
+      optFMinSearch = optimset('Display', displayType, ...
+        'MaxFunEvals', 5000 * obj.ThetaMapping.nTheta, ...
+        'MaxIter', 500 * obj.ThetaMapping.nTheta, ...
+        'PlotFcns', plotFcnsSearch);
       
       warning off MATLAB:nearlySingularMatrix;
       
+      solverFun = obj.solver;
+      
       iter = 0; logli = []; logli0 = []; 
-      while iter < 2 || logli0 - logli > obj.iterTol
+      while iter < obj.solveIterMax && (iter < 2 || logli0 - logli > obj.solveTol)
         iter = iter + 1;
         logli0 = logli;
+        if iscell(obj.solver)
+          solverFun = obj.solver{mod(iter+1, length(obj.solver))+1};
+        end
         
-        switch obj.solver
+        switch solverFun
           case 'fminunc'
             [thetaHat, logli, flag, ~, gradient] = fminunc(...
-              minfunc, theta0, options);
+              minfunc, theta0, optFMinUnc);
           case 'fmincon'
             [thetaHat, logli, flag, ~, ~, gradient] = fmincon(... 
-              minfunc, theta0, [], [], [], [], [], [], nonlconFn, options);
+              minfunc, theta0, [], [], [], [], [], [], nonlconFn, optFMinCon);
           case 'fminsearch'
+            tempGrad = obj.useGrad;
+            obj.useGrad = false;
+            minfunc = @(theta) obj.minimizeFun(theta, y);
+
             [thetaHat, logli, flag] = fminsearch(...
-              minfunc, theta0, options);
+              minfunc, theta0, optFMinSearch);
+            obj.useGrad = tempGrad;
+            minfunc = @(theta) obj.minimizeFun(theta, y);
+
             gradient = [];
         end
+        
+        assert(~any(isnan(thetaHat)), 'Estimation Error');
         
         theta0 = thetaHat;
       end
@@ -235,6 +241,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
       ss1 = obj.ThetaMapping.theta2system(theta);
       ss1.filterUni = obj.filterUni;
       
+      
+      % Really enforce constraints
+      if any(obj.nlConstraintFun(theta) > 0)
+        negLogli = 1e30 * max(obj.nlConstraintFun(theta));
+        gradient = nan(size(theta));
+        return
+      end
+      
       try
         if obj.useGrad
           [rawLogli, rawGradient] = ss1.gradient(y, obj.ThetaMapping);
@@ -258,10 +272,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Return the negative determinants in cx
       ss1 = obj.ThetaMapping.theta2system(theta);
-      cx = scale * -[det(ss1.H) det(ss1.Q)]';
+%       cx = scale * -[det(ss1.H) det(ss1.Q)]';
+      cx = []; % Removed H, Q dets on 1/25
       if ~obj.usingDefaultP0
-        cx = [cx; det(ss1.P0)];
-      end      
+        cx = [cx; scale * -det(ss1.P0)];
+      end         
       ceqx = 0;
       
       % And the gradients 
@@ -285,6 +300,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
         stationaryCx = scale * (max(abs(eigs)) - 1);
         cx = [cx; stationaryCx];
         deltaCX = [];
+      end
+      
+      if any(isnan(cx))
+        keyboard;
       end
     end
     

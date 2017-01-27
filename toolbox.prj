@@ -1,13 +1,13 @@
 <deployment-project plugin="plugin.toolbox" plugin-version="1.0">
   <configuration file="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\..\toolbox.prj" location="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\.." name="toolbox" target="target.toolbox" target-name="Package Toolbox">
     <param.appname>MFSS</param.appname>
-    <param.authnamewatermark>David Kelley</param.authnamewatermark>
-    <param.email>david.kelley@chi.frb.org</param.email>
-    <param.company>Federal Reserve Bank of Chicago</param.company>
+    <param.authnamewatermark />
+    <param.email />
+    <param.company />
     <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.1.0</param.version>
+    <param.version>1.2.0</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
     <param.products.name>
       <item>MATLAB</item>

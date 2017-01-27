@@ -325,12 +325,12 @@ classdef ThetaMap < AbstractSystem
         % Allocate: all parameter gradients are 3D (inc. vectors)
         if any(strcmpi(iName, {'d', 'c'}))
           nSlices = size(obj.index.(iName), 2);
-          sliceElems = numel(obj.index.(iName)(:,1));
+          nSliceElems = numel(obj.index.(iName)(:,1));
         else
           nSlices = size(obj.index.(iName), 3);
-          sliceElems = numel(obj.index.(iName)(:,:,1));
+          nSliceElems = numel(obj.index.(iName)(:,:,1));
         end
-        paramGrad = zeros(obj.nTheta, sliceElems, nSlices);
+        paramGrad = zeros(obj.nTheta, nSliceElems, nSlices);
         
         % Create gradients of each slice
         for iSlice = 1:nSlices
