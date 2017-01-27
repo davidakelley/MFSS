@@ -1,9 +1,11 @@
-// Copyright (C) 2008-2015 Conrad Sanderson
-// Copyright (C) 2008-2015 NICTA (www.nicta.com.au)
+// Copyright (C) 2008-2016 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
 
 
 #ifndef ARMA_INCLUDES
@@ -26,6 +28,7 @@
 #include <algorithm>
 #include <complex>
 #include <vector>
+#include <utility>
 
 
 #if ( defined(__unix__) || defined(__unix) || defined(_POSIX_C_SOURCE) || (defined(__APPLE__) && defined(__MACH__)) ) && !defined(_WIN32)
@@ -38,6 +41,12 @@
 #endif
 
 
+#if (__cplusplus >= 201103L)
+  #undef  ARMA_USE_CXX11
+  #define ARMA_USE_CXX11
+#endif
+
+
 #include "armadillo_bits/config.hpp"
 #include "armadillo_bits/compiler_setup.hpp"
 
@@ -46,9 +55,8 @@
   #include <initializer_list>
   #include <cstdint>
   #include <random>
-  #if !defined(ARMA_DONT_USE_CXX11_CHRONO)
-    #include <chrono>
-  #endif
+  #include <functional>
+  #include <chrono>
 #endif
 
 
@@ -72,6 +80,7 @@
 
 #include "armadillo_bits/include_atlas.hpp"
 #include "armadillo_bits/include_hdf5.hpp"
+#include "armadillo_bits/include_superlu.hpp"
 
 
 #if defined(_OPENMP)
@@ -86,12 +95,12 @@ namespace arma
   
   // preliminaries
   
-  #include "armadillo_bits/forward_bones.hpp"
+  #include "armadillo_bits/arma_forward.hpp"
   #include "armadillo_bits/arma_static_check.hpp"
   #include "armadillo_bits/typedef_elem.hpp"
   #include "armadillo_bits/typedef_elem_check.hpp"
   #include "armadillo_bits/typedef_mat.hpp"
-  #include "armadillo_bits/arma_boost.hpp"
+  #include "armadillo_bits/arma_str.hpp"
   #include "armadillo_bits/arma_version.hpp"
   #include "armadillo_bits/arma_config.hpp"
   #include "armadillo_bits/traits.hpp"
@@ -102,7 +111,7 @@ namespace arma
   #include "armadillo_bits/span.hpp"
   #include "armadillo_bits/distr_param.hpp"
   #include "armadillo_bits/constants.hpp"
-  #include "armadillo_bits/constants_compat.hpp"
+  #include "armadillo_bits/constants_old.hpp"
   
   #ifdef ARMA_RNG_ALT
     #include ARMA_INCFILE_WRAP(ARMA_RNG_ALT)
@@ -121,16 +130,18 @@ namespace arma
   #include "armadillo_bits/BaseCube_bones.hpp"
   #include "armadillo_bits/SpBase_bones.hpp"
   
-  #include "armadillo_bits/blas_bones.hpp"
-  #include "armadillo_bits/lapack_bones.hpp"
-  #include "armadillo_bits/atlas_bones.hpp"
-  #include "armadillo_bits/arpack_bones.hpp"
-  #include "armadillo_bits/hdf5_bones.hpp"
+  #include "armadillo_bits/def_blas.hpp"
+  #include "armadillo_bits/def_lapack.hpp"
+  #include "armadillo_bits/def_atlas.hpp"
+  #include "armadillo_bits/def_arpack.hpp"
+  #include "armadillo_bits/def_superlu.hpp"
+  #include "armadillo_bits/def_hdf5.hpp"
   
-  #include "armadillo_bits/blas_wrapper.hpp"
-  #include "armadillo_bits/lapack_wrapper.hpp"
-  #include "armadillo_bits/atlas_wrapper.hpp"
-  #include "armadillo_bits/arpack_wrapper.hpp"
+  #include "armadillo_bits/wrapper_blas.hpp"
+  #include "armadillo_bits/wrapper_lapack.hpp"
+  #include "armadillo_bits/wrapper_atlas.hpp"
+  #include "armadillo_bits/wrapper_arpack.hpp"
+  #include "armadillo_bits/wrapper_superlu.hpp"
   
   #include "armadillo_bits/cond_rel_bones.hpp"
   #include "armadillo_bits/arrayops_bones.hpp"
@@ -154,6 +165,7 @@ namespace arma
   #include "armadillo_bits/SpCol_bones.hpp"
   #include "armadillo_bits/SpRow_bones.hpp"
   #include "armadillo_bits/SpSubview_bones.hpp"
+  #include "armadillo_bits/spdiagview_bones.hpp"
   
   #include "armadillo_bits/typedef_mat_fixed.hpp"
   
@@ -165,6 +177,7 @@ namespace arma
   #include "armadillo_bits/subview_cube_bones.hpp"
   #include "armadillo_bits/diagview_bones.hpp"
   #include "armadillo_bits/subview_each_bones.hpp"
+  #include "armadillo_bits/subview_cube_each_bones.hpp"
   
   
   #include "armadillo_bits/diskio_bones.hpp"
@@ -195,6 +208,7 @@ namespace arma
   #include "armadillo_bits/eop_core_bones.hpp"
   #include "armadillo_bits/eglue_core_bones.hpp"
   
+  #include "armadillo_bits/GenSpecialiser.hpp"
   #include "armadillo_bits/Gen_bones.hpp"
   #include "armadillo_bits/GenCube_bones.hpp"
   
@@ -205,9 +219,12 @@ namespace arma
   #include "armadillo_bits/op_htrans_bones.hpp"
   #include "armadillo_bits/op_max_bones.hpp"
   #include "armadillo_bits/op_min_bones.hpp"
+  #include "armadillo_bits/op_index_max_bones.hpp"
+  #include "armadillo_bits/op_index_min_bones.hpp"
   #include "armadillo_bits/op_mean_bones.hpp"
   #include "armadillo_bits/op_median_bones.hpp"
   #include "armadillo_bits/op_sort_bones.hpp"
+  #include "armadillo_bits/op_sort_index_bones.hpp"
   #include "armadillo_bits/op_sum_bones.hpp"
   #include "armadillo_bits/op_stddev_bones.hpp"
   #include "armadillo_bits/op_strans_bones.hpp"
@@ -218,6 +235,7 @@ namespace arma
   #include "armadillo_bits/op_resize_bones.hpp"
   #include "armadillo_bits/op_cov_bones.hpp"
   #include "armadillo_bits/op_cor_bones.hpp"
+  #include "armadillo_bits/op_shift_bones.hpp"
   #include "armadillo_bits/op_shuffle_bones.hpp"
   #include "armadillo_bits/op_prod_bones.hpp"
   #include "armadillo_bits/op_pinv_bones.hpp"
@@ -225,12 +243,15 @@ namespace arma
   #include "armadillo_bits/op_flip_bones.hpp"
   #include "armadillo_bits/op_princomp_bones.hpp"
   #include "armadillo_bits/op_misc_bones.hpp"
+  #include "armadillo_bits/op_orth_null_bones.hpp"
   #include "armadillo_bits/op_relational_bones.hpp"
   #include "armadillo_bits/op_find_bones.hpp"
+  #include "armadillo_bits/op_find_unique_bones.hpp"
   #include "armadillo_bits/op_chol_bones.hpp"
   #include "armadillo_bits/op_cx_scalar_bones.hpp"
   #include "armadillo_bits/op_trimat_bones.hpp"
   #include "armadillo_bits/op_cumsum_bones.hpp"
+  #include "armadillo_bits/op_cumprod_bones.hpp"
   #include "armadillo_bits/op_symmat_bones.hpp"
   #include "armadillo_bits/op_hist_bones.hpp"
   #include "armadillo_bits/op_unique_bones.hpp"
@@ -241,6 +262,11 @@ namespace arma
   #include "armadillo_bits/op_normalise_bones.hpp"
   #include "armadillo_bits/op_clamp_bones.hpp"
   #include "armadillo_bits/op_expmat_bones.hpp"
+  #include "armadillo_bits/op_nonzeros_bones.hpp"
+  #include "armadillo_bits/op_diff_bones.hpp"
+  #include "armadillo_bits/op_norm_bones.hpp"
+  #include "armadillo_bits/op_sqrtmat_bones.hpp"
+  #include "armadillo_bits/op_logmat_bones.hpp"
   
   #include "armadillo_bits/glue_times_bones.hpp"
   #include "armadillo_bits/glue_mixed_bones.hpp"
@@ -257,6 +283,12 @@ namespace arma
   #include "armadillo_bits/glue_histc_bones.hpp"
   #include "armadillo_bits/glue_max_bones.hpp"
   #include "armadillo_bits/glue_min_bones.hpp"
+  #include "armadillo_bits/glue_trapz_bones.hpp"
+  #include "armadillo_bits/glue_atan2_bones.hpp"
+  #include "armadillo_bits/glue_hypot_bones.hpp"
+  
+  #include "armadillo_bits/gmm_misc_bones.hpp"
+  #include "armadillo_bits/gmm_diag_bones.hpp"
   
   #include "armadillo_bits/spop_max_bones.hpp"
   #include "armadillo_bits/spop_min_bones.hpp"
@@ -264,12 +296,27 @@ namespace arma
   #include "armadillo_bits/spop_strans_bones.hpp"
   #include "armadillo_bits/spop_htrans_bones.hpp"
   #include "armadillo_bits/spop_misc_bones.hpp"
+  #include "armadillo_bits/spop_diagmat_bones.hpp"
   #include "armadillo_bits/spop_mean_bones.hpp"
   #include "armadillo_bits/spop_var_bones.hpp"
   
   #include "armadillo_bits/spglue_plus_bones.hpp"
   #include "armadillo_bits/spglue_minus_bones.hpp"
   #include "armadillo_bits/spglue_times_bones.hpp"
+  #include "armadillo_bits/spglue_join_bones.hpp"
+  
+  #if defined(ARMA_USE_NEWARP)
+    #include "armadillo_bits/newarp_EigsSelect.hpp"
+    #include "armadillo_bits/newarp_DenseGenMatProd_bones.hpp"
+    #include "armadillo_bits/newarp_SparseGenMatProd_bones.hpp"
+    #include "armadillo_bits/newarp_DoubleShiftQR_bones.hpp"
+    #include "armadillo_bits/newarp_GenEigsSolver_bones.hpp"
+    #include "armadillo_bits/newarp_SymEigsSolver_bones.hpp"
+    #include "armadillo_bits/newarp_TridiagEigen_bones.hpp"
+    #include "armadillo_bits/newarp_UpperHessenbergEigen_bones.hpp"
+    #include "armadillo_bits/newarp_UpperHessenbergQR_bones.hpp"
+  #endif
+  
   
   //
   // low-level debugging and memory handling functions
@@ -364,8 +411,10 @@ namespace arma
   // as some files require functionality given in preceding files
   
   #include "armadillo_bits/fn_conv_to.hpp"
-  #include "armadillo_bits/fn_min.hpp"
   #include "armadillo_bits/fn_max.hpp"
+  #include "armadillo_bits/fn_min.hpp"
+  #include "armadillo_bits/fn_index_max.hpp"
+  #include "armadillo_bits/fn_index_min.hpp"
   #include "armadillo_bits/fn_accu.hpp"
   #include "armadillo_bits/fn_sum.hpp"
   #include "armadillo_bits/fn_diagmat.hpp"
@@ -375,16 +424,20 @@ namespace arma
   #include "armadillo_bits/fn_trans.hpp"
   #include "armadillo_bits/fn_det.hpp"
   #include "armadillo_bits/fn_log_det.hpp"
-  #include "armadillo_bits/fn_eig_sym.hpp"
   #include "armadillo_bits/fn_eig_gen.hpp"
+  #include "armadillo_bits/fn_eig_sym.hpp"
   #include "armadillo_bits/fn_eig_pair.hpp"
   #include "armadillo_bits/fn_lu.hpp"
   #include "armadillo_bits/fn_zeros.hpp"
   #include "armadillo_bits/fn_ones.hpp"
   #include "armadillo_bits/fn_eye.hpp"
   #include "armadillo_bits/fn_misc.hpp"
+  #include "armadillo_bits/fn_orth_null.hpp"
+  #include "armadillo_bits/fn_regspace.hpp"
   #include "armadillo_bits/fn_find.hpp"
+  #include "armadillo_bits/fn_find_unique.hpp"
   #include "armadillo_bits/fn_elem.hpp"
+  #include "armadillo_bits/fn_approx_equal.hpp"
   #include "armadillo_bits/fn_norm.hpp"
   #include "armadillo_bits/fn_dot.hpp"
   #include "armadillo_bits/fn_randu.hpp"
@@ -407,6 +460,7 @@ namespace arma
   #include "armadillo_bits/fn_resize.hpp"
   #include "armadillo_bits/fn_cov.hpp"
   #include "armadillo_bits/fn_cor.hpp"
+  #include "armadillo_bits/fn_shift.hpp"
   #include "armadillo_bits/fn_shuffle.hpp"
   #include "armadillo_bits/fn_prod.hpp"
   #include "armadillo_bits/fn_eps.hpp"
@@ -424,6 +478,7 @@ namespace arma
   #include "armadillo_bits/fn_toeplitz.hpp"
   #include "armadillo_bits/fn_trimat.hpp"
   #include "armadillo_bits/fn_cumsum.hpp"
+  #include "armadillo_bits/fn_cumprod.hpp"
   #include "armadillo_bits/fn_symmat.hpp"
   #include "armadillo_bits/fn_syl_lyap.hpp"
   #include "armadillo_bits/fn_hist.hpp"
@@ -443,6 +498,15 @@ namespace arma
   #include "armadillo_bits/fn_normalise.hpp"
   #include "armadillo_bits/fn_clamp.hpp"
   #include "armadillo_bits/fn_expmat.hpp"
+  #include "armadillo_bits/fn_nonzeros.hpp"
+  #include "armadillo_bits/fn_interp1.hpp"
+  #include "armadillo_bits/fn_qz.hpp"
+  #include "armadillo_bits/fn_diff.hpp"
+  #include "armadillo_bits/fn_schur.hpp"
+  #include "armadillo_bits/fn_kmeans.hpp"
+  #include "armadillo_bits/fn_sqrtmat.hpp"
+  #include "armadillo_bits/fn_logmat.hpp"
+  #include "armadillo_bits/fn_trapz.hpp"
   
   #include "armadillo_bits/fn_speye.hpp"
   #include "armadillo_bits/fn_spones.hpp"
@@ -450,20 +514,14 @@ namespace arma
   #include "armadillo_bits/fn_sprandu.hpp"
   #include "armadillo_bits/fn_eigs_sym.hpp"
   #include "armadillo_bits/fn_eigs_gen.hpp"
-  #include "armadillo_bits/fn_norm_sparse.hpp"
+  #include "armadillo_bits/fn_spsolve.hpp"
+  #include "armadillo_bits/fn_svds.hpp"
   
   //
   // misc stuff
   
   #include "armadillo_bits/hdf5_misc.hpp"
   #include "armadillo_bits/fft_engine.hpp"
-  
-  #if !defined(ARMA_BAD_COMPILER)
-    #include "armadillo_bits/gmm_misc_bones.hpp"
-    #include "armadillo_bits/gmm_misc_meat.hpp"
-    #include "armadillo_bits/gmm_diag_bones.hpp"
-    #include "armadillo_bits/gmm_diag_meat.hpp"
-  #endif
   
   //
   // classes implementing various forms of dense matrix multiplication
@@ -505,6 +563,7 @@ namespace arma
   #include "armadillo_bits/subview_cube_meat.hpp"
   #include "armadillo_bits/diagview_meat.hpp"
   #include "armadillo_bits/subview_each_meat.hpp"
+  #include "armadillo_bits/subview_cube_each_meat.hpp"
 
   #include "armadillo_bits/SpValProxy_meat.hpp"
   #include "armadillo_bits/SpMat_meat.hpp"
@@ -513,6 +572,7 @@ namespace arma
   #include "armadillo_bits/SpRow_meat.hpp"
   #include "armadillo_bits/SpSubview_meat.hpp"
   #include "armadillo_bits/SpSubview_iterators_meat.hpp"
+  #include "armadillo_bits/spdiagview_meat.hpp"
   
   #include "armadillo_bits/diskio_meat.hpp"
   #include "armadillo_bits/wall_clock_meat.hpp"
@@ -525,10 +585,13 @@ namespace arma
   #include "armadillo_bits/op_inv_meat.hpp"
   #include "armadillo_bits/op_htrans_meat.hpp"
   #include "armadillo_bits/op_max_meat.hpp"
+  #include "armadillo_bits/op_index_max_meat.hpp"
+  #include "armadillo_bits/op_index_min_meat.hpp"
   #include "armadillo_bits/op_min_meat.hpp"
   #include "armadillo_bits/op_mean_meat.hpp"
   #include "armadillo_bits/op_median_meat.hpp"
   #include "armadillo_bits/op_sort_meat.hpp"
+  #include "armadillo_bits/op_sort_index_meat.hpp"
   #include "armadillo_bits/op_sum_meat.hpp"
   #include "armadillo_bits/op_stddev_meat.hpp"
   #include "armadillo_bits/op_strans_meat.hpp"
@@ -539,6 +602,7 @@ namespace arma
   #include "armadillo_bits/op_resize_meat.hpp"
   #include "armadillo_bits/op_cov_meat.hpp"
   #include "armadillo_bits/op_cor_meat.hpp"
+  #include "armadillo_bits/op_shift_meat.hpp"
   #include "armadillo_bits/op_shuffle_meat.hpp"
   #include "armadillo_bits/op_prod_meat.hpp"
   #include "armadillo_bits/op_pinv_meat.hpp"
@@ -546,12 +610,15 @@ namespace arma
   #include "armadillo_bits/op_flip_meat.hpp"
   #include "armadillo_bits/op_princomp_meat.hpp"
   #include "armadillo_bits/op_misc_meat.hpp"
+  #include "armadillo_bits/op_orth_null_meat.hpp"
   #include "armadillo_bits/op_relational_meat.hpp"
   #include "armadillo_bits/op_find_meat.hpp"
+  #include "armadillo_bits/op_find_unique_meat.hpp"
   #include "armadillo_bits/op_chol_meat.hpp"
   #include "armadillo_bits/op_cx_scalar_meat.hpp"
   #include "armadillo_bits/op_trimat_meat.hpp"
   #include "armadillo_bits/op_cumsum_meat.hpp"
+  #include "armadillo_bits/op_cumprod_meat.hpp"
   #include "armadillo_bits/op_symmat_meat.hpp"
   #include "armadillo_bits/op_hist_meat.hpp"
   #include "armadillo_bits/op_unique_meat.hpp"
@@ -562,6 +629,11 @@ namespace arma
   #include "armadillo_bits/op_normalise_meat.hpp"
   #include "armadillo_bits/op_clamp_meat.hpp"
   #include "armadillo_bits/op_expmat_meat.hpp"
+  #include "armadillo_bits/op_nonzeros_meat.hpp"
+  #include "armadillo_bits/op_diff_meat.hpp"
+  #include "armadillo_bits/op_norm_meat.hpp"
+  #include "armadillo_bits/op_sqrtmat_meat.hpp"
+  #include "armadillo_bits/op_logmat_meat.hpp"
   
   #include "armadillo_bits/glue_times_meat.hpp"
   #include "armadillo_bits/glue_mixed_meat.hpp"
@@ -578,6 +650,12 @@ namespace arma
   #include "armadillo_bits/glue_histc_meat.hpp"
   #include "armadillo_bits/glue_max_meat.hpp"
   #include "armadillo_bits/glue_min_meat.hpp"
+  #include "armadillo_bits/glue_trapz_meat.hpp"
+  #include "armadillo_bits/glue_atan2_meat.hpp"
+  #include "armadillo_bits/glue_hypot_meat.hpp"
+  
+  #include "armadillo_bits/gmm_misc_meat.hpp"
+  #include "armadillo_bits/gmm_diag_meat.hpp"
   
   #include "armadillo_bits/spop_max_meat.hpp"
   #include "armadillo_bits/spop_min_meat.hpp"
@@ -585,12 +663,27 @@ namespace arma
   #include "armadillo_bits/spop_strans_meat.hpp"
   #include "armadillo_bits/spop_htrans_meat.hpp"
   #include "armadillo_bits/spop_misc_meat.hpp"
+  #include "armadillo_bits/spop_diagmat_meat.hpp"
   #include "armadillo_bits/spop_mean_meat.hpp"
   #include "armadillo_bits/spop_var_meat.hpp"
   
   #include "armadillo_bits/spglue_plus_meat.hpp"
   #include "armadillo_bits/spglue_minus_meat.hpp"
   #include "armadillo_bits/spglue_times_meat.hpp"
+  #include "armadillo_bits/spglue_join_meat.hpp"
+  
+  #if defined(ARMA_USE_NEWARP)
+    #include "armadillo_bits/newarp_cx_attrib.hpp"
+    #include "armadillo_bits/newarp_SortEigenvalue.hpp"
+    #include "armadillo_bits/newarp_DenseGenMatProd_meat.hpp"
+    #include "armadillo_bits/newarp_SparseGenMatProd_meat.hpp"
+    #include "armadillo_bits/newarp_DoubleShiftQR_meat.hpp"
+    #include "armadillo_bits/newarp_GenEigsSolver_meat.hpp"
+    #include "armadillo_bits/newarp_SymEigsSolver_meat.hpp"
+    #include "armadillo_bits/newarp_TridiagEigen_meat.hpp"
+    #include "armadillo_bits/newarp_UpperHessenbergEigen_meat.hpp"
+    #include "armadillo_bits/newarp_UpperHessenbergQR_meat.hpp"
+  #endif
   }
 
 

@@ -1,9 +1,11 @@
-// Copyright (C) 2008-2014 Conrad Sanderson
-// Copyright (C) 2008-2014 NICTA (www.nicta.com.au)
+// Copyright (C) 2008-2016 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
 
 
 
@@ -22,7 +24,7 @@ bool
 arma_isfinite(eT val)
   {
   arma_ignore(val);
-    
+  
   return true;
   }
 
@@ -365,7 +367,7 @@ arma_acos(const std::complex<T>& x)
   #else
     {
     arma_ignore(x);
-    arma_stop("acos(): need C++11 compiler");
+    arma_stop_logic_error("acos(): need C++11 compiler");
     
     return std::complex<T>(0);
     }
@@ -390,7 +392,7 @@ arma_asin(const std::complex<T>& x)
   #else
     {
     arma_ignore(x);
-    arma_stop("asin(): need C++11 compiler");
+    arma_stop_logic_error("asin(): need C++11 compiler");
     
     return std::complex<T>(0);
     }
@@ -415,7 +417,7 @@ arma_atan(const std::complex<T>& x)
   #else
     {
     arma_ignore(x);
-    arma_stop("atan(): need C++11 compiler");
+    arma_stop_logic_error("atan(): need C++11 compiler");
     
     return std::complex<T>(0);
     }
@@ -446,7 +448,7 @@ arma_acosh(const eT x)
       }
     else
       {
-      if(std::numeric_limits<eT>::has_quiet_NaN == true)
+      if(std::numeric_limits<eT>::has_quiet_NaN)
         {
         return -(std::numeric_limits<eT>::quiet_NaN());
         }
@@ -506,7 +508,7 @@ arma_atanh(const eT x)
       }
     else
       {
-      if(std::numeric_limits<eT>::has_quiet_NaN == true)
+      if(std::numeric_limits<eT>::has_quiet_NaN)
         {
         return -(std::numeric_limits<eT>::quiet_NaN());
         }
@@ -537,7 +539,7 @@ arma_acosh(const std::complex<T>& x)
   #else
     {
     arma_ignore(x);
-    arma_stop("acosh(): need C++11 compiler");
+    arma_stop_logic_error("acosh(): need C++11 compiler");
     
     return std::complex<T>(0);
     }
@@ -562,7 +564,7 @@ arma_asinh(const std::complex<T>& x)
   #else
     {
     arma_ignore(x);
-    arma_stop("asinh(): need C++11 compiler");
+    arma_stop_logic_error("asinh(): need C++11 compiler");
     
     return std::complex<T>(0);
     }
@@ -587,12 +589,191 @@ arma_atanh(const std::complex<T>& x)
   #else
     {
     arma_ignore(x);
-    arma_stop("atanh(): need C++11 compiler");
+    arma_stop_logic_error("atanh(): need C++11 compiler");
     
     return std::complex<T>(0);
     }
   #endif
   }
+
+
+
+//
+// wrappers for hypot(x, y) = sqrt(x^2 + y^2)
+
+
+template<typename eT>
+inline
+eT
+arma_hypot_generic(const eT x, const eT y)
+  {
+  #if defined(ARMA_USE_CXX11)
+    {
+    return std::hypot(x, y);
+    }
+  #elif defined(ARMA_HAVE_TR1)
+    {
+    return std::tr1::hypot(x, y);
+    }
+  #else
+    {
+    const eT xabs = std::abs(x);
+    const eT yabs = std::abs(y);
+    
+    eT larger;
+    eT ratio;
+    
+    if(xabs > yabs)
+      {
+      larger = xabs;
+      ratio  = yabs / xabs;
+      }
+    else
+      {
+      larger = yabs;
+      ratio  = xabs / yabs;
+      }
+    
+    return (larger == eT(0)) ? eT(0) : (larger * std::sqrt(eT(1) + ratio * ratio));
+    }
+  #endif
+  }
+
+
+
+template<typename eT>
+inline
+eT
+arma_hypot(const eT x, const eT y)
+  {
+  arma_ignore(x);
+  arma_ignore(y);
+  
+  arma_stop_runtime_error("arma_hypot(): not implemented for integer or complex element types");
+  
+  return eT(0);
+  }
+
+
+
+template<>
+arma_inline
+float
+arma_hypot(const float x, const float y)
+  {
+  return arma_hypot_generic(x,y);
+  }
+
+
+
+template<>
+arma_inline
+double
+arma_hypot(const double x, const double y)
+  {
+  return arma_hypot_generic(x,y);
+  }
+
+
+
+//
+// wrappers for arg()
+
+
+template<typename eT>
+struct arma_arg
+  {
+  static
+  inline
+  eT
+  eval(const eT x)
+    {
+    #if defined(ARMA_USE_CXX11)
+      {
+      return eT( std::arg(x) );
+      }
+    #else
+      {
+      arma_ignore(x);
+      arma_stop_logic_error("arg(): need C++11 compiler");
+      
+      return eT(0);
+      }
+    #endif
+    }
+  };
+
+
+
+template<>
+struct arma_arg<float>
+  {
+  static
+  arma_inline
+  float
+  eval(const float x)
+    {
+    #if defined(ARMA_USE_CXX11)
+      {
+      return std::arg(x);
+      }
+    #else
+      {
+      return std::arg( std::complex<float>( x, float(0) ) );
+      }
+    #endif
+    }
+  };
+
+
+
+template<>
+struct arma_arg<double>
+  {
+  static
+  arma_inline
+  double
+  eval(const double x)
+    {
+    #if defined(ARMA_USE_CXX11)
+      {
+      return std::arg(x);
+      }
+    #else
+      {
+      return std::arg( std::complex<double>( x, double(0) ) );
+      }
+    #endif
+    }
+  };
+
+
+
+template<>
+struct arma_arg< std::complex<float> >
+  {
+  static
+  arma_inline
+  float
+  eval(const std::complex<float>& x)
+    {
+    return std::arg(x);
+    }
+  };
+
+
+
+template<>
+struct arma_arg< std::complex<double> >
+  {
+  static
+  arma_inline
+  double
+  eval(const std::complex<double>& x)
+    {
+    return std::arg(x);
+    }
+  };
 
 
 

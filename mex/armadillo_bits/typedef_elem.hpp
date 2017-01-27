@@ -1,29 +1,35 @@
-// Copyright (C) 2008-2013 Conrad Sanderson
-// Copyright (C) 2008-2013 NICTA (www.nicta.com.au)
+// Copyright (C) 2008-2015 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
 
 
 //! \addtogroup typedef_elem
 //! @{
 
 
-#if   UCHAR_MAX >= 0xff
-  typedef unsigned char    u8;
-  typedef          char    s8;
-#elif defined(UINT8_MAX)
-  typedef          uint8_t u8;
-  typedef           int8_t s8;
+#if (defined(ARMA_U8_TYPE) && defined(ARMA_S8_TYPE))
+    typedef ARMA_U8_TYPE     u8;
+    typedef ARMA_S8_TYPE     s8;
 #else
-  #error "don't know how to typedef 'u8' on this system"
+  #if   UCHAR_MAX >= 0xff
+    typedef unsigned char    u8;
+    typedef          char    s8;
+  #elif defined(UINT8_MAX)
+    typedef          uint8_t u8;
+    typedef           int8_t s8;
+  #else
+    #error "don't know how to typedef 'u8' on this system"
+  #endif
 #endif
 
 // NOTE:
-// "signed char" is not the same as "char". 
-// http://www.embedded.com/columns/programmingpointers/206107018
-// http://en.wikipedia.org/wiki/C_variable_types_and_declarations
+// "char" is not guaranteed to be the same as "signed char" 
+// https://en.wikipedia.org/wiki/C_data_types
 
 
 #if   USHRT_MAX >= 0xffff
@@ -60,7 +66,7 @@
     typedef          uint64_t  u64;
     typedef           int64_t  s64;
   #else
-      #error "don't know how to typedef 'u64' on this system; please disable ARMA_64BIT_WORD and/or ARMA_USE_U64S64"
+      #error "don't know how to typedef 'u64' on this system; please disable ARMA_64BIT_WORD"
   #endif
 #endif
 
@@ -74,16 +80,7 @@ typedef unsigned long ulng_t;
 typedef          long slng_t;
 
 
-#if !defined(ARMA_64BIT_WORD)
-  typedef u32 uword;
-  typedef s32 sword;
-
-  typedef u16 uhword;
-  typedef s16 shword;
-  
-  #define ARMA_MAX_UWORD  0xffffffff
-  #define ARMA_MAX_UHWORD 0xffff
-#else
+#if defined(ARMA_64BIT_WORD)
   typedef u64 uword;
   typedef s64 sword;
   
@@ -92,22 +89,32 @@ typedef          long slng_t;
 
   #define ARMA_MAX_UWORD  0xffffffffffffffff
   #define ARMA_MAX_UHWORD 0xffffffff
+#else
+  typedef u32 uword;
+  typedef s32 sword;
+
+  typedef u16 uhword;
+  typedef s16 shword;
+  
+  #define ARMA_MAX_UWORD  0xffffffff
+  #define ARMA_MAX_UHWORD 0xffff
 #endif
-
-
-
-typedef std::complex<float>  cx_float;
-typedef std::complex<double> cx_double;
 
 
 #if   defined(ARMA_BLAS_LONG_LONG)
   typedef long long blas_int;
+  #define ARMA_MAX_BLAS_INT 0x7fffffffffffffffULL
 #elif defined(ARMA_BLAS_LONG)
   typedef long      blas_int;
+  #define ARMA_MAX_BLAS_INT 0x7fffffffffffffffUL
 #else
   typedef int       blas_int;
+  #define ARMA_MAX_BLAS_INT 0x7fffffffU
 #endif
 
+
+typedef std::complex<float>  cx_float;
+typedef std::complex<double> cx_double;
 
 typedef void* void_ptr;
 

@@ -1,9 +1,11 @@
-// Copyright (C) 2010-2015 Conrad Sanderson
-// Copyright (C) 2010-2015 NICTA (www.nicta.com.au)
+// Copyright (C) 2010-2015 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
 
 
 //! \addtogroup op_flip
@@ -23,32 +25,36 @@ op_flipud::apply(Mat<typename T1::elem_type>& out, const Op<T1,op_flipud>& in)
   const unwrap<T1>   tmp(in.m);
   const Mat<eT>& X = tmp.M;
   
-  const uword X_n_rows = X.n_rows;
+  const uword X_n_rows = T1::is_row ? uword(1) : X.n_rows;
+  const uword X_n_cols = T1::is_col ? uword(1) : X.n_cols;
   
   if(&out != &X)
     {
     out.copy_size(X);
     
-    if(T1::is_col || X.is_colvec())
+    for(uword col=0; col<X_n_cols; ++col)
       {
-      for(uword i=0; i<X_n_rows; ++i)  { out[i] = X[X_n_rows-1 - i]; }
-      }
-    else
-      {
-      for(uword i=0; i<X_n_rows; ++i)  { out.row(i) = X.row(X_n_rows-1 - i); }
+      const eT*   X_data =   X.colptr(col);
+            eT* out_data = out.colptr(col);
+      
+      for(uword row=0; row<X_n_rows; ++row)
+        {
+        out_data[row] = X_data[X_n_rows-1 - row];
+        }
       }
     }
-  else
+  else  // in-place operation
     {
     const uword N = X_n_rows / 2;
     
-    if(T1::is_col || X.is_colvec())
+    for(uword col=0; col<X_n_cols; ++col)
       {
-      for(uword i=0; i<N; ++i)  { std::swap(out[i], out[X_n_rows-1 - i]); }
-      }
-    else
-      {
-      for(uword i=0; i<N; ++i)  { out.swap_rows(i, X_n_rows-1 - i); }
+      eT* out_data = out.colptr(col);
+      
+      for(uword row=0; row<N; ++row)
+        {
+        std::swap(out_data[row], out_data[X_n_rows-1 - row]);
+        }
       }
     }
   }

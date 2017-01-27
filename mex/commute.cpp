@@ -16,7 +16,7 @@
 
 #define ARMA_DONT_PRINT_ERRORS
 #include "armaMex.hpp"
-#include "genCommutation.m.hpp"
+#include "genCommutation.hpp"
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
@@ -24,7 +24,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     if(nrhs!=1) {
         mexErrMsgIdAndTxt("genCommutation:nrhs", "One inputs required.");
     }
-    if(nlhs!=1) {
+    if(nlhs > 1) {
         mexErrMsgIdAndTxt("genCommutation:nlhs", "One output required.");
     }
 

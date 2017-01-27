@@ -1,9 +1,12 @@
-// Copyright (C) 2012-2014 Ryan Curtin
-// Copyright (C) 2012-2014 Conrad Sanderson
+// Copyright (C) 2012-2014 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
+// Written by Ryan Curtin
 
 
 //! \addtogroup spop_strans
@@ -25,7 +28,7 @@ spop_strans::apply_spmat(SpMat<eT>& out, const SpMat<eT>& X)
   
   if(N == uword(0))
     {
-    out.set_size(X.n_cols, X.n_rows);
+    out.zeros(X.n_cols, X.n_rows);
     return;
     }
   
@@ -69,7 +72,7 @@ spop_strans::apply_proxy(SpMat<typename T1::elem_type>& out, const T1& X)
   
   if(N == uword(0))
     {
-    out.set_size(p.get_n_cols(), p.get_n_rows());
+    out.zeros(p.get_n_cols(), p.get_n_rows());
     return;
     }
   
@@ -108,7 +111,7 @@ spop_strans::apply(SpMat<typename T1::elem_type>& out, const SpOp<T1,spop_strans
   {
   arma_extra_debug_sigprint();
   
-  if(is_SpMat<T1>::value == true)
+  if(is_SpMat<T1>::value)
     {
     const unwrap_spmat<T1> tmp(in.m);
     
@@ -131,7 +134,7 @@ spop_strans::apply(SpMat<typename T1::elem_type>& out, const SpOp<T1,spop_htrans
   {
   arma_extra_debug_sigprint();
   
-  if(is_SpMat<T1>::value == true)
+  if(is_SpMat<T1>::value)
     {
     const unwrap_spmat<T1> tmp(in.m);
     

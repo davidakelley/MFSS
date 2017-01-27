@@ -1,12 +1,17 @@
-// Copyright (C) 2012 Ryan Curtin
-// Copyright (C) 2012 Conrad Sanderson
-//
+// Copyright (C) 2012 National ICT Australia (NICTA)
+// 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
+// Written by Ryan Curtin
+
 
 //! \addtogroup SpSubview
 //! @{
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // SpSubview::iterator_base implementation                                   //
@@ -132,6 +137,12 @@ SpSubview<eT>::const_iterator::const_iterator(const SpSubview<eT>& in_M, const u
   uword cur_pos = 0;
   uword skip_pos = iterator_base::M.m.col_ptrs[aux_col];
   uword cur_col = 0;
+
+  // Skip any empty columns.
+  while(((skip_pos + cur_pos) >= iterator_base::M.m.col_ptrs[cur_col + aux_col + 1]) && (cur_col < ln_cols))
+    {
+    ++cur_col;
+    }
 
   while(cur_col < in_col)
     {

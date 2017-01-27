@@ -1,9 +1,12 @@
-// Copyright (C) 2012-2014 Ryan Curtin
-// Copyright (C) 2012-2014 Conrad Sanderson
+// Copyright (C) 2012-2014 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
+// Written by Ryan Curtin
 
 
 //! \addtogroup spglue_minus
@@ -53,7 +56,7 @@ spglue_minus::apply_noalias(SpMat<eT>& result, const SpProxy<T1>& pa, const SpPr
   
   if( (pa.get_n_nonzero() != 0) && (pb.get_n_nonzero() != 0) )
     {
-    result.set_size(pa.get_n_rows(), pa.get_n_cols());
+    result.zeros(pa.get_n_rows(), pa.get_n_cols());
     
     // Resize memory to correct size.
     result.mem_resize(n_unique(pa, pb, op_n_unique_sub()));

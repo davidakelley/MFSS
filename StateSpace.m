@@ -66,10 +66,12 @@ classdef StateSpace < AbstractStateSpace
       % Default setter
       if isempty(useMex_persistent)
         % Check mex files exist
-        mexMissing = any([isempty(which('mfss_mex.kfilter_uni'));
-          isempty(which('mfss_mex.kfilter_multi'));
+        mexMissing = any([...
           isempty(which('mfss_mex.kfilter_uni'));
-          isempty(which('mfss_mex.kfilter_multi'))]);
+          isempty(which('mfss_mex.kfilter_multi'));
+          isempty(which('mfss_mex.ksmoother_uni'));
+          isempty(which('mfss_mex.ksmoother_multi'));
+          isempty(which('mfss_mex.gradient_multi'))]);
         if mexMissing
           useMex_persistent = false;
           warning('MEX files not found. See .\mex\make.m');
@@ -181,7 +183,26 @@ classdef StateSpace < AbstractStateSpace
         theta = tm.system2theta(obj);
       end
       
-      [logli, gradient] = obj.gradient_multi_filter(y, tm, theta);
+      % Generate parameter gradient structure
+      G = tm.parameterGradients(theta);
+      [Ga0, GP0] = tm.initialValuesGradients(theta, G);
+      if isempty(G.a0)
+        G.a0 = Ga0;
+      end
+      
+      if isempty(G.P0)
+        G.P0 = GP0;
+      end
+      
+      obj.filterUni = false;
+      [~, logli, fOut] = obj.filter(y);
+            
+      if obj.useMex
+        gradient = obj.gradient_multi_filter_mex(y, G, fOut);
+      else
+        gradient = obj.gradient_multi_filter_m(y, G, fOut);
+      end
+        
     end
   end
   
@@ -452,31 +473,15 @@ classdef StateSpace < AbstractStateSpace
       smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
     end
     
-    function [logli, gradient] = gradient_multi_filter(obj, y, tm, theta)
+    function gradient = gradient_multi_filter_m(obj, y, G, fOut)
       % Gradient algorithm from Diasuke Nagakura (SSRN # 1634552).
-
-      % Note that G.x is 3D for everything except a and P. 
+      %
+      % Note that G.x is 3D for everything except a and P (and a0 and P0). 
+      % G.a and G.P denote the one-step ahead gradient (i.e., G_\theta(a_{t+1}))
       
-      obj.filterUni = false;
-      [~, logli, fOut] = obj.filter(y);
+      nTheta = size(G.T, 1);
       
-      G = tm.parameterGradients(theta);
-      [Ga0, GP0] = tm.initialValuesGradients(theta, G);
-      if ~isempty(Ga0)
-        G.a = Ga0;
-      else
-        G.a = G.a0;
-        G = rmfield(G, 'a0');
-      end
-      if ~isempty(GP0)
-        G.P = GP0;
-      else
-        G.P = G.P0;
-        G = rmfield(G, 'P0');
-      end
-      
-      commutation = obj.genCommutation(obj.m);
-      Nm = (eye(obj.m^2) + commutation);
+      Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
       vec = @(M) reshape(M, [], 1);
       
       % Compute partial results that have less time-variation (even with TVP)
@@ -493,20 +498,20 @@ classdef StateSpace < AbstractStateSpace
       end
       
       % Initial period: G.a and G.P capture effects of a0, T
-      G.a = G.a * obj.T(:,:,obj.tau.T(1))' + ...
+      G.a = G.a0 * obj.T(:,:,obj.tau.T(1))' + ...
         G.c(:, :, obj.tau.c(1)) + ... % Yes, G.c is 3D.
         G.T(:,:,obj.tau.T(1)) * kron(obj.a0, eye(obj.m));
-      G.P = G.P * kron(obj.T(:,:,obj.tau.T(1))', obj.T(:,:,obj.tau.T(1))') + ...
+      G.P = G.P0 * kron(obj.T(:,:,obj.tau.T(1))', obj.T(:,:,obj.tau.T(1))') + ...
         G.Q(:,:,obj.tau.Q(1)) * kron(obj.R(:,:,obj.tau.R(1))', obj.R(:,:,obj.tau.R(1))') + ...
         (G.T(:,:,obj.tau.T(1)) * kron(obj.P0 * obj.T(:,:,obj.tau.T(1))', eye(obj.m)) + ...
         G.R(:,:,obj.tau.R(1)) * kron(obj.Q(:,:,obj.tau.Q(1)) * ...
         obj.R(:,:,obj.tau.R(1))', eye(obj.m))) * ...
-        (eye(obj.m^2) + commutation);
+          Nm;
       
       % Recursion through time periods
       W_base = logical(sparse(eye(obj.p)));
       
-      gradient = zeros(tm.nTheta, 1);
+      grad = zeros(obj.n, nTheta);
       for ii = 1:obj.n
         ind = ~isnan(y(:,ii));
         W = W_base((ind==1),:);
@@ -517,34 +522,56 @@ classdef StateSpace < AbstractStateSpace
         ww = fOut.w(ind,ii) * fOut.w(ind,ii)';
         Mv = fOut.M(:,:,ii) * fOut.v(:, ii);
         
-        gradient = gradient + ...
-          G.a * Zii' * fOut.w(ind,ii) + ...
+        grad(ii, :) = G.a * Zii' * fOut.w(ind,ii) + ...
           0.5 * G.P * vec(Zii' * ww * Zii - Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
-          G.d(:,:,obj.tau.d(1)) * W' * fOut.w(ind,ii) + ...
-          G.Z(:,:,obj.tau.Z(1)) * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
+          G.d(:,:,obj.tau.d(ii)) * W' * fOut.w(ind,ii) + ...
+          G.Z(:,:,obj.tau.Z(ii)) * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
             fOut.w(ind,ii) * Mv' - fOut.M(:,ind,ii)')) + ...
-          0.5 * G.H(:,:,obj.tau.H(1)) * kronWW * vec(ww - fOut.Finv(ind,ind,ii));
+          0.5 * G.H(:,:,obj.tau.H(ii)) * kronWW * vec(ww - fOut.Finv(ind,ind,ii));
         
         % Set t+1 values
         PL = fOut.P(:,:,ii) * fOut.L(:,:,ii)';
         
-        G.a = G.a * fOut.L(:,:,ii)' + ...
-          G.P * kron(Zii' * fOut.w(ind,ii), fOut.L(:,:,ii)') + ...
-          G.c(:,:,obj.tau.c(1)) - ...
-          G.d(:,:,obj.tau.d(1)) * fOut.K(:,:,ii)' + ...
-          G.Z(:,:,obj.tau.Z(1)) * (kron(PL, fOut.w(:,ii)) - ...
-            kron(fOut.a(:,ii) + Mv, fOut.K(:,:,ii)')) - ...
-          G.H(:,:,obj.tau.H(1)) * kron(fOut.w(:,ii), fOut.K(:,:,ii)') + ...
-          G.T(:,:,obj.tau.T(1)) * kron(fOut.a(:,ii) + Mv, eye(obj.m));
+        kronZwL = kron(Zii' * fOut.w(ind,ii), fOut.L(:,:,ii)');
+        kronPLw = kron(PL, fOut.w(:,ii));
+        kronaMvK = kron(fOut.a(:,ii) + Mv, fOut.K(:,:,ii)');
+        kronwK = kron(fOut.w(:,ii), fOut.K(:,:,ii)');
+        kronAMvI = kron(fOut.a(:,ii) + Mv, eye(obj.m));
         
-        G.P = G.P * kron(fOut.L(:,:,ii)', fOut.L(:,:,ii)') + ...
-          G.H(:,:,obj.tau.H(1)) * kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)') + ...
-          G.Q(:,:,obj.tau.Q(1)) * kronRR(:,:, obj.tau.R(ii+1)) + ...
-          (G.T(:,:,obj.tau.T(1)) * kron(PL, eye(obj.m)) - ...
-            G.Z(:,:,obj.tau.Z(1)) * kron(PL, fOut.K(:,:,ii)') + ...
-            G.R(:,:,obj.tau.R(1)) * kronQRI(:, :, tauQR(ii))) * ...
+        G.a = G.a * fOut.L(:,:,ii)' + ...
+          G.P * kronZwL + ...
+          G.c(:,:,obj.tau.c(ii+1)) - ...
+          G.d(:,:,obj.tau.d(ii)) * fOut.K(:,:,ii)' + ...
+          G.Z(:,:,obj.tau.Z(ii)) * (kronPLw - kronaMvK) - ...
+          G.H(:,:,obj.tau.H(ii)) * kronwK + ...
+          G.T(:,:,obj.tau.T(ii+1)) * kronAMvI;
+        
+        kronLL = kron(fOut.L(:,:,ii)', fOut.L(:,:,ii)');
+        kronKK = kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)');
+        kronPLI = kron(PL, eye(obj.m));
+        kronPLK = kron(PL, fOut.K(:,:,ii)');
+        
+        G.P = G.P * kronLL + ...
+          G.H(:,:,obj.tau.H(ii)) * kronKK + ...
+          G.Q(:,:,obj.tau.Q(ii+1)) * kronRR(:,:, obj.tau.R(ii+1)) + ...
+          (G.T(:,:,obj.tau.T(ii+1)) * kronPLI - ...
+            G.Z(:,:,obj.tau.Z(ii)) * kronPLK + ...
+            G.R(:,:,obj.tau.R(ii+1)) * kronQRI(:, :, tauQR(ii+1))) * ...
             Nm;
       end
+      
+      gradient = sum(grad, 1)';
+    end
+    
+    function gradient = gradient_multi_filter_mex(obj, y, G, fOut)
+      
+      ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
+        'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
+        'a0', obj.a0, 'P0', obj.P0, ...
+        'tau', obj.tau, ...
+        'p', obj.p, 'm', obj.m, 'g', obj.g, 'n', obj.n);
+      
+      gradient = mfss_mex.gradient_multi(y, ssStruct, G, fOut);
     end
     
     %% Initialization

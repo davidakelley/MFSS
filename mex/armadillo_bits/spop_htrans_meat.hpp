@@ -1,9 +1,12 @@
-// Copyright (C) 2012-2014 Ryan Curtin
-// Copyright (C) 2012-2014 Conrad Sanderson
+// Copyright (C) 2012-2014 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
+// Written by Ryan Curtin
 
 
 //! \addtogroup spop_htrans
@@ -43,7 +46,7 @@ spop_htrans::apply(SpMat<typename T1::elem_type>& out, const SpOp<T1,spop_htrans
   
   if(N == uword(0))
     {
-    out.set_size(p.get_n_cols(), p.get_n_rows());
+    out.zeros(p.get_n_cols(), p.get_n_rows());
     return;
     }
   

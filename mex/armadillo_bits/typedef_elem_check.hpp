@@ -1,9 +1,11 @@
-// Copyright (C) 2008-2014 Conrad Sanderson
-// Copyright (C) 2008-2014 NICTA (www.nicta.com.au)
+// Copyright (C) 2008-2014 National ICT Australia (NICTA)
 // 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -------------------------------------------------------------------
+// 
+// Written by Conrad Sanderson - http://conradsanderson.id.au
 
 
 //! \addtogroup typedef_elem
@@ -15,7 +17,7 @@ namespace junk
   struct arma_elem_size_test
     {
     
-    arma_static_check( (sizeof(size_t) < sizeof(uword)),  ERROR___TYPE_SIZE_T_IS_SMALLER_THAN_UWORD );
+    // arma_static_check( (sizeof(size_t) < sizeof(uword)),  ERROR___TYPE_SIZE_T_IS_SMALLER_THAN_UWORD );
     
     arma_static_check( (sizeof(u8) != 1), ERROR___TYPE_U8_HAS_UNSUPPORTED_SIZE );
     arma_static_check( (sizeof(s8) != 1), ERROR___TYPE_S8_HAS_UNSUPPORTED_SIZE );
