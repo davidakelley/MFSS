@@ -133,9 +133,15 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'StepTolerance', obj.stepTol, ...
         'OutputFcn', @outfun);
       
+      if all(strcmpi(obj.solver, 'fminsearch'))
+        searchMaxIter = 200 * obj.ThetaMapping.nTheta;
+      else
+        searchMaxIter = 500;
+      end
+      
       optFMinSearch = optimset('Display', displayType, ...
         'MaxFunEvals', 5000 * obj.ThetaMapping.nTheta, ...
-        'MaxIter', 500, ...
+        'MaxIter', searchMaxIter, ...
         'OutputFcn', @outfun);
       
       warning off MATLAB:nearlySingularMatrix;
@@ -189,7 +195,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
               minfunc, theta0, optFMinSearch);
             obj.useGrad = tempGrad;
             minfunc = @(theta) obj.minimizeFun(theta, y);
-
+            
+            if obj.filterUni
+              ssHat = obj.ThetaMapping.theta2system(thetaHat);
+              ssHat.filterUni = false;
+              [~, trueLogli] = ssHat.filter(y);
+              logli = -trueLogli;
+            end
+            
             gradient = [];
         end
         
@@ -197,9 +210,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
           (iter <= 2 || abs(logli0 - logli) > obj.solveTol);
         
         if logli0 < logli
-          warning(['Solver decreased likelihood by %g. \n' ...
+          warning('StateSpaceEstimation:estimate:solverDecrease', ...
+            ['Solver decreased likelihood by %g. \n' ...
             'Returning higher likelihood solution.'], logli - logli0);
           thetaHat = thetaHist(find(likelihoodHist == logli0, 1, 'last'), :)';
+          assert(~isempty(thetaHat));
           logli = logli0;
           gradient = [];
           loopContinue = false;
@@ -436,7 +451,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         title('Current Point');
         xlabel(sprintf('Varaibles: %d', length(x)));
         set(plotx,'edgecolor','none')
-        set(gca,'xlim',[0,1 + length(x)])
+        set(plotx.Parent,'xlim',[0,1 + length(x)])
         
         set(plotx,'Tag','sseplotx');
         
@@ -494,7 +509,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       newX = [get(plotfval,'Xdata') iteration];
       newY = [get(plotfval,'Ydata') llval];
       set(plotfval,'Xdata',newX, 'Ydata',newY);
-      set(get(gca,'Title'),'String',sprintf('Current Function Value: %g', llval));
+      set(get(plotfval.Parent,'Title'),'String',sprintf('Current Function Value: %g', llval));
       
       if strcmpi(state, 'done')
         oldline = copyobj(plotfval, plotfval.Parent);
