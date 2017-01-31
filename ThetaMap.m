@@ -113,10 +113,13 @@ classdef ThetaMap < AbstractSystem
       obj.UpperBound = ssUB;      
       
       % Set diagonals of variance matricies to be positive
-      ssLB.H(1:obj.p+1:end) = eps;
-      ssLB.Q(1:obj.g+1:end) = eps;
+      ssLB.H(1:obj.p+1:end) = eps * 10;
+      ssUB.H(1:obj.p+1:end) = 1e20; %realmax / 1e3;
+      ssLB.Q(1:obj.g+1:end) = eps * 10;
+      ssUB.Q(1:obj.g+1:end) = 1e20; %realmax / 1e3;
       if ~obj.usingDefaultP0
-        ssLB.P0(1:obj.m+1:end) = eps;
+        ssLB.P0(1:obj.m+1:end) = eps * 10;
+        ssUB.P0(1:obj.m+1:end) = 1e20; %realmax / 1e3;
       end
       obj = obj.addRestrictions(ssLB, ssUB);
       
@@ -569,10 +572,12 @@ classdef ThetaMap < AbstractSystem
     function obj = updateInitial(obj, a0, P0)
       % Set the initial values a0 and P0. 
       %
-      % Inputs may contain nans indicating the elements to be estimated
+      % Inputs may contain nans indicating the elements to be estimated. Note
+      % that this causes a0 and P0 to be freely estimated. 
       
       % Get the identity transformation to add later
       [trans, deriv, inverse] = obj.boundedTransform(-Inf, Inf);
+      [transB, derivB, inverseB] = obj.boundedTransform(eps * 1e6, Inf);
         
       % Alter a0
       if ~isempty(a0) 
@@ -585,16 +590,16 @@ classdef ThetaMap < AbstractSystem
         % Add to the indexes for the *potentially* new elements of a0
         obj.index.a0 = zeros(size(a0));
         obj.index.a0(isnan(a0)) = obj.nTheta + (1:sum(isnan(a0)));
+        obj.nTheta = obj.nTheta + sum(isnan(a0));
         
         % Add an identity transformation for all of the elements just added
-        obj.transformationIndex.a0 = zeros(size(a0));
+        obj.transformationIndex.a0 = zeros(size(a0, 1), 1);
         nTransform = length(obj.transformations);
         obj.transformationIndex.a0(isnan(a0)) = nTransform + 1;
         
         obj.transformations = [obj.transformations {trans}];
         obj.derivatives = [obj.derivatives {deriv}];
         obj.inverses = [obj.inverses {inverse}];
-        
         
         obj.LowerBound.a0 = -Inf * ones(size(a0));
         obj.UpperBound.a0 = Inf * ones(size(a0));
@@ -620,16 +625,19 @@ classdef ThetaMap < AbstractSystem
         
         % Add to the indexes for the *potentially* new elements of a0
         obj.index.P0 = zeros(size(P0));
-        obj.index.P0(isnan(P0)) = obj.nTheta + (1:sum(isnan(P0)));
-        
+        nRequiredTheta = sum(sum(sum(isnan(tril(P0)))));
+        obj.index.P0(isnan(tril(P0))) = obj.nTheta + (1:nRequiredTheta);
+        obj.index.P0 = obj.index.P0 + obj.index.P0' - diag(diag(obj.index.P0));
+                
         % Add an identity transformation for all of the elements just added
-        obj.transformationIndex.a0 = zeros(size(P0));
+        obj.transformationIndex.P0 = zeros(size(P0));
         nTransform = length(obj.transformations);
         obj.transformationIndex.P0(isnan(P0)) = nTransform + 1;
+        obj.transformationIndex.P0(diag(diag(isnan(P0)))) = nTransform + 2;
 
-        obj.transformations = [obj.transformations {trans}];
-        obj.derivatives = [obj.derivatives {deriv}];
-        obj.inverses = [obj.inverses {inverse}];
+        obj.transformations = [obj.transformations {trans, transB}];
+        obj.derivatives = [obj.derivatives {deriv, derivB}];
+        obj.inverses = [obj.inverses {inverse, inverseB}];
         
         obj.usingDefaultP0 = false;
         

@@ -54,6 +54,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
       inP.addParameter('ThetaMap', [], @(x) isa(x, 'ThetaMap'));
       inP.parse(varargin{:});
       inOpts = inP.Results;
+
+      % Initial ThetaMap generation - will be augmented to include restrictions
+      if ~isempty(inOpts.ThetaMap)
+        obj.ThetaMapping = inOpts.ThetaMap;
+      else
+        obj.ThetaMapping = ThetaMap.ThetaMapEstimation(obj);
+      end
       
       % Initial values - If initial values are not passed they will be set as 
       % the default values at each iteration of the estimation, effectively 
@@ -64,14 +71,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         obj = obj.setInitial(inOpts.a0);
       end
       
-      % Initial ThetaMap generation - will be augmented to include restrictions
-      if ~isempty(inOpts.ThetaMap)
-        obj.ThetaMapping = inOpts.ThetaMap;
-      else
-        obj.ThetaMapping = ThetaMap.ThetaMapEstimation(obj);
-      end
-      
-      obj.ThetaMapping = obj.ThetaMapping.addRestrictions(inOpts.LowerBound, inOpts.UpperBound);      
+      obj.ThetaMapping = obj.ThetaMapping.addRestrictions(inOpts.LowerBound, inOpts.UpperBound);
       
       % Estimation restrictions - estimation will be bounded by bounds on
       % parameter matricies passed and non-negative restrictions on variances. 
@@ -159,13 +159,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
         StateSpaceEstimation.initFigure(theta0);
       end
       
-      thetaHist = nan(maxPossibleIters, nTheta);
       thetaIter = 0;
+      thetaHist = nan(maxPossibleIters, nTheta);
+      likelihoodHist = nan(maxPossibleIters, 1);
       solverIter = nan(maxPossibleIters, 1);
       
-      iter = 0; logli = []; logli0 = []; stopestim = false;
-      while ~stopestim && iter < obj.solveIterMax && ...
-          (iter < 2 || logli0 - logli > obj.solveTol)
+      loopContinue = true;
+      iter = 0; logli = []; stopestim = false;
+      while loopContinue
         iter = iter + 1;
         logli0 = logli;
         if iscell(obj.solver)
@@ -192,6 +193,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
             gradient = [];
         end
         
+        if logli0 < logli
+          warning('Solver decreased likelihood.');
+        end
+        
+        loopContinue = ~stopestim && iter < obj.solveIterMax && ...
+          (iter <= 2 || logli0 - logli > obj.solveTol);
+        
         assert(~any(isnan(thetaHat)), 'Estimation Error');
         
         theta0 = thetaHat;
@@ -204,13 +212,15 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Create diagnostic output
       thetaHist(thetaIter+1:end,:) = [];
+      likelihoodHist(thetaIter+1:end) = [];
       solverIter(thetaIter+1:end) = [];
-      diagnostic = compileStruct(thetaHist, solverIter);
+      diagnostic = AbstractSystem.compileStruct(thetaHist, likelihoodHist, solverIter);
       
       % Nested function for getting diagnostic output
       function stop = outfun(x,optimValues,state)
         thetaIter = thetaIter + 1;
         thetaHist(thetaIter, :) = x';
+        likelihoodHist(thetaIter) = optimValues.fval;
         solverIter(thetaIter) = iter;
         stop = false;
         
@@ -294,9 +304,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
       ss1 = obj.ThetaMapping.theta2system(theta);
       ss1.filterUni = obj.filterUni;
       
-      
       % Really enforce constraints
       if any(obj.nlConstraintFun(theta) > 0)
+%         warning('Constraint violated in solver.');
         negLogli = 1e30 * max(obj.nlConstraintFun(theta));
         gradient = nan(size(theta));
         return
@@ -362,7 +372,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
   end
   
   methods (Static = true)
-    % Plot functions for ML estimation
+    %% Plot functions for ML estimation
     function initFigure(theta0)
       % Create diagnostic figure
       screenSize = get(0, 'ScreenSize');
@@ -400,7 +410,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       set(stopEstimBtn,'Position',max(stopBtnPos,get(stopEstimBtn,'Position')));
       
       function buttonStopEstim(~,~)
-        setappdata(gcf,'data','stop');
+        setappdata(gcf,'data','stopestim');
       end
     end
     
@@ -409,7 +419,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       persistent plotx
       if strcmpi(state, 'setup')
-        plotx = bar(x);
+        plotx = bar(1:length(x), x, 0.65);
         box off;
         title('Current Point');
         xlabel(sprintf('Varaibles: %d', length(x)));
@@ -417,6 +427,12 @@ classdef StateSpaceEstimation < AbstractStateSpace
         set(gca,'xlim',[0,1 + length(x)])
         
         set(plotx,'Tag','sseplotx');
+        
+        % Make initial point outline
+        hold on;
+        outline = bar(1:length(x), x, 0.8);
+        outline.EdgeColor = zeros(1,3);
+        outline.FaceColor = 'none';        
         return
       end
       
