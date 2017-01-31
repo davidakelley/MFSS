@@ -147,7 +147,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       if iscell(obj.solver)
         maxPossibleIters = max(optFMinUnc.MaxIterations, optFMinSearch.MaxIter) * obj.solveIterMax;
       else
-        switch obj.sovler
+        switch obj.solver
           case {'fminunc', 'fmincon'}
             maxPossibleIters = optFMinUnc.MaxIterations * obj.solveIterMax;
           case 'fminsearch'
@@ -193,12 +193,17 @@ classdef StateSpaceEstimation < AbstractStateSpace
             gradient = [];
         end
         
-        if logli0 < logli
-          warning('Solver decreased likelihood.');
-        end
-        
         loopContinue = ~stopestim && iter < obj.solveIterMax && ...
-          (iter <= 2 || logli0 - logli > obj.solveTol);
+          (iter <= 2 || abs(logli0 - logli) > obj.solveTol);
+        
+        if logli0 < logli
+          warning(['Solver decreased likelihood by %g. \n' ...
+            'Returning higher likelihood solution.'], logli - logli0);
+          thetaHat = thetaHist(find(likelihoodHist == logli0, 1, 'last'), :)';
+          logli = logli0;
+          gradient = [];
+          loopContinue = false;
+        end
         
         assert(~any(isnan(thetaHat)), 'Estimation Error');
         
@@ -300,6 +305,12 @@ classdef StateSpaceEstimation < AbstractStateSpace
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
     function [negLogli, gradient] = minimizeFun(obj, theta, y)
+      % persistent nEvals
+      % if isempty(nEvals) 
+      %   nEvals = 0;
+      % end
+      % nEvals = nEvals + 1;
+      
       % Get the likelihood of
       ss1 = obj.ThetaMapping.theta2system(theta);
       ss1.filterUni = obj.filterUni;
@@ -366,7 +377,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
       
       if any(isnan(cx))
-        keyboard;
+        warning('Nan constraint.');
+        % keyboard;
       end
     end
   end
@@ -444,6 +456,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     function stop = sseplotvalue(~, optimValues, state, varargin)
+      % We're plotting the likelihood, not the function value
+      % (AKA, reverse the sign on everything).
+      
       stop = false;
       if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
         keyboard
@@ -454,32 +469,32 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       persistent plotfval
       if strcmpi(state, 'setup')
-        plotfval = plot(0, 0, 'kd','MarkerFaceColor',[1 0 1]);
+        plotfval = plot(0, 0, 'kd', 'MarkerFaceColor', [1 0 1]);
         box off
         title(sprintf('Current Function Value:'));
         xlabel('Iteration');
         ylabel('Function value')
         
-        set(plotfval, 'Tag','sseplotfval');
+        set(plotfval, 'Tag', 'sseplotfval');
         
         plotfval.MarkerFaceColor = currentColor;
         return
       end
       
       iteration = optimValues.iteration;
-      fval = optimValues.fval;
+      llval = -optimValues.fval;
       
       if strcmpi(state, 'init')
-        set(plotfval,'Xdata', iteration, 'Ydata', fval);
+        set(plotfval,'Xdata', iteration, 'Ydata', llval);
         
         plotfval.MarkerFaceColor = currentColor;
         return
       end
       
       newX = [get(plotfval,'Xdata') iteration];
-      newY = [get(plotfval,'Ydata') fval];
+      newY = [get(plotfval,'Ydata') llval];
       set(plotfval,'Xdata',newX, 'Ydata',newY);
-      set(get(gca,'Title'),'String',sprintf('Current Function Value: %g', fval));
+      set(get(gca,'Title'),'String',sprintf('Current Function Value: %g', llval));
       
       if strcmpi(state, 'done')
         oldline = copyobj(plotfval, plotfval.Parent);

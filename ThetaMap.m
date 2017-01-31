@@ -114,12 +114,12 @@ classdef ThetaMap < AbstractSystem
       
       % Set diagonals of variance matricies to be positive
       ssLB.H(1:obj.p+1:end) = eps * 10;
-      ssUB.H(1:obj.p+1:end) = 1e20; %realmax / 1e3;
+%       ssUB.H(1:obj.p+1:end) = 1e20; %realmax / 1e3;
       ssLB.Q(1:obj.g+1:end) = eps * 10;
-      ssUB.Q(1:obj.g+1:end) = 1e20; %realmax / 1e3;
+%       ssUB.Q(1:obj.g+1:end) = 1e20; %realmax / 1e3;
       if ~obj.usingDefaultP0
         ssLB.P0(1:obj.m+1:end) = eps * 10;
-        ssUB.P0(1:obj.m+1:end) = 1e20; %realmax / 1e3;
+%         ssUB.P0(1:obj.m+1:end) = 1e20; %realmax / 1e3;
       end
       obj = obj.addRestrictions(ssLB, ssUB);
       
