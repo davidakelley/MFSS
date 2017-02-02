@@ -46,10 +46,8 @@ classdef StateSpace < AbstractStateSpace
   %
   % TODO (1/17/17)
   % ---------------
-  %   - TVP in gradient function 
   %   - Add filter/smoother weight decompositions
   %   - Add IRF/historical decompositions
-  %   - mex version of the gradient function (?)
   
   methods (Static)
     %% Static properties
@@ -124,12 +122,19 @@ classdef StateSpace < AbstractStateSpace
 
       % Determine which version of the filter to run
       if obj.filterUni
-        if obj.useMex
-          [a, logli, filterOut] = obj.filter_uni_mex(y);
+        if isempty(obj.A0)
+          % No need for exact initial
+          if obj.useMex
+            [a, logli, filterOut] = obj.filter_uni_mex(y);
+          else
+            [a, logli, filterOut] = obj.filter_uni_m(y);
+          end
         else
-          [a, logli, filterOut] = obj.filter_uni_m(y);
+          % Exact initial
+          [a, logli, filterOut] = obj.filter_exact_m(y);
         end
       else
+        assert(isempty(obj.A0), 'Must use univarite filter with exact initialization.');
         if obj.useMex
           [a, logli, filterOut] = obj.filter_multi_mex(y);
         else
@@ -153,12 +158,19 @@ classdef StateSpace < AbstractStateSpace
       
       % Determine which version of the smoother to run
       if obj.filterUni
-        if obj.useMex
-          [alpha, smootherOut] = obj.smoother_uni_mex(y, filterOut);
+        if isempty(obj.A0)
+          % No need for exact initial
+          if obj.useMex
+            [alpha, smootherOut] = obj.smoother_uni_mex(y, filterOut);
+          else
+            [alpha, smootherOut] = obj.smoother_uni_m(y, filterOut);
+          end
         else
-          [alpha, smootherOut] = obj.smoother_uni_m(y, filterOut);
+          % Exact initial
+          [alpha, smootherOut] = obj.smoother_exact_m(y, filterOut);
         end
       else
+        assert(isempty(obj.A0), 'Must use univarite smoother with exact initialization.');
         if obj.useMex
           [alpha, smootherOut] = obj.smoother_multi_mex(y, filterOut);
         else
@@ -211,13 +223,14 @@ classdef StateSpace < AbstractStateSpace
     function obj = checkSample(obj, y)
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
-      % TODO: check accumulated series?
+      % TODO: check that we're not observing accumulated series before the end
+      % of a period.
       
       if ~obj.timeInvariant
-        % System with TVP, make sure length of taus matches data
+        % System with TVP, make sure length of taus matches data.
         assert(size(y, 2) == obj.n);
       else
-        %
+        % No TVP, set n then set tau as ones vectors of that length.
         obj.n = size(y, 2);
         obj = obj.setInvariantTau();
       end
@@ -259,6 +272,195 @@ classdef StateSpace < AbstractStateSpace
     end
     
     %% Filter/smoother/gradient mathematical methods
+    function [a, logli, filterOut] = filter_exact_m(obj, y)
+      % Filter using exact initial conditions
+              
+      assert(isdiag(obj.H), 'Univarite only!');
+      
+      % Preallocate
+      % Note Pd is the "diffuse" P matrix (P_\infty).
+      a = nan(obj.m, obj.n+1);
+      v = nan(obj.p, obj.n);
+      
+      Pd = nan(obj.m, obj.m, obj.n+1);
+      Pstar = nan(obj.m, obj.m, obj.n+1);
+      Fd = nan(obj.p, obj.n);
+      Fstar = nan(obj.p, obj.n);
+      
+      Md = nan(obj.m, obj.p, obj.n);
+      Mstar = nan(obj.m, obj.p, obj.n);
+      
+      LogL = zeros(obj.p, obj.n);
+      
+      % Initialize
+      a(:,1) = obj.a0;
+      Pd(:,:,1) = obj.A0 * obj.A0';
+      Pstar(:,:,1) = obj.R0 * obj.Q0 * obj.R0';
+      
+      ii = 0;
+      % Initial recursion
+      while ~all(all(Pd(:,:,ii+1) == 0))
+        ii = ii + 1;
+        ind = find( ~isnan(y(:,ii)) );
+        
+        ati = a(:,ii);
+        Pstarti = Pstar(:,:,ii);
+        Pdti = Pd(:,:,ii);
+        for jj = ind'
+          Zjj = obj.Z(jj,:,obj.tau.Z(ii));
+          v(jj,ii) = y(jj, ii) - Zjj * ati - obj.d(jj,obj.tau.d(ii));
+          
+          Fd(jj,ii) = Zjj * Pdti * Zjj';
+          Fstar(jj,ii) = Zjj * Pstarti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
+          
+          Md(:,jj,ii) = Pdti * Zjj';
+          Mstar(:,jj,ii) = Pstarti * Zjj';
+          
+          if Fd(jj,ii) ~= 0
+            % F diffuse nonsingular
+            ati = ati + Md(:,jj,ii) ./ Fd(jj,ii) * v(jj,ii);
+            
+            Pstarti = Pstarti - Md(:,jj,ii) * Md(:,jj,ii)' * Fstar(jj,ii) * (Fd(jj,ii).^-2) - ...
+              (Mstar(:,jj,ii) * Md(:,jj,ii)' + Md(:,jj,ii) * Mstar(:,jj,ii)') ./ Fd(jj,ii);
+            
+            Pdti = Pdti - Md(:,jj,ii) ./ Fd(jj,ii) * Md(:,jj,ii)';
+          else
+            % F diffuse = 0
+            ati = ati + Mstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii);
+            
+            Pstarti = Pstarti - Mstar(:,jj,ii) ./ Fstar(jj,ii) * Mstar(:,jj,ii)';
+          end
+        end
+        
+        LogL(jj,ii) = log(Fstar(jj,ii) + Fd(jj,ii)) + (v(jj,ii)^2) / Fstar(jj,ii);
+        
+        Tii = obj.T(:,:,obj.tau.T(ii));
+        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii));
+        
+        Pd(:,:,ii+1)  = Tii * Pdti * Tii';
+        Pstar(:,:,ii+1) = Tii * Pstarti * Tii' + ...
+          obj.R(:,:,obj.tau.R(ii)) * obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))';
+      end
+      
+      dt = ii;
+      
+      F = Fstar;
+      M = Mstar;
+      P = Pstar;
+      
+      % Normal kalman filter
+      for ii = dt+1:obj.n
+        ind = find( ~isnan(y(:,ii)) );
+        ati    = a(:,ii);
+        Pti    = P(:,:,ii);
+        for jj = ind'
+          Zjj = obj.Z(jj,:,obj.tau.Z(ii));
+          
+          v(jj,ii) = y(jj,ii) - Zjj * ati - obj.d(jj,obj.tau.d(ii));
+          
+          F(jj,ii) = Zjj * Pti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
+          M(:,jj,ii) = Pti * Zjj';
+          
+          LogL(jj,ii) = (log(F(jj,ii)) + (v(jj,ii)^2) / F(jj,ii));
+          
+          ati = ati + M(:,jj,ii) / F(jj,ii) * v(jj,ii);
+          Pti = Pti - M(:,jj,ii) / F(jj,ii) * M(:,jj,ii)';
+        end
+        
+        Tii = obj.T(:,:,obj.tau.T(ii));
+        
+        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii));
+        P(:,:,ii+1) = Tii * Pti * Tii' + ...
+          obj.R(:,:,obj.tau.R(ii)) * obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))';
+      end
+
+      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
+      
+      filterOut = obj.compileStruct(a, P, v, F, M, Pd, Fd, Md, dt);
+    end
+    
+    function [alpha, smootherOut] = smoother_exact_m(obj, y, fOut)
+      % Univariate smoother
+      
+      alpha = zeros(obj.m, obj.n);
+      eta   = zeros(obj.g, obj.n);
+      r     = zeros(obj.m, obj.n);
+      N     = zeros(obj.m, obj.m, obj.n+1);
+      
+      rti = zeros(obj.m,1);
+      Nti = zeros(obj.m,obj.m);
+      for ii = obj.n:-1:fOut.dt+1
+        ind = find( ~isnan(y(:,ii)) );
+        
+        for jj = ind'
+          Lti = eye(obj.m) - fOut.M(:,jj,ii) * ...
+            obj.Z(jj,:,obj.tau.Z(ii)) / fOut.F(jj,ii);
+          rti = obj.Z(jj,:,obj.tau.Z(ii))' / ...
+            fOut.F(jj,ii) * fOut.v(jj,ii) + Lti' * rti;
+          Nti = obj.Z(jj,:,obj.tau.Z(ii))' / ...
+            fOut.F(jj,ii) * obj.Z(jj,:,obj.tau.Z(ii)) ...
+            + Lti' * Nti * Lti;
+        end
+        r(:,ii) = rti;
+        N(:,:,ii) = Nti;
+        
+        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii);
+        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
+        
+        rti = obj.T(:,:,obj.tau.T(ii))' * rti;
+        Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
+      end
+      
+      r0 = r;
+      r1 = zeros(obj.m, fOut.dt+1);
+      
+      % Exact initial smoother
+      for ii = fOut.dt:-1:1
+        r0ti = r0(:,ii+1);
+        r1ti = r1(:,ii+1);
+        
+        ind = find( ~isnan(y(:,ii)) );
+        for jj = ind'
+          Zjj = obj.Z(jj,:,obj.tau.Z(ii));
+          
+          if fOut.Fd(jj,ii) ~= 0 % ~isequal(Finf(ind(jj),ii),0)
+            % Diffuse case
+            Ldti = eye(obj.m) - fOut.Md(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
+            L0ti = (fOut.Md(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) + ...
+              fOut.M(:,jj,ii)) * Zjj / fOut.Fd(jj,ii);
+            
+            r1ti = Zjj' / fOut.Fd(jj,ii) * fOut.v(jj,ii) - L0ti' * r0ti + Ldti' * r1ti;
+            
+            r0ti = Ldti' * r0ti;
+          else
+            % Known
+            Lstarti = eye(m) - fOut.M(:,jj,ii) * Zjj / fOut.F(ind(jj),ii);
+            r0ti = Zjj' / fOut.F(jj,ii) * v(jj,ii) + Lstarti' * r0ti;
+          end
+        end
+        r0(:,ii) = r0ti;
+        r1(:,ii) = r1ti;
+        
+        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r0(:,ii) + ...
+          fOut.Pd(:,:,ii) * r1(:,ii);
+        
+        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r0(:,ii);
+        
+        r0ti = obj.T(:,:,obj.tau.T(ii))' * r0ti;
+        r1ti = obj.T(:,:,obj.tau.T(ii))' * r1ti;
+      end
+      
+      Pstar0 = obj.R0 * obj.Q0 * obj.R0';
+      if fOut.dt > 0
+        Pd0 = obj.A0 * obj.A0';
+        a0tilde = obj.a0 + Pstar0 * r0ti + Pd0 * r1ti;
+      else
+        a0tilde = obj.a0 + P0 * rti;
+      end
+      
+      smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
+    end
+    
     function [a, logli, filterOut] = filter_uni_m(obj, y)
       % Univariate filter
       
@@ -271,8 +473,10 @@ classdef StateSpace < AbstractStateSpace
       K       = zeros(obj.m, obj.p, obj.n);
       L       = zeros(obj.m, obj.m, obj.n);
       
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      
       a(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0 + obj.c(:,obj.tau.c(1));
-      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * obj.P0 * obj.T(:,:,obj.tau.T(1))' ...
+      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * P0 * obj.T(:,:,obj.tau.T(1))' ...
         + obj.R(:,:,obj.tau.R(1)) * obj.Q(:,:,obj.tau.Q(1)) * obj.R(:,:,obj.tau.R(1))';
       
       for ii = 1:obj.n
@@ -307,10 +511,12 @@ classdef StateSpace < AbstractStateSpace
     
     function [a, logli, filterOut] = filter_uni_mex(obj, y)
       % Call mex function kfilter_uni
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      
       [LogL, a, P, v, F, M, K, L] = mfss_mex.kfilter_uni(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
-        obj.a0, obj.P0);
+        obj.a0, P0);
       
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
@@ -330,9 +536,11 @@ classdef StateSpace < AbstractStateSpace
       F       = zeros(obj.p, obj.p, obj.n);
       M       = zeros(obj.m, obj.p, obj.n);
       Finv    = zeros(obj.p, obj.p, obj.n);
+
+      P0 = obj.R0 * obj.Q0 * obj.R0';
       
       a(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0 + obj.c(:,obj.tau.c(1));
-      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * obj.P0 * obj.T(:,:,obj.tau.T(1))'...
+      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * P0 * obj.T(:,:,obj.tau.T(1))'...
         + obj.R(:,:,obj.tau.R(1)) * obj.Q(:,:,obj.tau.Q(1)) * obj.R(:,:,obj.tau.R(1))';
       
       for ii = 1:obj.n
@@ -367,10 +575,12 @@ classdef StateSpace < AbstractStateSpace
     
     function [a, logli, filterOut] = filter_multi_mex(obj, y)
       % Call mex function kfilter_uni
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      
       [LogL, a, P, v, F, M, K, L, w, Finv] = mfss_mex.kfilter_multi(y, ...
         obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
-        obj.a0, obj.P0);
+        obj.a0, P0);
       
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
@@ -407,18 +617,22 @@ classdef StateSpace < AbstractStateSpace
         rti = obj.T(:,:,obj.tau.T(ii))' * rti;
         Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
       end
-      a0tilde = obj.a0 + obj.P0 * rti;
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      
+      a0tilde = obj.a0 + P0 * rti;
       
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
     
     function [alpha, smootherOut] = smoother_uni_mex(obj, y, fOut)
       % Call mex function kfilter_uni
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      
       [alpha, eta, r, N, a0tilde] = mfss_mex.ksmoother_uni(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
         fOut.a, fOut.P, fOut.v, fOut.F, fOut.M, fOut.L, ...
-        obj.a0, obj.P0);
+        obj.a0, P0);
       
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
@@ -458,17 +672,20 @@ classdef StateSpace < AbstractStateSpace
           eye(obj.m) * (eye(obj.m) - N(:,:,ii+1) * fOut.P(:,:,ii+1));
       end
       
-      a0tilde = obj.a0 + obj.P0 * obj.T(:,:,obj.tau.T(1))'*r(:,1);
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      a0tilde = obj.a0 + P0 * obj.T(:,:,obj.tau.T(1))'*r(:,1);
       smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
     end
     
     function [alpha, smootherOut] = smoother_multi_mex(obj, y, fOut)
       % Call mex function kfilter_uni
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      
       [alpha, eta, epsilon, r, N, a0tilde, V, J] = mfss_mex.ksmoother_multi(y, ...
         obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
         obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
         fOut.a, fOut.P, fOut.v, fOut.M, fOut.K, fOut.L, fOut.Finv, ...
-        obj.a0, obj.P0);
+        obj.a0, P0);
       
       smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
     end
@@ -498,12 +715,14 @@ classdef StateSpace < AbstractStateSpace
       end
       
       % Initial period: G.a and G.P capture effects of a0, T
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+
       G.a = G.a0 * obj.T(:,:,obj.tau.T(1))' + ...
         G.c(:, :, obj.tau.c(1)) + ... % Yes, G.c is 3D.
         G.T(:,:,obj.tau.T(1)) * kron(obj.a0, eye(obj.m));
       G.P = G.P0 * kron(obj.T(:,:,obj.tau.T(1))', obj.T(:,:,obj.tau.T(1))') + ...
         G.Q(:,:,obj.tau.Q(1)) * kron(obj.R(:,:,obj.tau.R(1))', obj.R(:,:,obj.tau.R(1))') + ...
-        (G.T(:,:,obj.tau.T(1)) * kron(obj.P0 * obj.T(:,:,obj.tau.T(1))', eye(obj.m)) + ...
+        (G.T(:,:,obj.tau.T(1)) * kron(P0 * obj.T(:,:,obj.tau.T(1))', eye(obj.m)) + ...
         G.R(:,:,obj.tau.R(1)) * kron(obj.Q(:,:,obj.tau.Q(1)) * ...
         obj.R(:,:,obj.tau.R(1))', eye(obj.m))) * ...
           Nm;
@@ -564,10 +783,11 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function gradient = gradient_multi_filter_mex(obj, y, G, fOut)
+      P0 = obj.R0 * obj.Q0 * obj.R0';
       
       ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
         'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
-        'a0', obj.a0, 'P0', obj.P0, ...
+        'a0', obj.a0, 'P0', P0, ...
         'tau', obj.tau, ...
         'p', obj.p, 'm', obj.m, 'g', obj.g, 'n', obj.n);
       
@@ -578,46 +798,70 @@ classdef StateSpace < AbstractStateSpace
     function obj = setDefaultInitial(obj)
       % Set default a0 and P0.
       % Run before filter/smoother after a0 & P0 inputs have been processed
+      
       if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
         % User provided a0 and P0.
         return
       end
       
-      tempT = obj.T(:, :, obj.tau.T(1));
-      if all(abs(eig(tempT)) < 1)
-        % System is stationary. Compute unconditional estimate of state
-        if obj.usingDefaulta0
-          obj.a0 = (eye(obj.m) - tempT) \ obj.c(:, obj.tau.c(1));
-        end
-        if obj.usingDefaultP0
-          tempR = obj.R(:, :, obj.tau.R(1));
-          tempQ = obj.Q(:, :, obj.tau.Q(1));
-          try
-            obj.P0 = reshape((eye(obj.m^2) - kron(tempT, tempT)) \ ...
-              reshape(tempR * tempQ * tempR', [], 1), ...
-              obj.m, obj.m);
-          catch ex
-            % If the state is large, try making it sparse
-            if strcmpi(ex.identifier, 'MATLAB:array:SizeLimitExceeded')
-              tempT = sparse(tempT);
-              obj.P0 = full(reshape((speye(obj.m^2) - kron(tempT, tempT)) \ ...
-                reshape(tempR * tempQ * tempR', [], 1), ...
-                obj.m, obj.m));
-            else
-              rethrow(ex);
-            end
-          end
-            
-        end
-      else
-        % Nonstationary case: use large kappa diffuse initialization
-        if obj.usingDefaulta0
-          obj.a0 = zeros(obj.m, 1);
-        end
-        if obj.usingDefaultP0
-          obj.P0 = obj.kappa * eye(obj.m);
-        end
+      % Find stationary states and compute the unconditional mean and variance
+      % of them using the parts of T, c, R and Q. For the nonstationary states,
+      % set up the A0 selection matrix. 
+      [stationary, nonstationary] = obj.findStationaryStates();
+      
+      tempT = obj.T(stationary, stationary, obj.tau.T(1));
+      assert(all(abs(eig(tempT)) < 1));
+      
+      select = eye(obj.m);
+      mStationary = length(stationary);
+
+      if obj.usingDefaulta0
+        obj.a0 = zeros(obj.m, 1);
+        
+        a0temp = (eye(mStationary) - tempT) \ obj.c(stationary, obj.tau.c(1));
+        obj.a0(stationary) = a0temp;
       end
+      
+      if obj.usingDefaultP0
+        obj.A0 = select(:, nonstationary);
+        obj.R0 = select(:, stationary);
+        
+        tempR = obj.R(stationary, :, obj.tau.R(1));
+        tempQ = obj.Q(:, :, obj.tau.Q(1));
+        try
+          obj.Q0 = reshape((eye(mStationary^2) - kron(tempT, tempT)) \ ...
+            reshape(tempR * tempQ * tempR', [], 1), ...
+            mStationary, mStationary);
+        catch ex
+          % If the state is large, try making it sparse
+          if strcmpi(ex.identifier, 'MATLAB:array:SizeLimitExceeded')
+            tempT = sparse(tempT);
+            obj.Q0 = full(reshape((speye(mStationary^2) - kron(tempT, tempT)) \ ...
+              reshape(tempR * tempQ * tempR', [], 1), ...
+              mStationary, mStationary));
+          else
+            rethrow(ex);
+          end
+        end
+        
+      end
+    end
+    
+    function [stationary, nonstationary] = findStationaryStates(obj)
+      % Find which states have stationary distributions given the T matrix.
+      [V, D] = eig(obj.T(:,:,1));
+      bigEigs = abs(diag(D)) >= 1;
+      
+      nonstationary = find(any(V(:, bigEigs), 2));
+      
+      % I think we don't need a loop here to find other states that have 
+      % loadings on the nonstationary states (the eigendecomposition does this 
+      % for us) but I'm not sure.
+      stationary = setdiff(1:obj.m, nonstationary);      
+
+      assert(all(abs(eig(obj.T(stationary,stationary,1))) < 1), ...
+        ['Stationary section of T isn''t actually stationary. \n' ... 
+        'Likely development error.']);
     end
   end
 end

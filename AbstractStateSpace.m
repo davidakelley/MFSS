@@ -13,14 +13,17 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     T, c, R, Q        % State equation parameters
     tau               % Structure of time-varrying parameter indexes
     
-    a0, P0            % Initial value parameters
-    kappa = 1e6;      % Diffuse initialization constant
+    filterUni         % Use univarite filter if appropriate (H is diagonal)
+  end
+  
+  properties (SetAccess = protected)
+    % Initial values parameter protected. Use setInitial. 
+    a0                % Initial state parameter
+    A0, R0, Q0        % Exact initial value parameters
     
     % Indicators for if initial values have been specified:
     usingDefaulta0 = true;
     usingDefaultP0 = true;
-    
-    filterUni         % Use univarite filter if appropriate (H is diagonal)
   end
   
   properties (SetAccess = protected, Hidden)
@@ -53,33 +56,52 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     %% Initialization
     function obj = setInitial(obj, a0, P0)
       % Setter for a0 and P0 (or kappa)
+      % Takes user input for a0 and P0. Constructs A0 and R0 matricies based on
+      % if elements of P0 are finite or not (nan or Inf both work to denote an
+      % initialization as diffuse). 
+      
+      % Set a0 - still put diffuse elements in a0 since they'll be ignored in 
+      % the exact initial filter and are needed in the approximate filter. 
       if ~isempty(a0)
-        assert(size(a0, 1) == obj.m, 'a0 should be a m X 1 vector');
         obj.usingDefaulta0 = false;
+
+        assert(size(a0, 1) == obj.m, 'a0 should be a m X 1 vector');
         obj.a0 = a0;
       end
       
+      % Set A0, R0 and Q0.
       if nargin > 2 && ~isempty(P0)
         obj.usingDefaultP0 = false;
-        if size(P0, 1) == 1 % (This is ok if m == 1 too)
+        % Handle input options for P0
+        if size(P0, 1) == 1 
           % Scalar value passed for kappa
-          obj.P0 = eye(obj.m) * P0;
+          % (Note that this is ok evn if m == 1)
+          P0 = eye(obj.m) * P0;
         elseif size(P0, 2) == 1
           % Vector value passed for kappa
           assert(size(P0, 1) == obj.m, 'kappa vector must be length m');
-          obj.P0 = diag(P0);
+          P0 = diag(P0);
         else
           % Regular P0 value passed
           assert(all(size(P0) == [obj.m obj.m]), 'P0 should be a m X m matrix');
-          obj.P0 = P0;
         end
+        
+        % Find diffuse elements
+        diffuse = any(~isfinite(P0), 2);
+        nondiffuse = all(isfinite(P0), 2);
+        
+        % Set up exact initial parameters
+        select = eye(obj.m);
+        obj.A0 = select(:, diffuse);
+        obj.R0 = select(:, nondiffuse);
+        obj.Q0 = P0(nondiffuse, nondiffuse);
       end
     end
     
     %% Utility methods
     function param = parameters(obj, index)
       % Getter for cell array of parameters
-      param = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.P0}; 
+      param = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.Q0}; 
       if nargin > 1
         param = param{index};
       end
