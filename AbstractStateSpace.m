@@ -123,33 +123,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       vec = vertcat(vectors{:});
     end
 
-    function setSS = setAllParameters(obj, value)
-      % Set all parameter values equal to the scalar provided
-      for iP = 1:length(obj.systemParam)
-        obj.(obj.systemParam{iP})(:) = value;
-      end
-      
-      % Needs to be a StateSpace since we don't want a ThetaMap
-      setSS = StateSpace(obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q);
-      
-      % Do I want to set initial values? 
-      if ~isempty(obj.a0)
-        a0value = repmat(value, [obj.m, 1]);
-      else
-        a0value = [];
-      end
-      setSS = setSS.setInitial(a0value);
-      
-      % Do I want to account for diffuse states? 
-      if ~isempty(obj.Q0)
-        setSS.A0 = obj.A0;
-        setSS.R0 = obj.R0;
-        
-        Q0value = repmat(value, [obj.m, obj.m]);  
-        setSS = setSS.setQ0(Q0value);
-      end
-    end
-    
     function [nLags, positions] = LagsInState(obj, varPos)
       % Finds the lags of a variable in the state space
       % Input:
@@ -198,8 +171,24 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % space model. Furthermore, by allowing each system matrix/vector to have
       % its own calendar, no redundant matrices are saved in the workspace.
       
-      % Assume system is time invariant, correct when we get a TVP matrix
-      obj.timeInvariant = true;
+      structParams = structfun(@isstruct, parameters);
+      
+      if ~any(structParams)
+        obj.timeInvariant = true;
+      else
+        obj.timeInvariant = false;
+      
+        tauLens = cellfun(@(x) length(parameters.(x).(['tau' x])), ...
+        obj.systemParam(structParams));
+      
+        subtract = cellfun(@(x) any(strcmpi(x, {'T', 'c', 'R', 'Q'})), ...
+          obj.systemParam(structParams));
+        nCandidates = tauLens - subtract;
+        assert(isscalar(unique(nCandidates)), ['Bad tau specification. ' ... 
+          'tau vectors for Z, d & H should have n elements. ' ...
+          'tau vectors for T, c, R & Q should have n+1 elements.']);
+        obj.n = unique(nCandidates);
+      end
       
       % Z system matrix
       if isstruct(parameters.Z)
@@ -209,6 +198,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.Z = parameters.Z.Zt;
       else
         obj.Z = parameters.Z;
+        if ~obj.timeInvariant
+          obj.tau.Z = ones(obj.n, 1);
+        end
       end
       
       % d system matrix
@@ -223,6 +215,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.d = parameters.d;
       else
         obj.d = parameters.d;
+        if ~obj.timeInvariant
+          obj.tau.d = ones(obj.n, 1);
+        end
       end
       
       % H system matrix
@@ -233,6 +228,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.H = parameters.H.Ht;
       else
         obj.H = parameters.H;
+        if ~obj.timeInvariant
+          obj.tau.H = ones(obj.n, 1);
+        end
       end
       
       % T system matrix
@@ -243,6 +241,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.T = parameters.T.Tt;
       else
         obj.T = parameters.T;
+        if ~obj.timeInvariant
+          obj.tau.T = ones(obj.n+1, 1);
+        end
       end
       
       % c system matrix
@@ -257,6 +258,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.c = parameters.c;
       else
         obj.c = parameters.c;
+        if ~obj.timeInvariant
+          obj.tau.c = ones(obj.n+1, 1);
+        end
       end
       
       % R system matrix
@@ -267,6 +271,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.R = parameters.R.Rt;
       else
         obj.R = parameters.R;
+        if ~obj.timeInvariant
+          obj.tau.R = ones(obj.n+1, 1);
+        end
       end
       
       % Q system matrix
@@ -277,6 +284,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.Q = parameters.Q.Qt;
       else
         obj.Q = parameters.Q;
+        if ~obj.timeInvariant
+          obj.tau.Q = ones(obj.n+1, 1);
+        end
       end
       
       if ~obj.timeInvariant

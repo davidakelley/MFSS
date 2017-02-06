@@ -8,8 +8,6 @@ classdef estimate_test < matlab.unittest.TestCase
   
   properties
     data = struct;
-    bbk
-    deai
   end
   
   methods(TestClassSetup)
@@ -20,15 +18,8 @@ classdef estimate_test < matlab.unittest.TestCase
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
 
-      testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
-      y = testCase.bbk.data.indicators';
-      y(:, any(isnan(y), 1)) = [];
-      testCase.bbk.y = y;
-      
       data_dk = load(fullfile(baseDir, 'examples', 'data', 'dk.mat'));
       testCase.data.nile = data_dk.nile;
-      
-      testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
     end
   end
   
@@ -39,8 +30,9 @@ classdef estimate_test < matlab.unittest.TestCase
   end
   
   methods (Test)
-    
     function testNile(testCase)
+      nile = testCase.data.nile';
+      
       Z = 1;
       d = 0;
       H = nan;
@@ -52,10 +44,39 @@ classdef estimate_test < matlab.unittest.TestCase
       ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
       
       H0 = 1000;
-      Q0 = 1000;
-      ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
+      P0 = 1000;
+      ss0 = StateSpace(Z, d, H0, T, c, R, P0);
       
+      ss.useGrad = false;
+      ssE = ss.estimate(nile, ss0);
+      
+      % Using values from Dubrin & Koopman (2012), p. 37
+      testCase.verifyEqual(ssE.H, 15099, 'RelTol', 1e-2);
+      testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
+      
+      [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
+      testCase.verifyLessThan(abs(ssE_grad), 5e-4);
+    end
+    
+    function testNileKappa(testCase)
       nile = testCase.data.nile';
+      
+      Z = 1;
+      d = 0;
+      H = nan;
+      T = 1;
+      c = 0;
+      R = 1;
+      Q = nan;
+      
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ss = ss.setInitial(0, 1e6);
+      
+      H0 = 1000;
+      P0 = 1000;
+      ss0 = StateSpace(Z, d, H0, T, c, R, P0);
+      ss0 = ss0.setInitial(0, 1e6);
+      
       ssE = ss.estimate(nile, ss0);
       
       % Using values from Dubrin & Koopman (2012), p. 37
@@ -67,6 +88,8 @@ classdef estimate_test < matlab.unittest.TestCase
     end
     
     function testNileGradient(testCase)
+      nile = testCase.data.nile';
+
       Z = 1;
       d = 0;
       H = nan;
@@ -82,18 +105,19 @@ classdef estimate_test < matlab.unittest.TestCase
       ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
 
       ss.useGrad = false;
-      ssE_ng = ss.estimate(testCase.data.nile', ss0);
+      ssE_ng = ss.estimate(nile, ss0);
       
       ss.useGrad = true;
-      ssE = ss.estimate(testCase.data.nile', ss0);
+      ssE = ss.estimate(nile, ss0);
 
-      % Using values from Dubrin & Koopman (2012), p. 37
       testCase.verifyEqual(ssE.H, ssE_ng.H, 'RelTol', 5e-4);
       testCase.verifyEqual(ssE.Q, ssE_ng.Q, 'RelTol',  5e-4);
     end
     
     function testMatlab(testCase)
       % Test against Matlab's native implementation of state space models
+      nile = testCase.data.nile';
+      
       Z = 1;
       d = 0;
       H = nan;
@@ -109,11 +133,11 @@ classdef estimate_test < matlab.unittest.TestCase
       ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
       
       ss.useGrad = false;
-      ssE = ss.estimate(testCase.data.nile', ss0);
+      ssE = ss.estimate(nile, ss0);
       
       A = 1; B = nan; C = 1; D = nan;
       mdl = ssm(A, B, C, D);
-      estmdl = estimate(mdl, testCase.data.nile, [1000; 1000]);
+      estmdl = estimate(mdl, nile', [1000; 1000]);
 
       testCase.verifyEqual(ssE.H, estmdl.D^2, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, estmdl.B^2, 'RelTol',  1e-2);
@@ -195,68 +219,5 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyLessThanOrEqual(ssE.T, Tub);
       testCase.verifyGreaterThanOrEqual(ssE.T, Tlb);      
     end
-    
-    %{
-    function testFactorModel(testCase)
-      % Set up state
-      rnfacs = 2;
-      nSeries = 4; %testCase.bbk.dims.nSeries;
-      nlags = testCase.bbk.dims.nlags;
-      
-      Z = [nan(nSeries, rnfacs) zeros(nSeries, rnfacs * (nlags-1))];
-      d = zeros(nSeries, 1);
-      H = eye(nSeries);
-      H(H == 1) = nan;
-      
-      T = [nan(rnfacs, rnfacs * nlags);
-        eye(rnfacs * (nlags-1)) zeros(rnfacs)];
-      c = zeros(rnfacs * nlags, 1);
-      R = [eye(rnfacs); zeros(rnfacs * (nlags-1), rnfacs)];
-      Q = nan(rnfacs);
-      
-      ss = StateSpace(Z, d, H, T, c, R, Q, []);
-      ss0 = ss;
-      
-      % Initial values
-      [ss0.Z(:, 1:rnfacs), f0] = pca(testCase.bbk.y(1:nSeries, :)', 'NumComponents', rnfacs);
-      f0(any(isnan(f0), 2), :) = [];
-      
-      ss0.H = diag(var(testCase.bbk.y(1:nSeries, :)' - f0 * ss0.Z(:, 1:rnfacs)'));
-      
-      y_var = f0(nlags+1:end, :);
-      assert(nlags == 2);
-      x = [f0(2:end-1, :) f0(1:end-2, :)];
-      
-      yTx = y_var' * x;
-      xTx = x' * x;
-      yTy = y_var' * y_var;
-      
-      ss0.T(1:rnfacs, :) = yTx / xTx;
-      ss0.Q = (yTy - yTx / xTx * yTx') ./ size(testCase.bbk.y(1:nSeries, :), 1);
-      
-      % Test
-      ssE = ss.estimate(testCase.bbk.y(1:nSeries, :), ss0);
-      
-    end
-    
-    function testDetroit(testCase)
-      ss0 = StateSpace(testCase.deai.Z, testCase.deai.d, testCase.deai.H, ...
-        testCase.deai.T, testCase.deai.c, testCase.deai.R, testCase.deai.Q, ...
-        testCase.deai.Harvey);
-      
-      estZ = testCase.deai.Z;
-      estZ(:,1) = nan;
-      estT = testCase.deai.T;
-      estT(estT~=0 & estT~=1) = nan;
-      estQ = testCase.deai.Q;
-      estQ(estQ~=0 & estQ~=1) = nan;
-      ss = StateSpace(estZ, testCase.deai.d, testCase.deai.H, ...
-        estT, testCase.deai.c, testCase.deai.R, estQ, ...
-        testCase.deai.Harvey);
-      
-      ssE = ss.estimate(testCase.deai.Y, ss0);
-      
-    end
-    %}
   end
 end

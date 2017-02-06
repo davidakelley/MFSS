@@ -5,8 +5,7 @@
 classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
   
   properties
-    bbk
-    deai
+%     deai
   end
   
   methods(TestClassSetup)
@@ -16,9 +15,6 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
-      
-      testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
-      testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
     end
   end
   
@@ -235,20 +231,20 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       % to a StateSpace separately.
     end
     
-    function testDetroit(testCase)
-      import matlab.unittest.constraints.IsFinite;
-      detroit = testCase.deai;
-      
-      ss0 = StateSpace(detroit.Z, detroit.d, detroit.H, ...
-        detroit.T, detroit.c, detroit.R, detroit.Q);
-      
-      deaiAccum = Accumulator(detroit.Harvey.xi, detroit.Harvey.psi', detroit.Harvey.Horizon');
-      ss0A = deaiAccum.augmentStateSpace(ss0);
-      
-      [~, ll] = ss0A.filter(detroit.Y);
-      
-      testCase.verifyThat(ll, IsFinite);
-    end
+%     function testDetroit(testCase)
+%       import matlab.unittest.constraints.IsFinite;
+%       detroit = testCase.deai;
+%       
+%       ss0 = StateSpace(detroit.Z, detroit.d, detroit.H, ...
+%         detroit.T, detroit.c, detroit.R, detroit.Q);
+%       
+%       deaiAccum = Accumulator(detroit.Harvey.xi, detroit.Harvey.psi', detroit.Harvey.Horizon');
+%       ss0A = deaiAccum.augmentStateSpace(ss0);
+%       
+%       [~, ll] = ss0A.filter(detroit.Y);
+%       
+%       testCase.verifyThat(ll, IsFinite);
+%     end
     
     %% ThetaMap tests
     function testThetaMapAR(testCase)

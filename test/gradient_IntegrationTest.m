@@ -14,11 +14,6 @@ classdef gradient_IntegrationTest < matlab.unittest.TestCase
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
-      
-%       testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
-%       y = testCase.bbk.data.indicators';
-%       y(:, any(isnan(y), 1)) = [];
-%       testCase.bbk.y = y;
     end
   end
   
@@ -200,7 +195,8 @@ classdef gradient_IntegrationTest < matlab.unittest.TestCase
       tm.index.c(:) = 0;
       tm = tm.validateThetaMap();
       
-      ssLB = ss.setAllParameters(-Inf);
+      
+      ssLB = StateSpace.setAllParameters(ss, -Inf);
       ssLB.H(1,1) = 10;
       tm = tm.addRestrictions(ssLB);
       

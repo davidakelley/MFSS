@@ -5,6 +5,8 @@ ssTrue = generateARmodel(4, 2, false);
 ssTrue.T(1,:) = [0.8 0.05 0.02];
 Y = generateData(ssTrue, 600);
 
+aTrue = ssTrue.filter(Y);
+
 Z = zeros(4, 3);
 Z(:, 1) = nan;
 d = zeros(4, 1);

@@ -8,8 +8,6 @@ classdef ThetaMap_test < matlab.unittest.TestCase
   
   properties
     data = struct;
-    bbk
-    deai
   end
   
   methods(TestClassSetup)
@@ -20,15 +18,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
       
-      testCase.bbk = load(fullfile(baseDir, 'examples', 'data', 'bbk_data.mat'));
-      y = testCase.bbk.data.indicators';
-      y(:, any(isnan(y), 1)) = [];
-      testCase.bbk.y = y;
-      
       data_dk = load(fullfile(baseDir, 'examples', 'data', 'dk.mat'));
       testCase.data.nile = data_dk.nile;
-      
-      testCase.deai = load(fullfile(baseDir, 'examples', 'data', 'deai.mat'));
     end
   end
   
@@ -82,11 +73,11 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(ss.Z, ssNew.Z, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.d, ssNew.d, 'AbsTol', 1e-16);
-      testCase.verifyEqual(ss.H, ssNew.H, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.H, ssNew.H, 'AbsTol', 5e-16);
       testCase.verifyEqual(ss.T, ssNew.T, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.c, ssNew.c, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.R, ssNew.R, 'AbsTol', 1e-16);
-      testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 5e-16);
       testCase.verifyEqual(ss.usingDefaulta0, ssNew.usingDefaulta0);
       testCase.verifyEqual(ss.usingDefaultP0, ssNew.usingDefaultP0);
     end
@@ -104,10 +95,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       % Set up StateSpace with initial values
       ss = StateSpace(Z, d, H, T, c, R, Q);
       ss = ss.setInvariantTau;
-      ss = ss.setDefaultInitial;
-      ss.usingDefaulta0 = false;
-      ss.usingDefaultP0 = false;
-
+      ss = ss.setInitial(0, 10);
+      
       % Create ThetaMap
       tm = ThetaMap.ThetaMapAll(ss);
       
@@ -161,10 +150,10 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       ss = generateARmodel(p, m, false);
       tm = ThetaMap.ThetaMapAll(ss);
       
-      ssLB = ss.setAllParameters(-Inf);
+      ssLB = StateSpace.setAllParameters(ss, -Inf);
       ssLB.T(1, 1) = -1;
       
-      ssUB = ss.setAllParameters(Inf);
+      ssUB = StateSpace.setAllParameters(ss, Inf);
       ssUB.T(1, 1) = 1;
       
       tm = tm.addRestrictions(ssLB, ssUB);
@@ -187,10 +176,10 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       ss = generateARmodel(p, m, false);
       tm = ThetaMap.ThetaMapAll(ss);
       
-      ssLB = ss.setAllParameters(-Inf);
+      ssLB = StateSpace.setAllParameters(ss, -Inf);
       ssLB.T(1, 1) = 0;
       
-      ssUB = ss.setAllParameters(Inf);
+      ssUB = StateSpace.setAllParameters(ss, Inf);
       ssUB.T(1, 1) = 1;
       
       tm = tm.addRestrictions(ssLB, ssUB);

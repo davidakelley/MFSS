@@ -38,7 +38,7 @@ for iT = 1:tm.nTheta
       
   [~, logl_delta] = ssTest.filter(y);
   numeric(iT) = (logl_delta - logl_fix) ./ delta;
-  for iP = 1:length(ss.systemParam)
+  for iP = 1:length(ss.systemParam)                   % FIXME: systemParam doesn't include initial values
     iParam = ss.systemParam{iP};
     if isempty(ss.(iParam))
       continue;

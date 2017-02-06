@@ -9,6 +9,8 @@ classdef (Abstract) AbstractSystem
     g               % Number of shocks
         
     timeInvariant   % Indicator for TVP models
+
+    stationaryStates  % Logical vector for which states are stationary
   end
   
   properties (Hidden)

@@ -17,7 +17,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
   %
   % TODO (1/17/17)
   % ---------------
-  %   - Write "combo" solver option that runs fminunc first then fminsearch. 
   %   - EM algorithm
   
   properties
@@ -36,9 +35,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
     useGrad = true;   % Indicator for use of analytic gradient
-    
-    % Stationarity Restriction
-    stationaryStates = [];
   end
   
   methods
@@ -113,9 +109,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       optFMinCon = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
+        'UseParallel', ~obj.useGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
-        'MaxIterations', 10000, ...
+        'MaxIterations', 1000, ...
         'FunctionTolerance', obj.tol, ...
         'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
@@ -125,9 +122,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
+        'UseParallel', ~obj.useGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
-        'MaxIterations', 10000, ...
+        'MaxIterations', 1000, ...
         'FunctionTolerance', obj.tol, ...
         'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
@@ -332,7 +330,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Really enforce constraints
       if any(obj.nlConstraintFun(theta) > 0)
-%         warning('Constraint violated in solver.');
+        % warning('Constraint violated in solver.');
         negLogli = 1e30 * max(obj.nlConstraintFun(theta));
         gradient = nan(size(theta));
         return
@@ -361,10 +359,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Return the negative determinants in cx
       ss1 = obj.ThetaMapping.theta2system(theta);
-%       cx = scale * -[det(ss1.H) det(ss1.Q)]';
+      % cx = scale * -[det(ss1.H) det(ss1.Q)]';
       cx = []; % Removed H, Q dets on 1/25
       if ~obj.usingDefaultP0
-        cx = [cx; scale * -det(ss1.P0)];
+        cx = [cx; scale * -det(ss1.Q0)];
       end         
       ceqx = 0;
       
@@ -375,7 +373,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     	deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
                  det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
       if ~obj.usingDefaultP0
-        deltaCX = [deltaCX det(ss1.P0) * G.P0 * vec(inv(ss1.P0))];
+        [~, G.P0] = obj.ThetaMapping.initialValuesGradients(theta);
+        % This is suspect. Need to rewrite G.P0 first.
+        deltaCX = [deltaCX det(ss1.Q0) * G.P0 * vec(ss1.R0 / ss1.Q0 * ss1.R0')];
       end
       warning on MATLAB:nearlySingularMatrix
       warning on MATLAB:singularMatrix
@@ -486,9 +486,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
       if strcmpi(state, 'setup')
         plotfval = plot(0, 0, 'kd', 'MarkerFaceColor', [1 0 1]);
         box off
-        title(sprintf('Current Function Value:'));
+        title(sprintf('Current Log-likelihood:'));
         xlabel('Iteration');
-        ylabel('Function value')
+        ylabel('Log-likelihood')
         
         set(plotfval, 'Tag', 'sseplotfval');
         
@@ -509,7 +509,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       newX = [get(plotfval,'Xdata') iteration];
       newY = [get(plotfval,'Ydata') llval];
       set(plotfval,'Xdata',newX, 'Ydata',newY);
-      set(get(plotfval.Parent,'Title'),'String',sprintf('Current Function Value: %g', llval));
+      set(get(plotfval.Parent,'Title'),'String', ...
+        sprintf('Current Function Value: %g', llval));
       
       if strcmpi(state, 'done')
         oldline = copyobj(plotfval, plotfval.Parent);

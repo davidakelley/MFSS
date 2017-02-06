@@ -120,6 +120,9 @@ classdef StateSpace < AbstractStateSpace
       % Set initial values
       obj = setDefaultInitial(obj);
 
+      % Handle multivariate series
+      [obj, y] = obj.factorMultivariate(y);
+      
       % Determine which version of the filter to run
       if obj.filterUni
         if isempty(obj.A0)
@@ -134,6 +137,7 @@ classdef StateSpace < AbstractStateSpace
           [a, logli, filterOut] = obj.filter_exact_m(y);
         end
       else
+        error('Multivariate filter depricated.');
         assert(isempty(obj.A0), 'Must use univarite filter with exact initialization.');
         if obj.useMex
           [a, logli, filterOut] = obj.filter_multi_mex(y);
@@ -152,7 +156,10 @@ classdef StateSpace < AbstractStateSpace
       
       % Set initial values
       obj = setDefaultInitial(obj);
-      
+
+      % Handle multivariate series
+      [obj, y] = obj.factorMultivariate(y);
+
       % Get the filtered estimates for use in the smoother
       [~, logli, filterOut] = obj.filter(y);
       
@@ -170,6 +177,7 @@ classdef StateSpace < AbstractStateSpace
           [alpha, smootherOut] = obj.smoother_exact_m(y, filterOut);
         end
       else
+        error('Multivariate filter depricated.');
         assert(isempty(obj.A0), 'Must use univarite smoother with exact initialization.');
         if obj.useMex
           [alpha, smootherOut] = obj.smoother_multi_mex(y, filterOut);
@@ -202,6 +210,7 @@ classdef StateSpace < AbstractStateSpace
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
             
+      error('Multivariate filter depricated.');
       if obj.useMex
         gradient = obj.gradient_multi_filter_mex(y, G, fOut);
       else
@@ -262,6 +271,79 @@ classdef StateSpace < AbstractStateSpace
       assert(~any(cellfun(@(x) any(any(any(isnan(x)))), obj.parameters)), ...
         ['All parameter values must be known. To estimate unknown '...
         'parameters, see StateSpaceEstimation']);
+    end
+    
+    function [ssUni, y, factorC] = factorMultivariate(obj, y)
+      % Compute new Z and H matricies so the univariate treatment can be applied
+      
+      % If it's already diagonal, do nothing
+      if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj,3))
+        ssUni = obj;
+        ssUni.filterUni = true;
+        return
+      end
+      
+      % Create factorizations
+      factorC = nan(size(obj.H));
+      newHmat = nan(size(obj.H));
+      for iH = 1:size(obj.H, 3)
+        [factorC(:,:,iH), newHmat(:,:,iH)] = ldl(obj.H(:,:,iH), 'lower');
+      end
+      if ~isempty(obj.tau)
+        newH = struct('Ht', newHmat, 'tauH', obj.tau.H);
+      else
+        newH = newHmat;
+      end
+      
+      % Transform observations
+      for iT = 1:size(y,2)
+        ind = ~isnan(y(:,iT));
+        % Should this be factorC(ind,ind) or factorC(:,ind)?
+        y(ind,iT) = factorC(ind,ind,obj.tau.H(iT)) * y(ind,iT);        
+      end
+      
+      % We may need to create more slices of Z. 
+      % If a given slice of Z is used when two different H matricies are used,
+      % we need to use the correct C matrix to factorize it at each point. 
+      if isempty(obj.tau)
+        newZtau = 1;
+        newdtau = 1;
+      else
+        [zSlices, ~, newZtau] = unique([obj.tau.Z, obj.tau.H], 'rows');
+        [dSlices, ~, newdtau] = unique([obj.tau.d, obj.tau.H], 'rows');
+      end
+      
+      newZmat = nan([size(obj.Z, 1) size(obj.Z, 2), max(newZtau)]);
+      for iZ = 1:max(newZtau)
+        newZmat(:,:,iZ) = factorC(:,:,zSlices(iZ,2)) \ obj.Z(:,:,zSlices(iZ,1));
+      end
+      newZ = struct('Zt', newZmat, 'tauZ', newZtau);
+      
+      newdmat = nan([size(obj.d, 1) max(newdtau)]);
+      for id = 1:max(newdtau)
+        newdmat(:,:,iZ) = factorC(:,:,dSlices(id,2)) \ obj.d(:,:,zSlices(id,1));
+      end
+      newd = struct('dt', newdmat, 'taud', newdtau);
+      
+      % State matricies
+      if ~isempty(obj.tau)
+        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
+        c = struct('ct', obj.c, 'tauc', obj.tau.c);
+        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
+        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
+      else
+        T = obj.T;
+        c = obj.c;
+        R = obj.R;
+        Q = obj.Q;
+      end
+      
+      ssUni = StateSpace(newZ, newd, newH, T, c, R, Q);
+      
+      % Set initial values
+      P0 = obj.R0 * obj.Q0 * obj.R0';
+      P0(obj.A0 * obj.A0' == 1) = Inf;
+      ssUni = ssUni.setInitial(obj.a0, P0);
     end
     
     %% Filter/smoother/gradient mathematical methods
@@ -879,5 +961,45 @@ classdef StateSpace < AbstractStateSpace
         ['Stationary section of T isn''t actually stationary. \n' ... 
         'Likely development error.']);
     end
+  end
+  
+  methods (Static)
+    function setSS = setAllParameters(ss, value)
+      % Create a StateSpace with all paramters set to value
+      
+      % Set all parameter values equal to the scalar provided
+      for iP = 1:length(ss.systemParam)
+        ss.(ss.systemParam{iP})(:) = value;
+      end
+      
+      % Needs to be a StateSpace since we don't want a ThetaMap
+      setSS = StateSpace(ss.Z(:,:,1), ss.d(:,1), ss.H(:,:,1), ...
+        ss.T(:,:,1), ss.c(:,1), ss.R(:,:,1), ss.Q(:,:,1));
+      paramNames = ss.systemParam;
+      for iP = 1:length(paramNames)
+        setSS.(paramNames{iP}) = ss.(paramNames{iP});
+      end
+      setSS.tau = ss.tau;
+      setSS.timeInvariant = ss.timeInvariant;
+      setSS.n = ss.n;
+      
+      % Do I want to set initial values? 
+      if ~isempty(ss.a0)
+        a0value = repmat(value, [ss.m, 1]);
+      else
+        a0value = [];
+      end
+      setSS = setSS.setInitial(a0value);
+      
+      % Do I want to account for diffuse states? 
+      if ~isempty(ss.Q0)
+        setSS.A0 = ss.A0;
+        setSS.R0 = ss.R0;
+        
+        Q0value = repmat(value, [ss.m, ss.m]);  
+        setSS = setSS.setQ0(Q0value);
+      end
+    end
+    
   end
 end
