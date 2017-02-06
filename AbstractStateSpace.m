@@ -19,17 +19,20 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   properties (SetAccess = protected)
     % Initial values parameter protected. Use setInitial. 
     a0                % Initial state parameter
-    A0, R0, Q0        % Exact initial value parameters
-    
-    % Indicators for if initial values have been specified:
-    usingDefaulta0 = true;
-    usingDefaultP0 = true;
+    Q0                % Exact initial value parameters
   end
   
   properties (SetAccess = protected, Hidden)
+    A0, R0            % Initial value selection matricies
+    
+    % Indicators for if initial values have been specified 
+    % 2/3: Why do I need these? Analytic gradient?
+    usingDefaulta0 = true;
+    usingDefaultP0 = true;
+
     % Lists of variables used across methods
-    systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'};
-    symmetricParams = {'H', 'Q', 'P0', 'P'};
+    systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q'};
+    symmetricParams = {'H', 'Q', 'Q0', 'P'};    % Include P0? P?
   end
   
   methods
@@ -87,8 +90,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         end
         
         % Find diffuse elements
-        diffuse = any(~isfinite(P0), 2);
-        nondiffuse = all(isfinite(P0), 2);
+        diffuse = any(isinf(P0), 2);
+        nondiffuse = all(~isinf(P0), 2);
         
         % Set up exact initial parameters
         select = eye(obj.m);
@@ -122,9 +125,28 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
 
     function setSS = setAllParameters(obj, value)
       % Set all parameter values equal to the scalar provided
-      setSS = obj;
-      for iP = 1:length(setSS.systemParam)
-        setSS.(setSS.systemParam{iP})(:) = value;
+      for iP = 1:length(obj.systemParam)
+        obj.(obj.systemParam{iP})(:) = value;
+      end
+      
+      % Needs to be a StateSpace since we don't want a ThetaMap
+      setSS = StateSpace(obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q);
+      
+      % Do I want to set initial values? 
+      if ~isempty(obj.a0)
+        a0value = repmat(value, [obj.m, 1]);
+      else
+        a0value = [];
+      end
+      setSS = setSS.setInitial(a0value);
+      
+      % Do I want to account for diffuse states? 
+      if ~isempty(obj.Q0)
+        setSS.A0 = obj.A0;
+        setSS.R0 = obj.R0;
+        
+        Q0value = repmat(value, [obj.m, obj.m]);  
+        setSS = setSS.setQ0(Q0value);
       end
     end
     
@@ -159,6 +181,14 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   end
   
   methods (Hidden = true)
+    %% Internal helpers    
+    function obj = setQ0(obj, Q0)
+      % Utility function for setting Q0 without altering A0, R0.
+      % Useful for setting bounds matricies of ThetaMap
+      obj.Q0 = Q0;
+      obj.usingDefaultP0 = false;
+    end
+    
     %% Constructor helper methods
     function obj = setSystemParameters(obj, parameters)
       % Obtain system matrices from structure
@@ -282,7 +312,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         cellTau = struct2cell(obj.tau);
         assert(max(cat(1, cellTau{:})) == 1, 'Existing tau not invariant.');
       end
-      obj.tau = cell2struct(taus, obj.systemParam(1:7));
+      obj.tau = cell2struct(taus, obj.systemParam);
     end
   end
 end

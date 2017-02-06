@@ -197,14 +197,7 @@ classdef StateSpace < AbstractStateSpace
       
       % Generate parameter gradient structure
       G = tm.parameterGradients(theta);
-      [Ga0, GP0] = tm.initialValuesGradients(theta, G);
-      if isempty(G.a0)
-        G.a0 = Ga0;
-      end
-      
-      if isempty(G.P0)
-        G.P0 = GP0;
-      end
+      [G.a0, G.P0] = tm.initialValuesGradients(theta, G);
       
       obj.filterUni = false;
       [~, logli, fOut] = obj.filter(y);
@@ -274,6 +267,9 @@ classdef StateSpace < AbstractStateSpace
     %% Filter/smoother/gradient mathematical methods
     function [a, logli, filterOut] = filter_exact_m(obj, y)
       % Filter using exact initial conditions
+      %
+      % See "Fast Filtering and Smoothing for Multivariate State Space Models",
+      % Koopman & Durbin (2000). 
               
       assert(isdiag(obj.H), 'Univarite only!');
       
@@ -287,8 +283,8 @@ classdef StateSpace < AbstractStateSpace
       Fd = nan(obj.p, obj.n);
       Fstar = nan(obj.p, obj.n);
       
-      Md = nan(obj.m, obj.p, obj.n);
-      Mstar = nan(obj.m, obj.p, obj.n);
+      Kd = nan(obj.m, obj.p, obj.n);
+      Kstar = nan(obj.m, obj.p, obj.n);
       
       LogL = zeros(obj.p, obj.n);
       
@@ -300,6 +296,11 @@ classdef StateSpace < AbstractStateSpace
       ii = 0;
       % Initial recursion
       while ~all(all(Pd(:,:,ii+1) == 0))
+        if ii >= obj.n
+          error(['Degenerate model. ' ...
+          'Exact initial filter unable to transition to standard filter.']);
+        end
+        
         ii = ii + 1;
         ind = find( ~isnan(y(:,ii)) );
         
@@ -313,26 +314,28 @@ classdef StateSpace < AbstractStateSpace
           Fd(jj,ii) = Zjj * Pdti * Zjj';
           Fstar(jj,ii) = Zjj * Pstarti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
           
-          Md(:,jj,ii) = Pdti * Zjj';
-          Mstar(:,jj,ii) = Pstarti * Zjj';
+          Kd(:,jj,ii) = Pdti * Zjj';
+          Kstar(:,jj,ii) = Pstarti * Zjj';
           
           if Fd(jj,ii) ~= 0
             % F diffuse nonsingular
-            ati = ati + Md(:,jj,ii) ./ Fd(jj,ii) * v(jj,ii);
+            ati = ati + Kd(:,jj,ii) ./ Fd(jj,ii) * v(jj,ii);
             
-            Pstarti = Pstarti - Md(:,jj,ii) * Md(:,jj,ii)' * Fstar(jj,ii) * (Fd(jj,ii).^-2) - ...
-              (Mstar(:,jj,ii) * Md(:,jj,ii)' + Md(:,jj,ii) * Mstar(:,jj,ii)') ./ Fd(jj,ii);
+            Pstarti = Pstarti + Kd(:,jj,ii) * Kd(:,jj,ii)' * Fstar(jj,ii) * (Fd(jj,ii).^-2) - ...
+              (Kstar(:,jj,ii) * Kd(:,jj,ii)' + Kd(:,jj,ii) * Kstar(:,jj,ii)') ./ Fd(jj,ii);
             
-            Pdti = Pdti - Md(:,jj,ii) ./ Fd(jj,ii) * Md(:,jj,ii)';
+            Pdti = Pdti - Kd(:,jj,ii) .* Kd(:,jj,ii)' ./ Fd(jj,ii);
+            
+            LogL(jj,ii) = log(Fd(:,ii));
           else
             % F diffuse = 0
-            ati = ati + Mstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii);
+            ati = ati + Kstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii);
             
-            Pstarti = Pstarti - Mstar(:,jj,ii) ./ Fstar(jj,ii) * Mstar(:,jj,ii)';
+            Pstarti = Pstarti - Kstar(:,jj,ii) ./ Fstar(jj,ii) * Kstar(:,jj,ii)';
+
+            LogL(jj,ii) = (log(Fstar(jj,ii)) + (v(jj,ii)^2) ./ Fstar(jj,ii));
           end
         end
-        
-        LogL(jj,ii) = log(Fstar(jj,ii) + Fd(jj,ii)) + (v(jj,ii)^2) / Fstar(jj,ii);
         
         Tii = obj.T(:,:,obj.tau.T(ii));
         a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii));
@@ -345,10 +348,10 @@ classdef StateSpace < AbstractStateSpace
       dt = ii;
       
       F = Fstar;
-      M = Mstar;
+      M = Kstar;
       P = Pstar;
       
-      % Normal kalman filter
+      % Standard Kalman filter recursion
       for ii = dt+1:obj.n
         ind = find( ~isnan(y(:,ii)) );
         ati    = a(:,ii);
@@ -376,7 +379,7 @@ classdef StateSpace < AbstractStateSpace
 
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
-      filterOut = obj.compileStruct(a, P, v, F, M, Pd, Fd, Md, dt);
+      filterOut = obj.compileStruct(a, P, v, F, M, Pd, Fd, Kd, dt);
     end
     
     function [alpha, smootherOut] = smoother_exact_m(obj, y, fOut)
@@ -425,8 +428,8 @@ classdef StateSpace < AbstractStateSpace
           
           if fOut.Fd(jj,ii) ~= 0 % ~isequal(Finf(ind(jj),ii),0)
             % Diffuse case
-            Ldti = eye(obj.m) - fOut.Md(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
-            L0ti = (fOut.Md(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) + ...
+            Ldti = eye(obj.m) - fOut.Kd(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
+            L0ti = (fOut.Kd(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) + ...
               fOut.M(:,jj,ii)) * Zjj / fOut.Fd(jj,ii);
             
             r1ti = Zjj' / fOut.Fd(jj,ii) * fOut.v(jj,ii) - L0ti' * r0ti + Ldti' * r1ti;
@@ -795,9 +798,22 @@ classdef StateSpace < AbstractStateSpace
     end
     
     %% Initialization
-    function obj = setDefaultInitial(obj)
+    function obj = setDefaultInitial(obj, reset)
       % Set default a0 and P0.
       % Run before filter/smoother after a0 & P0 inputs have been processed
+      
+      if nargin < 2 
+        % Option to un-set initial values. 
+        reset = false;
+      end
+      if reset
+        obj.usingDefaulta0 = true;
+        obj.a0 = [];
+        obj.usingDefaultP0 = true;
+        obj.A0 = [];
+        obj.R0 = [];
+        obj.Q0 = [];
+      end        
       
       if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
         % User provided a0 and P0.
@@ -849,7 +865,7 @@ classdef StateSpace < AbstractStateSpace
     
     function [stationary, nonstationary] = findStationaryStates(obj)
       % Find which states have stationary distributions given the T matrix.
-      [V, D] = eig(obj.T(:,:,1));
+      [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
       bigEigs = abs(diag(D)) >= 1;
       
       nonstationary = find(any(V(:, bigEigs), 2));
