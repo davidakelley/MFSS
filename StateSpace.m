@@ -123,27 +123,11 @@ classdef StateSpace < AbstractStateSpace
       % Handle multivariate series
       [obj, y] = obj.factorMultivariate(y);
       
-      % Determine which version of the filter to run
-      if obj.filterUni
-        if isempty(obj.A0)
-          % No need for exact initial
-          if obj.useMex
-            [a, logli, filterOut] = obj.filter_uni_mex(y);
-          else
-            [a, logli, filterOut] = obj.filter_uni_m(y);
-          end
-        else
-          % Exact initial
-          [a, logli, filterOut] = obj.filter_exact_m(y);
-        end
+      % Call the filter
+      if obj.useMex
+        [a, logli, filterOut] = obj.filter_mex(y);
       else
-        error('Multivariate filter depricated.');
-        assert(isempty(obj.A0), 'Must use univarite filter with exact initialization.');
-        if obj.useMex
-          [a, logli, filterOut] = obj.filter_multi_mex(y);
-        else
-          [a, logli, filterOut] = obj.filter_multi_m(y);
-        end
+        [a, logli, filterOut] = obj.filter_m(y);
       end
     end
     
@@ -164,27 +148,12 @@ classdef StateSpace < AbstractStateSpace
       [~, logli, filterOut] = obj.filter(y);
       
       % Determine which version of the smoother to run
-      if obj.filterUni
-        if isempty(obj.A0)
-          % No need for exact initial
-          if obj.useMex
-            [alpha, smootherOut] = obj.smoother_uni_mex(y, filterOut);
-          else
-            [alpha, smootherOut] = obj.smoother_uni_m(y, filterOut);
-          end
-        else
-          % Exact initial
-          [alpha, smootherOut] = obj.smoother_exact_m(y, filterOut);
-        end
+      if obj.useMex
+        [alpha, smootherOut] = obj.smoother_mex(y, filterOut);
       else
-        error('Multivariate filter depricated.');
-        assert(isempty(obj.A0), 'Must use univarite smoother with exact initialization.');
-        if obj.useMex
-          [alpha, smootherOut] = obj.smoother_multi_mex(y, filterOut);
-        else
-          [alpha, smootherOut] = obj.smoother_multi_m(y, filterOut);
-        end
+        [alpha, smootherOut] = obj.smoother_m(y, filterOut);
       end
+      
       smootherOut.logli = logli;
     end
     
@@ -347,7 +316,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     %% Filter/smoother/gradient mathematical methods
-    function [a, logli, filterOut] = filter_exact_m(obj, y)
+    function [a, logli, filterOut] = filter_m(obj, y)
       % Filter using exact initial conditions
       %
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
@@ -357,16 +326,16 @@ classdef StateSpace < AbstractStateSpace
       
       % Preallocate
       % Note Pd is the "diffuse" P matrix (P_\infty).
-      a = nan(obj.m, obj.n+1);
-      v = nan(obj.p, obj.n);
+      a = zeros(obj.m, obj.n+1);
+      v = zeros(obj.p, obj.n);
       
-      Pd = nan(obj.m, obj.m, obj.n+1);
-      Pstar = nan(obj.m, obj.m, obj.n+1);
-      Fd = nan(obj.p, obj.n);
-      Fstar = nan(obj.p, obj.n);
+      Pd = zeros(obj.m, obj.m, obj.n+1);
+      Pstar = zeros(obj.m, obj.m, obj.n+1);
+      Fd = zeros(obj.p, obj.n);
+      Fstar = zeros(obj.p, obj.n);
       
-      Kd = nan(obj.m, obj.p, obj.n);
-      Kstar = nan(obj.m, obj.p, obj.n);
+      Kd = zeros(obj.m, obj.p, obj.n);
+      Kstar = zeros(obj.m, obj.p, obj.n);
       
       LogL = zeros(obj.p, obj.n);
       
@@ -408,7 +377,7 @@ classdef StateSpace < AbstractStateSpace
             
             Pdti = Pdti - Kd(:,jj,ii) .* Kd(:,jj,ii)' ./ Fd(jj,ii);
             
-            LogL(jj,ii) = log(Fd(:,ii));
+            LogL(jj,ii) = log(Fd(jj,ii));
           else
             % F diffuse = 0
             ati = ati + Kstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii);
@@ -430,7 +399,7 @@ classdef StateSpace < AbstractStateSpace
       dt = ii;
       
       F = Fstar;
-      M = Kstar;
+      K = Kstar;
       P = Pstar;
       
       % Standard Kalman filter recursion
@@ -444,12 +413,12 @@ classdef StateSpace < AbstractStateSpace
           v(jj,ii) = y(jj,ii) - Zjj * ati - obj.d(jj,obj.tau.d(ii));
           
           F(jj,ii) = Zjj * Pti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
-          M(:,jj,ii) = Pti * Zjj';
+          K(:,jj,ii) = Pti * Zjj';
           
           LogL(jj,ii) = (log(F(jj,ii)) + (v(jj,ii)^2) / F(jj,ii));
           
-          ati = ati + M(:,jj,ii) / F(jj,ii) * v(jj,ii);
-          Pti = Pti - M(:,jj,ii) / F(jj,ii) * M(:,jj,ii)';
+          ati = ati + K(:,jj,ii) / F(jj,ii) * v(jj,ii);
+          Pti = Pti - K(:,jj,ii) / F(jj,ii) * K(:,jj,ii)';
         end
         
         Tii = obj.T(:,:,obj.tau.T(ii));
@@ -461,10 +430,28 @@ classdef StateSpace < AbstractStateSpace
 
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
-      filterOut = obj.compileStruct(a, P, v, F, M, Pd, Fd, Kd, dt);
+      filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
     end
     
-    function [alpha, smootherOut] = smoother_exact_m(obj, y, fOut)
+    function [a, logli, filterOut] = filter_mex(obj, y)
+      % Call mex function filter_uni
+      ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
+        'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
+        'a0', obj.a0, 'A0', obj.A0, 'R0', obj.R0, 'Q0', obj.Q0, ...
+        'tau', obj.tau);
+      if isempty(ssStruct.R0)
+        ssStruct.R0 = zeros(obj.m, 1);
+        ssStruct.Q0 = 0;
+      end
+      if isempty(ssStruct.A0)
+        ssStruct.A0 = zeros(obj.m, 1);
+      end
+      
+      [a, logli, P, Pd, v, F, Fd, K, Kd, dt] = mfss_mex.filter_uni(y, ssStruct);
+      filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
+    end
+    
+    function [alpha, smootherOut] = smoother_m(obj, y, fOut)
       % Univariate smoother
       
       alpha = zeros(obj.m, obj.n);
@@ -478,7 +465,7 @@ classdef StateSpace < AbstractStateSpace
         ind = find( ~isnan(y(:,ii)) );
         
         for jj = ind'
-          Lti = eye(obj.m) - fOut.M(:,jj,ii) * ...
+          Lti = eye(obj.m) - fOut.K(:,jj,ii) * ...
             obj.Z(jj,:,obj.tau.Z(ii)) / fOut.F(jj,ii);
           rti = obj.Z(jj,:,obj.tau.Z(ii))' / ...
             fOut.F(jj,ii) * fOut.v(jj,ii) + Lti' * rti;
@@ -512,15 +499,15 @@ classdef StateSpace < AbstractStateSpace
             % Diffuse case
             Ldti = eye(obj.m) - fOut.Kd(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
             L0ti = (fOut.Kd(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) + ...
-              fOut.M(:,jj,ii)) * Zjj / fOut.Fd(jj,ii);
+              fOut.K(:,jj,ii)) * Zjj / fOut.Fd(jj,ii);
             
             r1ti = Zjj' / fOut.Fd(jj,ii) * fOut.v(jj,ii) - L0ti' * r0ti + Ldti' * r1ti;
             
             r0ti = Ldti' * r0ti;
           else
             % Known
-            Lstarti = eye(m) - fOut.M(:,jj,ii) * Zjj / fOut.F(ind(jj),ii);
-            r0ti = Zjj' / fOut.F(jj,ii) * v(jj,ii) + Lstarti' * r0ti;
+            Lstarti = eye(obj.m) - fOut.K(:,jj,ii) * Zjj / fOut.F(jj,ii);
+            r0ti = Zjj' / fOut.F(jj,ii) * fOut.v(jj,ii) + Lstarti' * r0ti;
           end
         end
         r0(:,ii) = r0ti;
@@ -540,239 +527,27 @@ classdef StateSpace < AbstractStateSpace
         Pd0 = obj.A0 * obj.A0';
         a0tilde = obj.a0 + Pstar0 * r0ti + Pd0 * r1ti;
       else
-        a0tilde = obj.a0 + P0 * rti;
+        a0tilde = obj.a0 + Pstar0 * rti;
       end
       
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
     
-    function [a, logli, filterOut] = filter_uni_m(obj, y)
-      % Univariate filter
-      
-      a       = zeros(obj.m, obj.n+1);
-      P       = zeros(obj.m, obj.m, obj.n+1);
-      LogL    = zeros(obj.p, obj.n);
-      v       = zeros(obj.p, obj.n);
-      F       = zeros(obj.p, obj.n);
-      M       = zeros(obj.m, obj.p, obj.n);
-      K       = zeros(obj.m, obj.p, obj.n);
-      L       = zeros(obj.m, obj.m, obj.n);
-      
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      a(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0 + obj.c(:,obj.tau.c(1));
-      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * P0 * obj.T(:,:,obj.tau.T(1))' ...
-        + obj.R(:,:,obj.tau.R(1)) * obj.Q(:,:,obj.tau.Q(1)) * obj.R(:,:,obj.tau.R(1))';
-      
-      for ii = 1:obj.n
-        ind = find( ~isnan(y(:,ii)) );
-        ati    = a(:,ii);
-        Pti    = P(:,:,ii);
-        for jj = 1:length(ind)
-          Zjj = obj.Z(ind(jj),:,obj.tau.Z(ii));
-          
-          v(ind(jj),ii) = y(ind(jj),ii) - ...
-            Zjj * ati - obj.d(ind(jj),obj.tau.d(ii));
-          F(ind(jj),ii) = Zjj * Pti * Zjj' + ...
-            obj.H(ind(jj),ind(jj),obj.tau.H(ii));
-          M(:,ind(jj),ii) = Pti * Zjj';
-          
-          LogL(ind(jj),ii) = (log(F(ind(jj),ii)) + (v(ind(jj),ii)^2) / F(ind(jj),ii));
-          
-          ati = ati + M(:,ind(jj),ii) / F(ind(jj),ii) * v(ind(jj),ii);
-          Pti = Pti - M(:,ind(jj),ii) / F(ind(jj),ii) * M(:,ind(jj),ii)';
-        end
-        K(:,ind,ii) = obj.T(:,:,obj.tau.T(ii+1)) * M(:,ind,ii);
-        L(:,:,ii) = obj.T(:,:,obj.tau.T(ii+1)) - K(:,ind,ii) * obj.Z(ind,:,obj.tau.Z(ii));
-        
-        a(:,ii+1) = obj.T(:,:,obj.tau.T(ii+1)) * ati + obj.c(:,obj.tau.c(ii+1));
-        P(:,:,ii+1) = obj.T(:,:,obj.tau.T(ii+1)) * Pti * obj.T(:,:,obj.tau.T(ii+1))' + ...
-          obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
+    function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
+      ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
+        'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
+        'a0', obj.a0, 'A0', obj.A0, 'R0', obj.R0, 'Q0', obj.Q0, ...
+        'tau', obj.tau);
+      if isempty(ssStruct.R0)
+        ssStruct.R0 = zeros(obj.m, 1);
+        ssStruct.Q0 = 0;
+      end
+      if isempty(ssStruct.A0)
+        ssStruct.A0 = zeros(obj.m, 1);
       end
       
-      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
-      filterOut = obj.compileStruct(a, P, v, F, M, K, L);
-    end
-    
-    function [a, logli, filterOut] = filter_uni_mex(obj, y)
-      % Call mex function kfilter_uni
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      [LogL, a, P, v, F, M, K, L] = mfss_mex.kfilter_uni(y, ...
-        obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
-        obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
-        obj.a0, P0);
-      
-      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
-      
-      filterOut = obj.compileStruct(a, P, v, F, M, K, L);
-    end
-    
-    function [a, logli, filterOut] = filter_multi_m(obj, y)
-      % Multivariate filter
-      
-      a       = zeros(obj.m, obj.n+1);
-      P       = zeros(obj.m, obj.m, obj.n+1);
-      LogL    = zeros(obj.n, 1);
-      v       = zeros(obj.p, obj.n);
-      w       = zeros(obj.p, obj.n);
-      K       = zeros(obj.m, obj.p, obj.n);
-      L       = zeros(obj.m, obj.m, obj.n);
-      F       = zeros(obj.p, obj.p, obj.n);
-      M       = zeros(obj.m, obj.p, obj.n);
-      Finv    = zeros(obj.p, obj.p, obj.n);
-
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      a(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0 + obj.c(:,obj.tau.c(1));
-      P(:,:,1) = obj.T(:,:,obj.tau.T(1)) * P0 * obj.T(:,:,obj.tau.T(1))'...
-        + obj.R(:,:,obj.tau.R(1)) * obj.Q(:,:,obj.tau.Q(1)) * obj.R(:,:,obj.tau.R(1))';
-      
-      for ii = 1:obj.n
-        % Create W matrix for possible missing values
-        W = eye(obj.p);
-        ind = ~isnan(y(:,ii));
-        W = W((ind==1),:);
-        
-        Zii = W * obj.Z(:,:,obj.tau.Z(ii));
-        v(ind,ii) = y(ind,ii) - Zii * a(:,ii) - W * obj.d(:,obj.tau.d(ii));
-        F(ind,ind,ii) = Zii * P(:,:,ii) * Zii' + ...
-          W * obj.H(:,:,obj.tau.H(ii)) * W';
-        [Finv(ind, ind, ii), logDetF] = obj.pseudoinv(F(ind, ind, ii), 1e-12);
-        
-        LogL(ii) = logDetF + v(ind,ii)' * Finv(ind,ind,ii) * v(ind,ii);
-        
-        M(:,ind,ii) = P(:,:,ii) * Zii' * Finv(ind,ind,ii);
-        K(:,ind,ii) = obj.T(:,:,obj.tau.T(ii+1)) * M(:,ind,ii);
-        L(:,:,ii) = obj.T(:,:,obj.tau.T(ii+1)) - K(:,ind,ii) * Zii;
-        w(ind,ii) = Finv(ind,ind,ii) * v(ind,ii);
-        
-        a(:,ii+1) = obj.T(:,:,obj.tau.T(ii+1)) * a(:,ii)+...
-          obj.c(:,obj.tau.c(ii+1)) + K(:,ind,ii) * v(ind,ii);
-        P(:,:,ii+1) = obj.T(:,:,obj.tau.T(ii+1)) * P(:,:,ii) * L(:,:,ii)'+ ...
-          obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * ...
-          obj.R(:,:,obj.tau.R(ii+1))';
-      end
-      
-      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(LogL);
-      filterOut = obj.compileStruct(a, P, v, F, M, K, L, w, Finv);
-    end
-    
-    function [a, logli, filterOut] = filter_multi_mex(obj, y)
-      % Call mex function kfilter_uni
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      [LogL, a, P, v, F, M, K, L, w, Finv] = mfss_mex.kfilter_multi(y, ...
-        obj.Z, obj.tau.Z, obj.d, obj.tau.d, obj.H, obj.tau.H, ...
-        obj.T, obj.tau.T, obj.c, obj.tau.c, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
-        obj.a0, P0);
-      
-      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
-      
-      filterOut = obj.compileStruct(a, P, v, F, M, K, L, w, Finv);
-    end
-    
-    function [alpha, smootherOut] = smoother_uni_m(obj, y, fOut)
-      % Univariate smoother
-      
-      alpha = zeros(obj.m, obj.n);
-      eta   = zeros(obj.g, obj.n);
-      r     = zeros(obj.m, obj.n);
-      N     = zeros(obj.m, obj.m, obj.n+1);
-      
-      rti = zeros(obj.m,1);
-      Nti = zeros(obj.m,obj.m);
-      for ii = obj.n:-1:1
-        ind = find( ~isnan(y(:,ii)) );
-        for jj = length(ind):-1:1
-          Lti = eye(obj.m) - fOut.M(:,ind(jj),ii) * ...
-            obj.Z(ind(jj),:,obj.tau.Z(ii)) / fOut.F(ind(jj),ii);
-          rti = obj.Z(ind(jj),:,obj.tau.Z(ii))' / ...
-            fOut.F(ind(jj),ii) * fOut.v(ind(jj),ii) + Lti' * rti;
-          Nti = obj.Z(ind(jj),:,obj.tau.Z(ii))' / ...
-            fOut.F(ind(jj),ii) * obj.Z(ind(jj),:,obj.tau.Z(ii)) ...
-            + Lti' * Nti * Lti;
-        end
-        r(:,ii) = rti;
-        N(:,:,ii) = Nti;
-        
-        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii);
-        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
-        
-        rti = obj.T(:,:,obj.tau.T(ii))' * rti;
-        Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
-      end
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      a0tilde = obj.a0 + P0 * rti;
-      
+      [alpha, eta, r, N, a0tilde] = mfss_mex.smoother_uni(y, ssStruct, fOut);
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
-    end
-    
-    function [alpha, smootherOut] = smoother_uni_mex(obj, y, fOut)
-      % Call mex function kfilter_uni
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      [alpha, eta, r, N, a0tilde] = mfss_mex.ksmoother_uni(y, ...
-        obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
-        obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
-        fOut.a, fOut.P, fOut.v, fOut.F, fOut.M, fOut.L, ...
-        obj.a0, P0);
-      
-      smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
-    end
-    
-    function [alpha, smootherOut] = smoother_multi_m(obj, y, fOut)
-      % Multivariate smoother
-      
-      alpha   = zeros(obj.m, obj.n);
-      eta     = zeros(obj.g, obj.n);
-      epsilon = zeros(obj.p, obj.n);
-      r       = zeros(obj.m, obj.n+1);
-      N       = zeros(obj.m, obj.m, obj.n+1);
-      V       = zeros(obj.m, obj.m, obj.n);
-      J       = zeros(obj.m, obj.m, obj.n);
-      
-      for ii = obj.n:-1:1
-        % Create W matrix for possible missing values
-        W = eye(obj.p);
-        ind = ~isnan(y(:,ii));
-        W = W((ind==1),:);
-        
-        r(:,ii) = (W * obj.Z(:,:,obj.tau.Z(ii)))' * ...
-          fOut.Finv(ind,ind,ii) * fOut.v(ind,ii) + fOut.L(:,:,ii)' * r(:,ii+1);
-        N(:,:,ii) = (W * obj.Z(:,:,obj.tau.Z(ii)))' * fOut.Finv(ind,ind,ii) * ...
-          (W * obj.Z(:,:,obj.tau.Z(ii))) ...
-          + fOut.L(:,:,ii)' * N(:,:,ii+1) * fOut.L(:,:,ii);
-        u(ind,ii) = fOut.Finv(ind,ind,ii) * fOut.v(ind,ii) - ...
-          fOut.K(:,ind,ii)'*r(:,ii);
-        
-        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii)*r(:,ii);
-        eta(:,ii)   = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))'*r(:,ii);
-        epsilon(ind,ii) = (W * obj.H(:,:,obj.tau.H(ii)) * W') * u(ind,ii);
-        
-        V(:,:,ii) = fOut.P(:,:,ii) - ...
-          fOut.P(:,:,ii) * N(:,:,ii) * fOut.P(:,:,ii);
-        J(:,:,ii) = fOut.P(:,:,ii) * fOut.L(:,:,ii)' * ...
-          eye(obj.m) * (eye(obj.m) - N(:,:,ii+1) * fOut.P(:,:,ii+1));
-      end
-      
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      a0tilde = obj.a0 + P0 * obj.T(:,:,obj.tau.T(1))'*r(:,1);
-      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
-    end
-    
-    function [alpha, smootherOut] = smoother_multi_mex(obj, y, fOut)
-      % Call mex function kfilter_uni
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      [alpha, eta, epsilon, r, N, a0tilde, V, J] = mfss_mex.ksmoother_multi(y, ...
-        obj.Z, obj.tau.Z, obj.H, obj.tau.H, ...
-        obj.T, obj.tau.T, obj.R, obj.tau.R, obj.Q, obj.tau.Q, ...
-        fOut.a, fOut.P, fOut.v, fOut.M, fOut.K, fOut.L, fOut.Finv, ...
-        obj.a0, P0);
-      
-      smootherOut = obj.compileStruct(alpha, eta, epsilon, r, N, a0tilde, V, J);
     end
     
     function gradient = gradient_multi_filter_m(obj, y, G, fOut)
@@ -900,6 +675,10 @@ classdef StateSpace < AbstractStateSpace
       if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
         % User provided a0 and P0.
         return
+      end
+      
+      if isempty(obj.tau)
+        obj = obj.setInvariantTau();
       end
       
       % Find stationary states and compute the unconditional mean and variance
