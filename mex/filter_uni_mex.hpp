@@ -71,17 +71,24 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
   LogL = zeros(p, n) ;
 
   // Initialize
-  // a(:,1) = a0
-  a.col(0) = a0;
-  // Pd(:,:,1) = A0 * A0'
-  Pd.slice(0) = A0 * trans(A0);
-  // Pstar(:,:,1) = R0 * Q0 * R0'
-  Pstar.slice(0) = R0 * Q0 * trans(R0);
+  ii = 0;
+  // Tii = T(:,:,tauT(ii+1));
+  Tii = T.slice((uword) tauT(ii)-1);
+  // a(:,ii+1) = Tii * a0 + c(:,tauc(ii+1));
+  a.col(ii) = Tii * a0 + c.col((uword) tauc(ii)-1);
+
+  // Pd0 = A0 * A0';
+  // Pstar0 = R0 * Q0 * R0';
+  // Pd(:,:,ii+1)  = Tii * Pd0 * Tii';
+  // Pstar(:,:,ii+1) = Tii * Pstar0 * Tii' + ...
+  //   R(:,:,tauR(ii+1)) * Q(:,:,tauQ(ii+1)) * R(:,:,tauR(ii+1))';
+  Pd.slice(0) = Tii * (A0 * trans(A0)) * trans(Tii);
+  Pstar.slice(0) = Tii * (R0 * Q0 * trans(R0)) * trans(Tii) + 
+    R.slice((uword) tauR(ii)-1) * Q.slice((uword) tauQ(ii)-1) * trans(R.slice((uword) tauR(ii)-1));
 
   // Initial recursion
   mat zeroMat = zeros(m, m);
-  ii = 0;
-  while (! approx_equal(Pd.slice(ii), zeroMat, "absdiff", 0.00001)) {
+  while (! approx_equal(Pd.slice(ii), zeroMat, "absdiff", 0.00000001)) {
     if (ii>=n) {
       // error('Degenerate model. Exact initial filter unable to transition to standard filter.');
       mexErrMsgIdAndTxt("filter_uni:degenerate", 
@@ -128,10 +135,10 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
         // Pstarti = Pstarti + Kd(:,jj,ii) * Kd(:,jj,ii)' * Fstar(jj,ii) * (Fd(jj,ii).^-2) - 
         //          (Kstar(:,jj,ii) * Kd(:,jj,ii)' + Kd(:,jj,ii) * Kstar(:,jj,ii)') ./ Fd(jj,ii)
         Pstarti = Pstarti + Kd.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) * 
-          Fstar(jj, ii-1) * pow(Fd(jj, ii-1), -2) - 
-          (Kstar.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) + 
-            Kd.slice(ii-1).col(jj) * trans(Kstar.slice(ii-1).col(jj)) ) / 
-          Fd(jj, ii-1);
+        Fstar(jj, ii-1) * pow(Fd(jj, ii-1), -2) - 
+        (Kstar.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) + 
+          Kd.slice(ii-1).col(jj) * trans(Kstar.slice(ii-1).col(jj)) ) / 
+        Fd(jj, ii-1);
 
         // Pdti = Pdti - Kd(:,jj,ii) .* Kd(:,jj,ii)' ./ Fd(jj,ii)
         Pdti = Pdti - Kd.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) / Fd(jj, ii-1);
@@ -154,10 +161,10 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
     }
 
     // Tii = T(:,:,tauT(ii))
-    Tii = T.slice((uword) tauT(ii-1)-1);
+    Tii = T.slice((uword) tauT(ii)-1);
 
     // a(:,ii+1) = Tii * ati + c(:,tauc(ii))
-    a.col(ii) = Tii * ati + c.col((uword) tauc(ii-1)-1);
+    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1);
 
     // Pd(:,:,ii+1)  = Tii * Pdti * Tii'
     Pd.slice(ii) = Tii * Pdti * trans(Tii);
@@ -165,7 +172,7 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
     // Pstar(:,:,ii+1) = Tii * Pstarti * Tii' + ...
     //     R(:,:,tauR(ii)) * Q(:,:,tauQ(ii)) * R(:,:,tauR(ii))'
     Pstar.slice(ii) = Tii * Pstarti * trans(Tii) + 
-    R.slice((uword) tauR(ii-1)-1) * Q.slice((uword) tauQ(ii-1)-1) * trans(R.slice((uword) tauR(ii-1)-1));
+      R.slice((uword) tauR(ii)-1) * Q.slice((uword) tauQ(ii)-1) * trans(R.slice((uword) tauR(ii)-1));
   }
 
   dt = ii;
@@ -208,14 +215,14 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
     }
 
       // Tii = T(:,:,tauT(ii))
-    Tii = T.slice((uword) tauT(ii-1)-1);
+    Tii = T.slice((uword) tauT(ii)-1);
 
       // a(:,ii+1) = Tii * ati + c(:,tauc(ii))
-    a.col(ii) = Tii * ati + c.col((uword) tauc(ii-1)-1);
+    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1);
       // P(:,:,ii+1) = Tii * Pti * Tii' + ...
       //     R(:,:,tauR(ii)) * Q(:,:,tauQ(ii)) * R(:,:,tauR(ii))'
     P.slice(ii) = Tii * Pti * trans(Tii) + 
-    R.slice((uword) tauR(ii-1)-1) * Q.slice((uword) tauQ(ii-1)-1) * trans(R.slice((uword) tauR(ii-1)-1));
+    R.slice((uword) tauR(ii)-1) * Q.slice((uword) tauQ(ii)-1) * trans(R.slice((uword) tauR(ii)-1));
   }
 
   // logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL))

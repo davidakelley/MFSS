@@ -266,9 +266,16 @@ classdef StateSpace < AbstractStateSpace
       
       % Transform observations
       for iT = 1:size(y,2)
-        ind = ~isnan(y(:,iT));
-        % Should this be factorC(ind,ind) or factorC(:,ind)?
-        y(ind,iT) = factorC(ind,ind,obj.tau.H(iT)) * y(ind,iT);        
+        if all(~isnan(y(:,iT)))
+          % Don't need special factorization of H
+          y(:,iT) = factorC(:,:,obj.tau.H(iT)) * y(:,iT);
+        else
+          error('Development not finished.');
+          % Need factorization of part of H
+          ind = ~isnan(y(:,iT));
+          tempFactorC = ldl(obj.H(:,:,obj.tau.H(iT)));
+          y(ind,iT) = tempFactorC * y(ind,iT);
+        end
       end
       
       % We may need to create more slices of Z. 
@@ -339,11 +346,17 @@ classdef StateSpace < AbstractStateSpace
       
       LogL = zeros(obj.p, obj.n);
       
-      % Initialize
-      a(:,1) = obj.a0;
-      Pd(:,:,1) = obj.A0 * obj.A0';
-      Pstar(:,:,1) = obj.R0 * obj.Q0 * obj.R0';
+      % Initialize - Using the FRBC timing 
+      ii = 0;
+      Tii = obj.T(:,:,obj.tau.T(ii+1));
+      a(:,ii+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(ii+1));
       
+      Pd0 = obj.A0 * obj.A0';
+      Pstar0 = obj.R0 * obj.Q0 * obj.R0';
+      Pd(:,:,ii+1)  = Tii * Pd0 * Tii';
+      Pstar(:,:,ii+1) = Tii * Pstar0 * Tii' + ...
+        obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
+
       ii = 0;
       % Initial recursion
       while ~all(all(Pd(:,:,ii+1) == 0))
@@ -388,12 +401,12 @@ classdef StateSpace < AbstractStateSpace
           end
         end
         
-        Tii = obj.T(:,:,obj.tau.T(ii));
-        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii));
+        Tii = obj.T(:,:,obj.tau.T(ii+1));
+        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii+1));
         
         Pd(:,:,ii+1)  = Tii * Pdti * Tii';
         Pstar(:,:,ii+1) = Tii * Pstarti * Tii' + ...
-          obj.R(:,:,obj.tau.R(ii)) * obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))';
+          obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
       end
       
       dt = ii;
@@ -421,11 +434,11 @@ classdef StateSpace < AbstractStateSpace
           Pti = Pti - K(:,jj,ii) / F(jj,ii) * K(:,jj,ii)';
         end
         
-        Tii = obj.T(:,:,obj.tau.T(ii));
+        Tii = obj.T(:,:,obj.tau.T(ii+1));
         
-        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii));
+        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii+1));
         P(:,:,ii+1) = Tii * Pti * Tii' + ...
-          obj.R(:,:,obj.tau.R(ii)) * obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))';
+          obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
       end
 
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
@@ -477,7 +490,7 @@ classdef StateSpace < AbstractStateSpace
         N(:,:,ii) = Nti;
         
         alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii);
-        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
+        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))' * r(:,ii); 
         
         rti = obj.T(:,:,obj.tau.T(ii))' * rti;
         Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
@@ -513,6 +526,7 @@ classdef StateSpace < AbstractStateSpace
         r0(:,ii) = r0ti;
         r1(:,ii) = r1ti;
         
+        % What here needs tau_{ii+1}?
         alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r0(:,ii) + ...
           fOut.Pd(:,:,ii) * r1(:,ii);
         
@@ -775,10 +789,9 @@ classdef StateSpace < AbstractStateSpace
         setSS.A0 = ss.A0;
         setSS.R0 = ss.R0;
         
-        Q0value = repmat(value, [ss.m, ss.m]);  
+        Q0value = repmat(value, size(ss.Q0));  
         setSS = setSS.setQ0(Q0value);
       end
-    end
-    
+    end    
   end
 end
