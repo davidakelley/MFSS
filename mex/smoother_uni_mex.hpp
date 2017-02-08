@@ -89,7 +89,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
 
     ind = find_finite(y.col(ii-1)) + 1;
 
-    for (iInd=1; iInd <= ind.n_elem; iInd++) {
+    for (iInd = ind.n_elem; iInd > 0; --iInd) {
       jj = ind(iInd-1) - 1;       // Corrected to be 0-based
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 
@@ -120,7 +120,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
 
     ind = find_finite(y.col(ii-1));
 
-    for (iInd=1; iInd <= ind.n_elem; iInd++) {
+    for (iInd = ind.n_elem; iInd > 0; --iInd) {
       jj = ind(iInd-1);       // Note 0-based
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 

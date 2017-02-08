@@ -475,7 +475,7 @@ classdef StateSpace < AbstractStateSpace
       rti = zeros(obj.m,1);
       Nti = zeros(obj.m,obj.m);
       for ii = obj.n:-1:fOut.dt+1
-        ind = find( ~isnan(y(:,ii)) );
+        ind = flipud(find( ~isnan(y(:,ii)) ));
         
         for jj = ind'
           Lti = eye(obj.m) - fOut.K(:,jj,ii) * ...
@@ -504,7 +504,7 @@ classdef StateSpace < AbstractStateSpace
         r0ti = r0(:,ii+1);
         r1ti = r1(:,ii+1);
         
-        ind = find( ~isnan(y(:,ii)) );
+        ind = flipud(find( ~isnan(y(:,ii)) ));
         for jj = ind'
           Zjj = obj.Z(jj,:,obj.tau.Z(ii));
           
