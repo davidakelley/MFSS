@@ -54,8 +54,8 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.H, 15099, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
       
-      [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
-      testCase.verifyLessThan(abs(ssE_grad), 5e-4);
+%       [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
+%       testCase.verifyLessThan(abs(ssE_grad), 5e-4);
     end
     
     function testNileKappa(testCase)
@@ -83,8 +83,8 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.H, 15099, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
       
-      [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
-      testCase.verifyLessThan(abs(ssE_grad), 5e-4);
+%       [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
+%       testCase.verifyLessThan(abs(ssE_grad), 5e-4);
     end
     
     function testNileGradient(testCase)
@@ -194,7 +194,7 @@ classdef estimate_test < matlab.unittest.TestCase
       Zlb = Z; Zlb(:) = -Inf;
       dlb = d; dlb(:) = -Inf;
       Hlb = H; Hlb(:) = 0;
-      Tlb = T; Tlb(:) = 0.1;
+      Tlb = T; Tlb(:) = -1;
       clb = c; clb(:) = -Inf;
       Rlb = R; Rlb(:) = -Inf;
       Qlb = Q; Qlb(:) = 0;
@@ -203,7 +203,7 @@ classdef estimate_test < matlab.unittest.TestCase
       Zub = Z; Zub(:) = Inf;
       dub = d; dub(:) = Inf;
       Hub = H; Hub(:) = Inf;
-      Tub = T; Tub(:) = 0.3;
+      Tub = T; Tub(:) = 1;
       cub = c; cub(:) = Inf;
       Rub = R; Rub(:) = Inf;
       Qub = Q; Qub(:) = Inf;

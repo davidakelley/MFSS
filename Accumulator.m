@@ -709,18 +709,10 @@ classdef Accumulator < AbstractSystem
           continue
         end
         
-        % Compose transformation by multiplying then adding
-        newTrans{iTrans} = Accumulator.composeLinearFunc(...
-          tm.transformations{iTransInd}, factor(iElem), addend(iElem));
-        % Compose the derivative with the chain rule
-        newDeriv{iTrans} = Accumulator.composeLinearFunc(...
-          tm.derivatives{iTransInd}, factor(iElem), 0);
-        % "Undo" the linear transformation by first subtracting what was added
-        % then dividing by what was multiplied. % TODO: simplify
-        invTemp = Accumulator.composeLinearFunc(...
-          tm.inverses{iTransInd}, 1, -addend(iElem));
-        newInv{iTrans} = Accumulator.composeLinearFunc(...
-          invTemp, 1/factor(iElem), 0);
+        [newTrans{iTrans}, newDeriv{iTrans}, newInv{iTrans}] = ...
+          Accumulator.createTransforms(tm.transformations{iTransInd}, ...
+          tm.derivatives{iTransInd}, tm.inverses{iTransInd}, ...
+          factor(iElem), addend(iElem));
         
         % Move transformationIndex of the element we just changed
         newParamMat(iElem) = nTrans + 1;
@@ -731,6 +723,21 @@ classdef Accumulator < AbstractSystem
       newTrans = newTrans(~cellfun(@isempty, newTrans));
       newDeriv = newDeriv(~cellfun(@isempty, newDeriv));
       newInv = newInv(~cellfun(@isempty, newInv));
+    end
+    
+    function [newT, newD, newI] = createTransforms(oldT, oldD, oldI, A, B)
+      
+        % Compose transformation by multiplying then adding
+        newT = Accumulator.composeLinearFunc(oldT, A, B);
+        
+        % Compose the derivative with the chain rule
+        newD = Accumulator.composeLinearFunc(oldD, A, 0);
+        
+        % "Undo" the linear transformation by first subtracting what was added
+        % then dividing by what was multiplied. 
+        % TODO: simplify by writing a (B, A) version of composeLienarFunc
+        invTemp = Accumulator.composeLinearFunc(oldI, 1, -B);
+        newI = Accumulator.composeLinearFunc(invTemp, 1/A, 0);
     end
     
     function newFunc = composeLinearFunc(func, A, B)

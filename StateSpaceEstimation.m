@@ -34,7 +34,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
-    useGrad = true;   % Indicator for use of analytic gradient
+    useGrad = false;   % Indicator for use of analytic gradient
+    
+    fminsearchMaxIter = 500;
   end
   
   methods
@@ -131,10 +133,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'StepTolerance', obj.stepTol, ...
         'OutputFcn', @outfun);
       
-      if all(strcmpi(obj.solver, 'fminsearch'))
+      if all(strcmpi(obj.solver, 'fminsearch')) || ...
+          (ischar(obj.fminsearchMaxIter) &&  strcmpi(obj.fminsearchMaxIter, 'default'))
         searchMaxIter = 200 * obj.ThetaMapping.nTheta;
       else
-        searchMaxIter = 500;
+        searchMaxIter = obj.fminsearchMaxIter;
       end
       
       optFMinSearch = optimset('Display', displayType, ...
@@ -511,6 +514,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       set(plotfval,'Xdata',newX, 'Ydata',newY);
       set(get(plotfval.Parent,'Title'),'String', ...
         sprintf('Current Function Value: %g', llval));
+      
+      if plotfval.Parent.YLim(2) < llval
+        plotfval.Parent.YLim(2) = llval;
+      end
       
       if strcmpi(state, 'done')
         oldline = copyobj(plotfval, plotfval.Parent);
