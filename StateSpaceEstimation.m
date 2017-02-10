@@ -39,6 +39,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
     fminsearchMaxIter = 500;
   end
   
+  properties (Hidden=true)
+    progressWin
+  end
+  
   methods
     %% Constructor
     function obj = StateSpaceEstimation(Z, d, H, T, c, R, Q, varargin)
@@ -98,6 +102,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       theta0 = obj.ThetaMapping.system2theta(ss0);
       assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
       
+      if obj.diagnosticPlot
+        obj.progressWin = StateSpaceEstimation.initFigure(theta0, obj.m);
+      end
+      
       % Run fminunc/fmincon
       minfunc = @(theta) obj.minimizeFun(theta, y);
       nonlconFn = @obj.nlConstraintFun;
@@ -111,7 +119,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       optFMinCon = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
-        'UseParallel', ~obj.useGrad, ...
+        'UseParallel', false, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 1000, ...
@@ -124,7 +132,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
         'SpecifyObjectiveGradient', obj.useGrad, ...
-        'UseParallel', ~obj.useGrad, ...
+        'UseParallel', false, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 1000, ...
@@ -160,10 +168,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
           case 'fminsearch'
             maxPossibleIters = optFMinSearch.MaxIter * obj.solveIterMax;
         end
-      end
-      
-      if obj.diagnosticPlot
-        StateSpaceEstimation.initFigure(theta0);
       end
       
       thetaIter = 0;
@@ -261,6 +265,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           
           StateSpaceEstimation.sseplotpoint(x, optimValues, state);
           StateSpaceEstimation.sseplotvalue(x, optimValues, state, iter);
+          StateSpaceEstimation.sseplotfiltered([], [], state);
           drawnow;
         end
       end
@@ -321,12 +326,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
     function [negLogli, gradient] = minimizeFun(obj, theta, y)
-      % persistent nEvals
-      % if isempty(nEvals) 
-      %   nEvals = 0;
-      % end
-      % nEvals = nEvals + 1;
-      
       % Get the likelihood of
       ss1 = obj.ThetaMapping.theta2system(theta);
       ss1.filterUni = obj.filterUni;
@@ -342,9 +341,16 @@ classdef StateSpaceEstimation < AbstractStateSpace
       try
         if obj.useGrad
           [rawLogli, rawGradient] = ss1.gradient(y, obj.ThetaMapping);
+          a = [];
         else
-          [~, rawLogli] = ss1.filter(y);
+          [a, rawLogli] = ss1.filter(y);
           rawGradient = [];
+        end
+        
+        saveLogli = getappdata(obj.progressWin, 'logli');
+        if isempty(saveLogli) || rawLogli > saveLogli
+          setappdata(obj.progressWin, 'logli', rawLogli);
+          setappdata(obj.progressWin, 'a', a);
         end
       catch
         rawLogli = nan;
@@ -396,26 +402,27 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       if any(isnan(cx))
         warning('Nan constraint.');
-        % keyboard;
       end
     end
   end
   
   methods (Static = true)
     %% Plot functions for ML estimation
-    function initFigure(theta0)
+    function diagnosticF = initFigure(theta0, m)
       % Create diagnostic figure
       screenSize = get(0, 'ScreenSize');
       winSize = [725 700];
       diagnosticF = figure('Color', ones(1,3), 'Position', ...
         [screenSize(3)./2-0.5*winSize(1), screenSize(4)./2-0.5*winSize(2), winSize]);
       diagnosticF.Position(3:4) = [725 700];
-      subplot(2, 1, 1);
+      subplot(3, 1, 1);
       StateSpaceEstimation.sseplotpoint(theta0, [], 'setup', 0);
-      subplot(2, 1, 2);
+      subplot(3, 1, 2);
       StateSpaceEstimation.sseplotvalue(theta0, [], 'setup', 0);
+      subplot(3, 1, 3);
+      StateSpaceEstimation.sseplotfiltered([], [], 'setup', m);
       
-      % Give a stop button in the figure
+      % Give a stop button in the figure (for the solver) 
       stopBtnXYLoc = [2 5];
       stopBtn = uicontrol('string', 'Stop Current Solver', ...
         'Position',[stopBtnXYLoc 50 20],'callback',@buttonStop);
@@ -429,7 +436,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         setappdata(gcf,'data','stop');
       end
       
-      % Give a stop button in the figure
+      % Give a stop button in the figure (for the estimation)
       stopBtnXYLoc = [2+stopBtnExtent(3)+2 5];
       stopEstimBtn = uicontrol('string', 'Stop Estimation', ...
         'Position',[stopBtnXYLoc 50 20],'callback', @buttonStopEstim);
@@ -479,7 +486,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       stop = false;
       if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
-        keyboard
+        error('Unsuported plot command.');
       end
       
       iter = varargin{1};
@@ -528,6 +535,56 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         set(plotfval,'Xdata',[], 'Ydata',[]);
       end      
+    end
+    
+    function stop = sseplotfiltered(~, ~, state, varargin)
+      % Plot the filtered state, with a dropdown box for which state
+      
+      stop = false;
+      if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
+        error('Unsuported plot command.');
+      end
+
+      persistent plotfiltered dropdown
+      if strcmpi(state, 'setup')
+        m = varargin{1};
+        
+        plotfiltered = plot(0, 0, 'b');
+        box off
+        titleText = title(sprintf('Filtered State: '));
+        
+        plotfiltered.Parent.Units = 'pixels';
+        titleText.Units = 'pixels';
+        
+        dropdownX = plotfiltered.Parent.Position(1) + titleText.Extent(1) + titleText.Extent(3);
+        dropdownY = plotfiltered.Parent.Position(1) + titleText.Extent(2) - titleText.Extent(4);
+        dropdown = uicontrol('Style', 'popupmenu', ...
+          'String', arrayfun(@(x) num2str(x), 1:m, 'Uniform', false), ...
+          'Position', [dropdownX dropdownY 50 20]);
+        xlabel('t');
+        
+        set(plotfiltered, 'Tag', 'sseplotfiltered');
+        return
+      end
+      if strcmpi(state, 'init')
+        return
+      end
+            
+      plotState = dropdown.Value;
+      a = getappdata(plotfiltered.Parent.Parent, 'a');
+      plotY = a(plotState,:);
+            
+      set(plotfiltered, 'Xdata', 1:length(plotY), 'Ydata', plotY);
+      
+      % Set axes
+      if plotfiltered.Parent.YLim(2) < max(plotY)
+        plotfiltered.Parent.YLim(2) = max(plotY);
+      end
+      if plotfiltered.Parent.YLim(1) > min(plotY)
+        plotfiltered.Parent.YLim(1) = min(plotY);
+      end
+      
+   
     end
   end
     
