@@ -252,54 +252,53 @@ classdef StateSpace < AbstractStateSpace
         return
       end
       
-      % Create factorizations
-      factorC = nan(size(obj.H));
-      newHmat = nan(size(obj.H));
-      for iH = 1:size(obj.H, 3)
-        [factorC(:,:,iH), newHmat(:,:,iH)] = ldl(obj.H(:,:,iH), 'lower');
-      end
-      if ~isempty(obj.tau)
-        newH = struct('Ht', newHmat, 'tauH', obj.tau.H);
-      else
-        newH = newHmat;
-      end
+      [uniqueOut, ~, newTauH] = unique([obj.tau.H ~isnan(y')], 'rows');
+      oldTauH = uniqueOut(:,1);
+      obsPattern = uniqueOut(:,2:end);
       
-      % Transform observations
+      % Create factorizations
+      maxTauH = max(newTauH);
+      factorC = zeros(size(obj.H, 1), size(obj.H, 2), maxTauH);
+      newHmat = zeros(size(obj.H, 1), size(obj.H, 2), maxTauH);
+      for iH = 1:maxTauH
+        ind = logical(obsPattern(iH, :));
+        [factorC(ind,ind,iH), newHmat(ind,ind,iH)] = ldl(obj.H(ind,ind,oldTauH(iH)), 'lower');
+      end
+      newH = struct('Ht', newHmat, 'tauH', newTauH);      
+      
       for iT = 1:size(y,2)
-        if all(~isnan(y(:,iT)))
-          % Don't need special factorization of H
-          y(:,iT) = factorC(:,:,obj.tau.H(iT)) * y(:,iT);
-        else
-          error('Development not finished.');
-          % Need factorization of part of H
-          ind = ~isnan(y(:,iT));
-          tempFactorC = ldl(obj.H(:,:,obj.tau.H(iT)));
-          y(ind,iT) = tempFactorC * y(ind,iT);
-        end
+        % Transform observations
+        ind = logical(obsPattern(newTauH(iT),:));
+        y(ind,iT) = factorC(ind,ind,newTauH(iT)) * y(ind,iT);
       end
       
       % We may need to create more slices of Z. 
       % If a given slice of Z is used when two different H matricies are used,
       % we need to use the correct C matrix to factorize it at each point. 
-      if isempty(obj.tau)
-        newZtau = 1;
-        newdtau = 1;
-      else
-        [zSlices, ~, newZtau] = unique([obj.tau.Z, obj.tau.H], 'rows');
-        [dSlices, ~, newdtau] = unique([obj.tau.d, obj.tau.H], 'rows');
-      end
+      [uniqueOut, ~, newTauZ] = unique([obj.tau.Z newTauH ~isnan(y')], 'rows');
+      oldTauZ = uniqueOut(:,1);
+      correspondingNewHOldZ = uniqueOut(:,2);
+      obsPattern = uniqueOut(:,3:end);
       
-      newZmat = nan([size(obj.Z, 1) size(obj.Z, 2), max(newZtau)]);
-      for iZ = 1:max(newZtau)
-        newZmat(:,:,iZ) = factorC(:,:,zSlices(iZ,2)) \ obj.Z(:,:,zSlices(iZ,1));
+      newZmat = zeros([size(obj.Z, 1) size(obj.Z, 2), max(newTauZ)]);
+      for iZ = 1:max(newTauZ)
+        ind = logical(obsPattern(iZ,:));
+        newZmat(ind,:,iZ) = factorC(ind,ind,correspondingNewHOldZ(iZ)) \ obj.Z(ind,:,oldTauZ(iZ));
       end
-      newZ = struct('Zt', newZmat, 'tauZ', newZtau);
+      newZ = struct('Zt', newZmat, 'tauZ', newTauZ);
       
-      newdmat = nan([size(obj.d, 1) max(newdtau)]);
-      for id = 1:max(newdtau)
-        newdmat(:,:,iZ) = factorC(:,:,dSlices(id,2)) \ obj.d(:,:,zSlices(id,1));
+      % Same thing for d
+      [uniqueOut, ~, newTaud] = unique([obj.tau.d newTauH ~isnan(y')], 'rows');
+      oldTaud = uniqueOut(:,1);
+      correspondingNewHOldd = uniqueOut(:,2);
+      obsPattern = uniqueOut(:,3:end);
+
+      newdmat = zeros([size(obj.d, 1) max(newTaud)]);
+      for id = 1:max(newTaud)
+        ind = logical(obsPattern(id,:));
+        newdmat(ind,id) = factorC(ind,ind,correspondingNewHOldd(id)) \ obj.d(ind,oldTaud(id));
       end
-      newd = struct('dt', newdmat, 'taud', newdtau);
+      newd = struct('dt', newdmat, 'taud', newTaud);
       
       % State matricies
       if ~isempty(obj.tau)
