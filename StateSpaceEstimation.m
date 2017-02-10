@@ -81,7 +81,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     %% Estimation methods
-    function [ss_out, flag, gradient, diagnostic] = estimate(obj, y, ss0)
+    function [ss_out, diagnostic, gradient] = estimate(obj, y, ss0)
       % Estimate missing parameter values via maximum likelihood.
       %
       % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
@@ -141,7 +141,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'StepTolerance', obj.stepTol, ...
         'OutputFcn', @outfun);
       
-      if all(strcmpi(obj.solver, 'fminsearch')) || ...
+      if all(strcmpi(obj.solver, 'fminsearch')) && ...
           (ischar(obj.fminsearchMaxIter) &&  strcmpi(obj.fminsearchMaxIter, 'default'))
         searchMaxIter = 200 * obj.ThetaMapping.nTheta;
       else
