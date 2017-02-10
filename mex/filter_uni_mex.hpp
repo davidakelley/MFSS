@@ -115,7 +115,7 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 
       // v(jj,ii) = y(jj, ii) - Zjj * ati - d(jj,taud(ii))
-      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati - d(jj, (uword) taud(ii-1)-1));
+      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati) - as_scalar(d(jj, (uword) taud(ii-1)-1));
 
       // Fd(jj,ii) = Zjj * Pdti * Zjj'
       Fd(jj, ii-1) = as_scalar(Zjj * Pdti * trans(Zjj));
@@ -160,21 +160,21 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       }
     }
 
-    // Tii = T(:,:,tauT(ii))
+    // Tii = T(:,:,tauT(ii+1))
     Tii = T.slice((uword) tauT(ii)-1);
 
-    // a(:,ii+1) = Tii * ati + c(:,tauc(ii))
+    // a(:,ii+1) = Tii * ati + c(:,tauc(ii+1))
     a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1);
 
     // Pd(:,:,ii+1)  = Tii * Pdti * Tii'
     Pd.slice(ii) = Tii * Pdti * trans(Tii);
 
     // Pstar(:,:,ii+1) = Tii * Pstarti * Tii' + ...
-    //     R(:,:,tauR(ii)) * Q(:,:,tauQ(ii)) * R(:,:,tauR(ii))'
+    //     R(:,:,tauR(ii+)) * Q(:,:,tauQ(ii+1)) * R(:,:,tauR(ii+1))'
     Pstar.slice(ii) = Tii * Pstarti * trans(Tii) + 
       R.slice((uword) tauR(ii)-1) * Q.slice((uword) tauQ(ii)-1) * trans(R.slice((uword) tauR(ii)-1));
   }
-
+ 
   dt = ii;
   F = Fstar;
   K = Kstar;
@@ -196,7 +196,7 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 
         // v(jj,ii) = y(jj,ii) - Zjj * ati - d(jj,taud(ii))
-      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati - d(jj, (uword) taud(ii-1)-1));
+      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati) - as_scalar(d(jj, (uword) taud(ii-1)-1));
 
         // F(jj,ii) = Zjj * Pti * Zjj' + H(jj,jj,tauH(ii))
       F(jj, ii-1) = as_scalar(Zjj * Pti * trans(Zjj) + H(jj, jj, (uword) tauH(ii-1)-1));
