@@ -213,9 +213,6 @@ classdef StateSpace < AbstractStateSpace
         maxTaus = ones([7 1]);
       else
         maxTaus = structfun(@max, obj.tau);  % Untested?
-        
-        firstTau = structfun(@(x) x(1), obj.tau);
-        assert(all(firstTau == 1), 'First element of tau must be 1.');
       end
       
       validate = @(x, sz, name) validateattributes(x, {'numeric'}, ...
