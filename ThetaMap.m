@@ -301,7 +301,7 @@ classdef ThetaMap < AbstractSystem
       %   theta: Vector of varried parameters
       % Outputs
       %   G:     Structure of gradients for each state space parameter. Each 
-      %          gradient will be nTheta X (elements in a slice) X tau_x.
+      %          gradient will be nTheta X (elements in a slice) X max(tau_x).
       
       % TODO: Does this function handle TVP correctly?
       

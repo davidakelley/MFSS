@@ -113,15 +113,7 @@ classdef StateSpace < AbstractStateSpace
       % [a, logli, filterOut] = StateSpace.FILTER(...) returns an additional
       % structure of intermediate computations useful in other functions. 
       
-      % Make sure data matches observation dimensions
-      obj.validateKFilter();
-      obj = obj.checkSample(y);
-      
-      % Set initial values
-      obj = setDefaultInitial(obj);
-
-      % Handle multivariate series
-      [obj, y] = obj.factorMultivariate(y);
+      [obj, y] = obj.prepareFilter(y);
       
       % Call the filter
       if obj.useMex
@@ -131,18 +123,10 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [alpha, smootherOut] = smooth(obj, y)
+    function [alpha, smootherOut, filterOut] = smooth(obj, y)
       % Estimate the smoothed state
       
-      % Make sure data matches observation dimensions
-      obj.validateKFilter();
-      obj = obj.checkSample(y);
-      
-      % Set initial values
-      obj = setDefaultInitial(obj);
-
-      % Handle multivariate series
-      [obj, y] = obj.factorMultivariate(y);
+      [obj, y] = obj.prepareFilter(y);
 
       % Get the filtered estimates for use in the smoother
       [~, logli, filterOut] = obj.filter(y);
@@ -161,13 +145,12 @@ classdef StateSpace < AbstractStateSpace
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
       
+      % Most of the prepareFilter function:
       obj.validateKFilter();
-      assert(isa(tm, 'ThetaMap'));
-      
       obj = obj.checkSample(y);
-
       obj = setDefaultInitial(obj);
-      
+
+      assert(isa(tm, 'ThetaMap'));
       if nargin < 4
         theta = tm.system2theta(obj);
       end
@@ -176,16 +159,137 @@ classdef StateSpace < AbstractStateSpace
       G = tm.parameterGradients(theta);
       [G.a0, G.P0] = tm.initialValuesGradients(theta, G);
       
-      obj.filterUni = false;
-      [~, logli, fOut] = obj.filter(y);
-            
-      error('Multivariate filter depricated.');
-      if obj.useMex
-        gradient = obj.gradient_multi_filter_mex(y, G, fOut);
-      else
-        gradient = obj.gradient_multi_filter_m(y, G, fOut);
+      [alpha, sOut, fOut] = obj.smooth(y);
+      logli = sOut.logli;
+      
+%       e = obj.getErrors(y, fOut.a(:,1:obj.n));
+      epsilon = obj.getErrors(y, alpha);
+      [V, D, J] = obj.getErrorVariances(fOut, sOut);
+%       u = sOut.alpha - fOut.a(:,1:obj.n);
+      [u, D] = obj.getGradientQuantities(epsilon, sOut);
+%       u3 = epsilon - e;
+      
+      % Stick the last filtered estimate on the end of alpha since we'll need
+      % \hat{alpha}_{t+1|T}
+      alpha = [alpha fOut.a(:,end)]; 
+      
+      gradient = obj.gradient_uni_m(y, alpha, u, D, sOut.r, sOut.N, epsilon, V, J, G);        
+    end
+    
+    function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
+      % Decompose the smoothed states by data contributions
+      %
+      % Output ordered by (state, observation, contributingPeriod, effectPeriod)
+      
+      [obj, y] = obj.prepareFilter(y);
+
+      if nargin < 3
+        decompPeriods = 1:obj.n;
       end
+      
+      [~, ~, fOut] = obj.filter(y);
+      if obj.useMex
+        [alpha, sOut] = obj.smoother_mex(y, fOut);
+      else
+        [alpha, sOut] = obj.smoother_m(y, fOut);
+      end
+      
+      [alphaW, constContrib] = obj.smoother_weights(y, fOut, sOut, decompPeriods);
+      
+      % Apply weights to data
+      cleanY = y;
+      cleanY(isnan(y)) = 0;
+      
+      nDecomp = length(decompPeriods);
+      dataDecomposition = zeros(obj.m, obj.p, obj.n, nDecomp);
+      % Loop over periods effected
+      for iT = 1:nDecomp
+        % Loop over contributing periods
+        for cT = 1:obj.n 
+          dataDecomposition(:,:,cT,iT) = alphaW(:,:,cT,iT) .* repmat(cleanY(:, cT)', [obj.m, 1]);
+        end
+      end
+      
+      % Weights come out ordered (state, observation, origin, effect) so
+      % collapsing the 2nd and 3rd dimension should give us a time-horizontal
+      % sample. 
+      dataContrib = squeeze(sum(sum(dataDecomposition, 2), 3));
+      if obj.m == 1
+        dataContrib = dataContrib';
+      end
+      alpha_test = dataContrib + constContrib;
+      err = alpha(:,decompPeriods) - alpha_test;
+      assert(max(max(abs(err))) < 0.001, 'Did not recover data from decomposition.');
+    end
+    
+    %% Utilties
+    function obj = setDefaultInitial(obj, reset)
+      % Set default a0 and P0.
+      % Run before filter/smoother after a0 & P0 inputs have been processed
+      
+      if nargin < 2 
+        % Option to un-set initial values. 
+        reset = false;
+      end
+      if reset
+        obj.usingDefaulta0 = true;
+        obj.usingDefaultP0 = true;
+        obj.a0 = [];
+        obj.A0 = [];
+        obj.R0 = [];
+        obj.Q0 = [];
+      end        
+      
+      if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
+        % User provided a0 and P0.
+        return
+      end
+      
+      if isempty(obj.tau)
+        obj = obj.setInvariantTau();
+      end
+      
+      % Find stationary states and compute the unconditional mean and variance
+      % of them using the parts of T, c, R and Q. For the nonstationary states,
+      % set up the A0 selection matrix. 
+      [stationary, nonstationary] = obj.findStationaryStates();
+      
+      tempT = obj.T(stationary, stationary, obj.tau.T(1));
+      assert(all(abs(eig(tempT)) < 1));
+      
+      select = eye(obj.m);
+      mStationary = length(stationary);
+
+      if obj.usingDefaulta0
+        obj.a0 = zeros(obj.m, 1);
         
+        a0temp = (eye(mStationary) - tempT) \ obj.c(stationary, obj.tau.c(1));
+        obj.a0(stationary) = a0temp;
+      end
+      
+      if obj.usingDefaultP0
+        obj.A0 = select(:, nonstationary);
+        obj.R0 = select(:, stationary);
+        
+        tempR = obj.R(stationary, :, obj.tau.R(1));
+        tempQ = obj.Q(:, :, obj.tau.Q(1));
+        try
+          obj.Q0 = reshape((eye(mStationary^2) - kron(tempT, tempT)) \ ...
+            reshape(tempR * tempQ * tempR', [], 1), ...
+            mStationary, mStationary);
+        catch ex
+          % If the state is large, try making it sparse
+          if strcmpi(ex.identifier, 'MATLAB:array:SizeLimitExceeded')
+            tempT = sparse(tempT);
+            obj.Q0 = full(reshape((speye(mStationary^2) - kron(tempT, tempT)) \ ...
+              reshape(tempR * tempQ * tempR', [], 1), ...
+              mStationary, mStationary));
+          else
+            rethrow(ex);
+          end
+        end
+        
+      end
     end
   end
   
@@ -242,7 +346,7 @@ classdef StateSpace < AbstractStateSpace
     function [ssUni, y, factorC] = factorMultivariate(obj, y)
       % Compute new Z and H matricies so the univariate treatment can be applied
       
-      % If it's already diagonal, do nothing
+      % If H is already diagonal, do nothing
       if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj,3))
         ssUni = obj;
         ssUni.filterUni = true;
@@ -260,6 +364,7 @@ classdef StateSpace < AbstractStateSpace
       for iH = 1:maxTauH
         ind = logical(obsPattern(iH, :));
         [factorC(ind,ind,iH), newHmat(ind,ind,iH)] = ldl(obj.H(ind,ind,oldTauH(iH)), 'lower');
+        assert(isdiag(newHmat(ind,ind,iH)), 'ldl returned non-diagonal d matrix.');
       end
       newH = struct('Ht', newHmat, 'tauH', newTauH);      
       
@@ -318,12 +423,120 @@ classdef StateSpace < AbstractStateSpace
       ssUni = ssUni.setInitial(obj.a0, P0);
     end
     
+    function [obj, y] = prepareFilter(obj, y)
+      % Make sure data matches observation dimensions
+      obj.validateKFilter();
+      obj = obj.checkSample(y);
+      
+      % Set initial values
+      obj = setDefaultInitial(obj);
+
+      % Handle multivariate series
+      [obj, y] = obj.factorMultivariate(y);
+    end
+    
+    function [obsErr, stateErr] = getErrors(obj, y, state, a0)
+      % Get the errors epsilon & eta given an estimate of the state 
+      % Either the filtered or smoothed estimates can be calculated by passing
+      % either the filtered state (a) or smoothed state (alphaHat).
+      
+      % With the state already estimated, we simply have to back out the errors.
+      
+      % Make sure the object is set up correctly but DO NOT factor as is done 
+      % for the univariate filter. 
+      if isempty(obj.n)
+        obj.n = size(state, 2);
+        obj = obj.setInvariantTau();
+      else
+        assert(obj.n == size(state, 2), ...
+          'Size of state doesn''t match time dimension of StateSpace.');
+      end
+      
+      % Iterate through observations
+      obsErr = nan(obj.p, obj.n);
+      for iT = 1:obj.n
+        obsErr(:,iT) = y(:,iT) - ...
+          obj.Z(:,:,obj.tau.Z(iT)) * state(:,iT) - obj.d(:,obj.tau.d(iT));        
+      end
+      
+      % Potentially return early
+      if nargout < 2
+        stateErr = [];
+        return
+      end
+      
+      % Iterate through states
+      Rbar = nan(obj.g, obj.m, size(obj.R, 3));
+      for iR = 1:size(obj.R, 3)
+        Rbar(:,:,iR) = (obj.R(:,:,iR)' * obj.R(:,:,iR)) \ obj.R(:,:,iR)';
+      end
+      
+      stateErr = nan(obj.g, obj.n);
+      stateErr(:,1) = Rbar(:,:,obj.tau.R(iT)) * (state(:,1) - ...
+        obj.T(:,:,obj.tau.T(1)) * a0 - obj.c(:,obj.tau.c(1)));
+      for iT = 2:obj.n
+        stateErr(:,iT) = Rbar(:,:,obj.tau.R(iT)) * (state(:,iT) - ...
+          obj.T(:,:,obj.tau.T(iT)) * state(:,iT-1) - obj.c(:,obj.tau.c(iT)));
+      end
+    end
+    
+    function [V, D, J] = getErrorVariances(obj, fOut, sOut)
+      % Get the smoothed state variance and covariance matricies
+      % Produces V = Var(alpha | Y_n) and J = Cov(alpha_{t+1}, alpha_t | Y_n)
+      computeJ = nargout > 2;
+      
+      I = eye(obj.m);
+      Hinv = nan(obj.p, obj.p, size(obj.H, 3));
+      for iH = 1:size(obj.H, 3)
+        Hinv(:,:,iH) = AbstractSystem.pseudoinv(obj.H(:,:,iH), 1e-12);
+      end
+            
+      V = nan(obj.m, obj.m, obj.n);
+      D = nan(obj.m, obj.m, obj.n);
+      J = nan(obj.m, obj.m, obj.n);
+      for iT = obj.n:-1:1
+        Zii = obj.Z(:,:,obj.tau.Z(iT));
+        iP = fOut.P(:,:,iT);
+
+        % TODO: This needs to be corrected for the exact initial. See DK p. 133.
+        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;
+        D(:,:,iT) = Hinv(:,:,obj.tau.H(iT)) * ...
+          (obj.H(:,:,obj.tau.H(iT)) - V(:,:,iT)) * ...
+          Hinv(:,:,obj.tau.H(iT));
+        
+        if computeJ
+          % TODO: Can we do this without the F inverses?
+          F = Zii * iP * Zii' + obj.H(:,:,obj.tau.H(iT));
+          K = obj.T(:,:,obj.tau.T(iT)) * iP * Zii' / F;
+          L = obj.T(:,:,obj.tau.T(iT)) - K * obj.Z(:,:,obj.tau.Z(iT));
+
+          J(:,:,iT) = iP * L' * (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
+        end
+      end
+    end
+    
+    function [smootherErr, smoothErrVar] = getGradientQuantities(obj, epsilon, V)
+      % Generate needed quantites for the gradient
+      
+      % See Durbin & Koopman  sec. 4.5.1 and 5.4
+      % We're generating u and D here.
+      % Based on \hat{epsilon} = H * u, back out u based on epsilon.
+      % Based on Var(alpha | Y_n) = V = H - H * D * H, back out D based on V. 
+      smootherErr = nan(obj.p, obj.n);
+      smoothErrVar = zeros(obj.p, obj.p, obj.n);
+      for iT = 1:obj.n
+        smootherErr(:,iT) = obj.H(:,:,obj.tau.H(iT)) \ epsilon(:,iT);
+%         smoothErrVar(:,:,iT) = diag(fOut.F(:,iT)) + ...
+%           fOut.K(:,:,iT)' * sOut.N(:,:,iT) * fOut.K(:,:,iT);
+      end
+    end
+    
     %% Filter/smoother/gradient mathematical methods
     function [a, logli, filterOut] = filter_m(obj, y)
       % Filter using exact initial conditions
       %
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
-      % Koopman & Durbin (2000). 
+      % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
               
       assert(isdiag(obj.H), 'Univarite only!');
       
@@ -492,12 +705,12 @@ classdef StateSpace < AbstractStateSpace
         Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
       end
       
-      r0 = r;
+      % Note: r0 = r;
       r1 = zeros(obj.m, fOut.dt+1);
       
       % Exact initial smoother
       for ii = fOut.dt:-1:1
-        r0ti = r0(:,ii+1);
+        r0ti = r(:,ii+1);
         r1ti = r1(:,ii+1);
         
         ind = flipud(find( ~isnan(y(:,ii)) ));
@@ -519,14 +732,14 @@ classdef StateSpace < AbstractStateSpace
             r0ti = Zjj' / fOut.F(jj,ii) * fOut.v(jj,ii) + Lstarti' * r0ti;
           end
         end
-        r0(:,ii) = r0ti;
+        r(:,ii) = r0ti;
         r1(:,ii) = r1ti;
         
         % What here needs tau_{ii+1}?
-        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r0(:,ii) + ...
+        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii) + ...
           fOut.Pd(:,:,ii) * r1(:,ii);
         
-        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r0(:,ii);
+        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
         
         r0ti = obj.T(:,:,obj.tau.T(ii))' * r0ti;
         r1ti = obj.T(:,:,obj.tau.T(ii))' * r1ti;
@@ -558,6 +771,109 @@ classdef StateSpace < AbstractStateSpace
       
       [alpha, eta, r, N, a0tilde] = mfss_mex.smoother_uni(y, ssStruct, fOut);
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
+    end
+    
+    function gradient = gradient_uni_m(obj, y, alpha, u, D, r, N, epsilon, V, J, G)
+      % Loglikelihood gradient calculation based on univariate smoother
+      %
+      % See Durbin & Koopman, sec. 7.3.3. 
+      % See Jungbacker, Koopman & van der Wel (2011), Appendix B.
+      
+      % The derivative of the likelihood with respect to a parameter matrix is
+      % denoted dldX for a parameter X. Also note the following name changes:
+      %   This function         JKV                             
+      %     V                     P_{t|n}
+      %     J                     P_{t+1,t|n}
+      %     d_t                   c_t
+      %     c_t                   d_t
+            
+%       assert(all(all(all(G.R == 0))), ...
+%         'JKV smoother gradient does not support estimated elements of R.');
+      
+      vec = @(M) reshape(M, [], 1);
+
+      % Precompute commonly used matricies
+      Rbar = nan(obj.g, obj.m, size(obj.R, 3));
+      for iR = 1:size(obj.R, 3)
+        Rbar(:,:,iR) = (obj.R(:,:,iR)' * obj.R(:,:,iR)) \ obj.R(:,:,iR)';
+      end
+      
+      Hinv = nan(obj.p, obj.p, size(obj.H, 3));
+      for iH = 1:size(obj.H, 3)
+        Hinv(:,:,iH) = AbstractSystem.pseudoinv(obj.H(:,:,iH), 1e-12);
+      end
+      
+      Qinv = nan(obj.g, obj.g, size(obj.Q, 3));
+      for iQ = 1:size(obj.Q, 3)
+        Qinv(:,:,iQ) = AbstractSystem.pseudoinv(obj.Q(:,:,iQ), 1e-12);
+      end
+      
+      [uniqueRows, rowSource, tauRQR] = unique([obj.tau.R obj.tau.Q], 'rows');
+      GRQR = nan(size(G.Q, 1), size(obj.R, 1).^2, max(tauRQR));
+      Nm = AbstractStateSpace.genCommutation(obj.m) + eye(obj.m.^2);
+      for iRQR = 1:max(tauRQR)
+        % See Nagakura (working paper)
+        itauR = uniqueRows(rowSource(iRQR), 1);
+        itauQ = uniqueRows(rowSource(iRQR), 2);
+        iR = obj.R(:,:,itauR);
+        
+        GRQR(:,:,iRQR) = G.R(:,:,itauR) * ...
+          kron(obj.Q(:,:,itauQ) * iR', eye(obj.m)) * Nm + ...
+          G.Q(:,:,itauQ) * kron(iR', iR');
+      end
+      
+      dldZ = zeros(size(obj.Z));
+      dldd = zeros(size(obj.d));
+      dldH = zeros(size(obj.H));
+      dldT = zeros(size(obj.T));
+      dldc = zeros(size(obj.c));
+      dldRQR = zeros(obj.m, obj.m);
+      for iT = 1:obj.n
+        % Observation equation gradients
+        Zii = obj.Z(:,:,obj.tau.Z(iT));
+        iHinv = Hinv(:,:,obj.tau.H(iT));
+
+        % Gradient of Z
+        MZ = alpha(:,iT) * alpha(:,iT)' + V(:,:,iT);
+        dldZ(:,:,obj.tau.Z(iT)) = dldZ(:,:,obj.tau.Z(iT)) + ...
+          iHinv * ((y(:,iT) - obj.d(:,obj.tau.d(iT))) * alpha(:,iT)' - Zii * MZ);
+        
+        % Gradient of d
+        dldd(:,:,obj.tau.d(iT)) = dldd(:,:,obj.tau.d(iT)) + ...
+          iHinv * epsilon(:,iT);
+        
+        % Gradient of H
+        dldH(:,:,obj.tau.H(iT)) = dldH(:,:,obj.tau.H(iT)) + ...
+          0.5 * (u(:,iT) * u(:,iT)' - D(:,:,iT));
+        
+        % State equation gradients - remember paramter tau timing is t+1
+        % Gradient of T
+        iQinv = Qinv(:,:,obj.tau.Q(iT+1));
+        iRbarQinvRbar = Rbar(:,:,obj.tau.R(iT+1))' * ...
+          iQinv * Rbar(:,:,obj.tau.R(iT+1));
+        
+        MT = alpha(:,iT+1) * alpha(:,iT)' + J(:,:,iT);
+        dldT(:,:,obj.tau.T(iT+1)) = dldT(:,:,obj.tau.T(iT+1)) + ...
+          iRbarQinvRbar * (MT - obj.T(:,:,obj.tau.T(iT+1)) * MZ);
+        
+        % Gradient of c
+        dldc(:,:,obj.tau.c(iT+1)) = dldc(:,:,obj.tau.c(iT+1)) + ...
+          iRbarQinvRbar * ...
+          (alpha(:,iT+1) - obj.T(:,:,obj.tau.T(iT+1)) * alpha(:,iT) - ...
+          obj.c(:,obj.tau.c(iT+1))); 
+        
+        % Gradient of R and Q
+        % Looping over 1:n-1 here
+        % Timing - r and N are actually lagged a period compared to any D&K
+        % writeup (r(:,obj.n) != 0), r(:,obj.n+1) = 0)). 
+%         if iT < obj.n
+          dldRQR(:,:,tauRQR(iT+1)) =  dldRQR(:,:,tauRQR(iT+1)) + ...
+            0.5 * (r(:,iT) * r(:,iT)' - N(:,:,iT));
+%         end
+      end
+      
+      gradient = G.Z * vec(dldZ) + G.d * vec(dldd) + G.H * vec(dldH) + ...
+        G.T * vec(dldT) + G.c * vec(dldc) + GRQR * vec(dldRQR);
     end
     
     function gradient = gradient_multi_filter_m(obj, y, G, fOut)
@@ -664,76 +980,90 @@ classdef StateSpace < AbstractStateSpace
       gradient = mfss_mex.gradient_multi(y, ssStruct, G, fOut);
     end
     
-    %% Initialization
-    function obj = setDefaultInitial(obj, reset)
-      % Set default a0 and P0.
-      % Run before filter/smoother after a0 & P0 inputs have been processed
+    %% Decomposition mathematical methods
+    function [alphaTweights, alphaTconstant] = smoother_weights(obj, y, fOut, sOut, decompPeriods)
+      % Generate weights (effectively via multivariate smoother) 
+      %
+      % Weights ordered (state, observation, data period, state effect period)
+      % Constant contributions are ordered (state, effect period)
       
-      if nargin < 2 
-        % Option to un-set initial values. 
-        reset = false;
-      end
-      if reset
-        obj.usingDefaulta0 = true;
-        obj.a0 = [];
-        obj.usingDefaultP0 = true;
-        obj.A0 = [];
-        obj.R0 = [];
-        obj.Q0 = [];
-      end        
+      % pre-allocate W(j,t) where a(:,t) = \sum_{j=1}^{t-1} W(j,t)*y(:,j)
+      alphaTweights = zeros(obj.m, obj.p, obj.n, length(decompPeriods)); 
+      alphaTconstant = zeros(obj.m, length(decompPeriods)); 
       
-      if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
-        % User provided a0 and P0.
-        return
-      end
+      eyeP = eye(obj.p);
+      genF = @(ind, iT) obj.Z(ind,:,obj.tau.Z(iT)) * fOut.P(:,:,iT) * obj.Z(ind,:,obj.tau.Z(iT))' ...
+        + obj.H(ind,ind,obj.tau.H(iT));
+      genK = @(indJJ, jT) obj.T(:,:,obj.tau.T(jT+1)) * fOut.P(:,:,jT) * ...
+            obj.Z(indJJ,:,obj.tau.Z(jT))' * AbstractSystem.pseudoinv(genF(indJJ,jT), 1e-12);
+      genL = @(ind, iT) obj.T(:,:,obj.tau.T(iT+1)) - ...
+        genK(ind,iT) * (eyeP(ind,:) * obj.Z(:,:,obj.tau.Z(iT)));
       
-      if isempty(obj.tau)
-        obj = obj.setInvariantTau();
-      end
+      wb = waitbar(0, 'Creating smoother weights.');
       
-      % Find stationary states and compute the unconditional mean and variance
-      % of them using the parts of T, c, R and Q. For the nonstationary states,
-      % set up the A0 selection matrix. 
-      [stationary, nonstationary] = obj.findStationaryStates();
-      
-      tempT = obj.T(stationary, stationary, obj.tau.T(1));
-      assert(all(abs(eig(tempT)) < 1));
-      
-      select = eye(obj.m);
-      mStationary = length(stationary);
-
-      if obj.usingDefaulta0
-        obj.a0 = zeros(obj.m, 1);
+      for iPer = 1:length(decompPeriods)
+        iT = decompPeriods(iPer);
+        ind = ~isnan(y(:,iT));
         
-        a0temp = (eye(mStationary) - tempT) \ obj.c(stationary, obj.tau.c(1));
-        obj.a0(stationary) = a0temp;
-      end
-      
-      if obj.usingDefaultP0
-        obj.A0 = select(:, nonstationary);
-        obj.R0 = select(:, stationary);
-        
-        tempR = obj.R(stationary, :, obj.tau.R(1));
-        tempQ = obj.Q(:, :, obj.tau.Q(1));
-        try
-          obj.Q0 = reshape((eye(mStationary^2) - kron(tempT, tempT)) \ ...
-            reshape(tempR * tempQ * tempR', [], 1), ...
-            mStationary, mStationary);
-        catch ex
-          % If the state is large, try making it sparse
-          if strcmpi(ex.identifier, 'MATLAB:array:SizeLimitExceeded')
-            tempT = sparse(tempT);
-            obj.Q0 = full(reshape((speye(mStationary^2) - kron(tempT, tempT)) \ ...
-              reshape(tempR * tempQ * tempR', [], 1), ...
-              mStationary, mStationary));
+        iL = genL(ind, iT);
+        lWeights = iL;
+        % Loop through t,t+1,...,n to calculate weights and constant adjustment for j >= t
+        for jT = iT:obj.n 
+          indJJ = ~isnan(y(:,jT));
+          Zjj = obj.Z(indJJ,:,obj.tau.Z(jT));
+          Kjj = genK(indJJ, jT); % fOut.K(:,indJJ,jT);
+          jL = genL(indJJ,jT);
+          
+          Finvjj = AbstractSystem.pseudoinv(genF(indJJ,jT), 1e-12);
+          % Slight alternative calculation for the boundary condition for j == t
+          if jT == iT
+            PFZKNL = fOut.P(:,:,jT) * (Finvjj * Zjj - ...
+              Kjj' * sOut.N(:,:,jT+1) * jL)';
+            
+            alphaTweights(:, indJJ, jT, iPer) = PFZKNL;            
+            alphaTconstant(:,iPer) = -PFZKNL * ...
+               obj.d(indJJ, obj.tau.d(jT)) + ...
+              (eye(obj.m) - fOut.P(:,:,jT) * sOut.N(:,:,jT)) * obj.c(:,obj.tau.c(jT));
           else
-            rethrow(ex);
+            % weight and constant adjustment calculations for j >> t
+            PL = fOut.P(:,:,iT) * lWeights;
+            PLFZKNL = PL * (Finvjj * Zjj - ...
+              Kjj' * sOut.N(:,:,jT+1) * jL)';
+            
+            alphaTweights(:,indJJ,jT,iPer) = PLFZKNL;
+            alphaTconstant(:,iPer) = alphaTconstant(:,iPer) - ...
+              PLFZKNL * obj.d(indJJ, obj.tau.d(jT)) - ...
+              PL * sOut.N(:,:,jT) * obj.c(:,obj.tau.c(jT));
+            lWeights = lWeights * jL';
           end
         end
         
+        if iT > 1
+          lWeights = (eye(obj.m) - fOut.P(:,:,iT) * sOut.N(:,:,iT));
+        end
+        % Loop through j = t-1,t-2,...,1 to calculate weights and constant adjustment for j < t
+        for jT = iT-1:-1:1
+          % find non-missing observations for time period "jj"
+          indJJ = ~isnan(y(:,jT));
+          jL = genL(ind,jT);
+
+          if iT > jT
+            lK =  lWeights * genK(indJJ,jT);
+            alphaTweights(:,indJJ,jT,iPer) = lK;
+            alphaTconstant(:,iPer) = alphaTconstant(:,iPer) + ...
+              lWeights * jL * obj.c(:,obj.tau.c(jT)) - ...
+              lK * obj.d(indJJ,obj.tau.d(jT));
+            lWeights = lWeights * jL;
+          end
+        end
+        
+        waitbar(iPer ./ length(decompPeriods), wb);
       end
+
+      delete(wb);
     end
     
+    %% Initialization
     function [stationary, nonstationary] = findStationaryStates(obj)
       % Find which states have stationary distributions given the T matrix.
       [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
@@ -752,7 +1082,8 @@ classdef StateSpace < AbstractStateSpace
     end
   end
   
-  methods (Static)
+  methods (Static, Hidden)
+    %% General Utility Methods
     function setSS = setAllParameters(ss, value)
       % Create a StateSpace with all paramters set to value
       
