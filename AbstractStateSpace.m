@@ -14,6 +14,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     tau               % Structure of time-varrying parameter indexes
     
     filterUni         % Use univarite filter if appropriate (H is diagonal)
+    
+    collapse          % Boolean option to collapse observation vector
   end
   
   properties (SetAccess = protected)
@@ -54,6 +56,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % Check if we can use the univariate filter
       slicesH = num2cell(obj.H, [1 2]);
       obj.filterUni = ~any(~cellfun(@isdiag, slicesH));
+      obj.collapse = false; %obj.p > obj.m;
     end
     
     %% Initialization

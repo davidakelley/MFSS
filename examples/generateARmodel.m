@@ -6,6 +6,9 @@ m = lags + 1;
 
 % Observation equation
 coefs = rand(p, 1);
+% Make sure they're all on the same scale (between 0.1 and 1, ish):
+coefs = coefs .* 10.^((floor(log10(coefs)) * -1)-1);
+
 Z = [coefs ./ coefs(1) zeros(p, lags)];
 d = zeros(p, 1);
 baseH = (rand(p, p) + (diag(3 + rand(p, 1)))) ./ 10;

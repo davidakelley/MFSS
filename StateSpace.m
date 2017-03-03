@@ -87,10 +87,7 @@ classdef StateSpace < AbstractStateSpace
     %% Constructor
     function obj = StateSpace(Z, d, H, T, c, R, Q)
       % StateSpace constructor
-      % Pass state parameters to construct new object (or pass a structure
-      % containing the neccessary parameters)
       obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
-      
       obj.validateStateSpace();
       
       % Check if we can use the univariate filter
@@ -103,49 +100,37 @@ classdef StateSpace < AbstractStateSpace
       % FILTER Estimate the filtered state
       % 
       % a = StateSpace.FILTER(y) returns the filtered state given the data y. 
-      %
-      % a = StateSpace.FILTER(y, a0) 
-      % a = StateSpace.FILTER(y, a0, P0) returns the filtered state given the 
-      % data y and initial state estimates a0 and P0. 
-      %
       % [a, logli] = StateSpace.FILTER(...) also returns the log-likelihood of
       % the data. 
-      % [a, logli, filterOut] = StateSpace.FILTER(...) returns an additional
-      % structure of intermediate computations useful in other functions. 
+      % [a, logli, filterOut] = StateSpace.FILTER(...) returns additional
+      % quantities computed in the filtered state calculation.
       
-      % Make sure data matches observation dimensions
-      obj.validateKFilter();
-      obj = obj.checkSample(y);
-      
-      % Set initial values
-      obj = setDefaultInitial(obj);
-
-      % Handle multivariate series
-      [obj, y] = obj.factorMultivariate(y);
-      
+      [obj, y, logliH] = prepareFilter(obj, y);
+      assert(~any(obj.H(1:obj.p+1:end) < 0), 'Negative error variance.');
+ 
       % Call the filter
       if obj.useMex
-        [a, logli, filterOut] = obj.filter_mex(y);
+        [a, logliL, filterOut] = obj.filter_mex(y);
       else
-        [a, logli, filterOut] = obj.filter_m(y);
+        [a, logliL, filterOut] = obj.filter_m(y);
       end
+      
+      logli = logliL + logliH;
     end
     
-    function [alpha, smootherOut] = smooth(obj, y)
-      % Estimate the smoothed state
+    function [alpha, smootherOut, filterOut] = smooth(obj, y)
+      % SMOOTH Estimate the smoothed state
+      % 
+      % alpha = StateSpace.SMOOTH(y) returns the smoothed state given the data y. 
+      % [alpha, smootherOut] = StateSpace.SMOOTH(...) also returns additional 
+      % quantities computed in the smoothed state calculation. 
+      % [alpha, smootherOut, filterOut] = StateSpace.SMOOTH(...) returns 
+      % additional quantities computed in the filtered state calculation.
+        
+      [obj, y, logliH] = prepareFilter(obj, y);
       
-      % Make sure data matches observation dimensions
-      obj.validateKFilter();
-      obj = obj.checkSample(y);
-      
-      % Set initial values
-      obj = setDefaultInitial(obj);
-
-      % Handle multivariate series
-      [obj, y] = obj.factorMultivariate(y);
-
       % Get the filtered estimates for use in the smoother
-      [~, logli, filterOut] = obj.filter(y);
+      [~, logliL, filterOut] = obj.filter(y);
       
       % Determine which version of the smoother to run
       if obj.useMex
@@ -154,7 +139,7 @@ classdef StateSpace < AbstractStateSpace
         [alpha, smootherOut] = obj.smoother_m(y, filterOut);
       end
       
-      smootherOut.logli = logli;
+      smootherOut.logli = logliL + logliH;
     end
     
     function [logli, gradient] = gradient(obj, y, tm, theta)
@@ -191,6 +176,26 @@ classdef StateSpace < AbstractStateSpace
   
   methods (Hidden)
     %% Filter/smoother Helper Methods
+    function [obj, y, logliH] = prepareFilter(obj, y)
+      % Make sure data matches observation dimensions
+      obj.validateKFilter();
+      obj = obj.checkSample(y);
+      
+      % Collapse by transformation
+      if obj.collapse
+        % ssH = obj; yH = y;
+        [obj, y, logliH] = obj.collapseByTransform(y);
+      else
+        logliH = 0;
+      end
+      
+      % Set initial values
+      obj = setDefaultInitial(obj);
+
+      % Handle multivariate series
+      [obj, y] = obj.factorMultivariate(y);
+    end
+    
     function obj = checkSample(obj, y)
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
@@ -239,13 +244,92 @@ classdef StateSpace < AbstractStateSpace
         'parameters, see StateSpaceEstimation']);
     end
     
-    function [ssUni, y, factorC] = factorMultivariate(obj, y)
+    function [ssC, yL, llH] = collapseByTransform(obj, y)
+
+      % See Jungbacker & Koopman (2014)
+      newP = max(arrayfun(@(x) rank(obj.Z(:,:,x)), 1:size(obj.Z,3)));
+      [originTaus, ~, tauC] = unique([obj.tau.Z obj.tau.H], 'rows');
+      newTauZ = originTaus(tauC, 1);
+      newTauH = originTaus(tauC, 2);
+      
+      AL = zeros(newP, obj.p, max(tauC));
+      collapseErrors = zeros(obj.p, obj.p, max(tauC));
+      Hinv = zeros(obj.p, obj.p, max(tauC));
+      logDetH = nan(max(tauC), 1);
+      
+      % Compute collapse matrix A^L
+      warning off MATLAB:nearlySingularMatrix
+      for iC = 1:max(tauC)
+        Zii = obj.Z(:,:,obj.tau.Z(originTaus(iC, 1)));
+        [Hinv(:,:,iC), logDetH(iC)] = AbstractSystem.pseudoinv(obj.H(:,:,obj.tau.H(originTaus(iC, 2))), 1e-12);
+        Hinvii = Hinv(:,:,iC);
+        
+        C = Zii' * Hinvii * Zii;
+        % C = eye(newP);
+        % FIXME: is this selecting Z correctly?
+        Zdag = Zii * pinv(C);
+        Zdag = Zdag(:,1:newP, iC);
+        AL(:,:,iC) = Zdag' * Hinvii;
+        
+        collapseErrors(:,:,iC) = eye(obj.p) - Zdag * ...
+          AbstractSystem.pseudoinv(Zdag' * Hinvii * Zdag, 1e-12) * Zdag' * Hinvii;
+      end
+     
+      warning on MATLAB:nearlySingularMatrix
+        
+      % Calculate collapsed system matricies
+      newZmat = zeros(newP, obj.m, max(obj.tau.Z));
+      for iZ = 1:max(obj.tau.Z)
+        newZmat(:,:,iZ) = AL(:,:,originTaus(iZ,1)) * obj.Z(:,:,obj.tau.Z(iZ));
+      end
+      newZ = struct('Zt', newZmat, 'tauZ', newTauZ);
+
+      [originTaud, ~, newTaud] = unique([obj.tau.d, tauC], 'rows');
+      newdmat = zeros(newP, 1, max(obj.tau.d));
+      for id = 1:max(obj.tau.d)
+        newdmat(:,:,id) = AL(:,:,originTaud(id,2)) * obj.d(:,:,obj.tau.d(id));
+      end
+      newd = struct('dt', newdmat, 'taud', newTaud);
+
+      newHmat = zeros(newP, newP, max(obj.tau.H));
+      logDetNewH = zeros(max(obj.tau.H), 1);
+      for iH = 1:max(obj.tau.H)
+        iAL = AL(:,:,originTaus(iH,2));
+        newHmat(:,:,iH) = iAL * obj.H(:,:,obj.tau.H(iH)) * iAL';
+        % FIXME: there has to be something more efficient in Magnus. 
+        logDetNewH(iH) = AbstractSystem.cauchyBinet(iAL * chol(obj.H(:,:,obj.tau.H(iH)), 'lower'));
+      end
+      newH = struct('Ht', newHmat, 'tauH', newTauH);      
+      
+      % Use same matricies for the state since they don't see the collapse
+      [~, ~, ~, T, c, R, Q] = obj.getInputParameters();
+
+      ssC = StateSpace(newZ, newd, newH, T, c, R, Q);
+      
+      % Collapse data
+      % FIXME: This should also do the univariate transform
+      n = size(y, 2);
+      yL = nan(newP, n);
+      LogLH = nan(n, 1);
+      for iT = 1:n
+        yL(:,iT) = AL(:,:,tauC(iT)) * y(:,iT);
+        
+        % Compute likelihood adjustment term from collapse errors
+        e = collapseErrors(:,:,tauC(iT)) * y(:,iT);
+        LogLH(iT) = logDetH(obj.tau.H(iT)) - logDetNewH(newTauH(iT)) + ...
+          e' * Hinv(:,:,obj.tau.H(iT)) * e;
+      end
+      llH = -0.5 * sum(LogLH);
+    end
+    
+    function [ssUni, yUni, factorC] = factorMultivariate(obj, y)
       % Compute new Z and H matricies so the univariate treatment can be applied
       
       % If it's already diagonal, do nothing
       if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj,3))
         ssUni = obj;
         ssUni.filterUni = true;
+        yUni = y;
         return
       end
       
@@ -261,12 +345,13 @@ classdef StateSpace < AbstractStateSpace
         ind = logical(obsPattern(iH, :));
         [factorC(ind,ind,iH), newHmat(ind,ind,iH)] = ldl(obj.H(ind,ind,oldTauH(iH)), 'lower');
       end
-      newH = struct('Ht', newHmat, 'tauH', newTauH);      
+      newH = struct('Ht', abs(newHmat), 'tauH', newTauH);      
       
+      yUni = nan(size(y));
+      inds = logical(obsPattern(newTauH, :));
       for iT = 1:size(y,2)
         % Transform observations
-        ind = logical(obsPattern(newTauH(iT),:));
-        y(ind,iT) = factorC(ind,ind,newTauH(iT)) * y(ind,iT);
+        yUni(inds(iT,:),iT) = factorC(inds(iT,:),inds(iT,:),newTauH(iT)) * y(inds(iT,:),iT);
       end
       
       % We may need to create more slices of Z. 
@@ -297,18 +382,7 @@ classdef StateSpace < AbstractStateSpace
       end
       newd = struct('dt', newdmat, 'taud', newTaud);
       
-      % State matricies
-      if ~isempty(obj.tau)
-        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
-        c = struct('ct', obj.c, 'tauc', obj.tau.c);
-        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
-        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
-      else
-        T = obj.T;
-        c = obj.c;
-        R = obj.R;
-        Q = obj.Q;
-      end
+      [~, ~, ~, T, c, R, Q] = obj.getInputParameters();
       
       ssUni = StateSpace(newZ, newd, newH, T, c, R, Q);
       
@@ -749,6 +823,31 @@ classdef StateSpace < AbstractStateSpace
       assert(all(abs(eig(obj.T(stationary,stationary,1))) < 1), ...
         ['Stationary section of T isn''t actually stationary. \n' ... 
         'Likely development error.']);
+    end
+    
+    %% General utilities
+    function [Z, d, H, T, c, R, Q] = getInputParameters(obj)
+      % Get parameters to input to constructor
+      
+      if ~isempty(obj.tau)
+        Z = struct('Tt', obj.Z, 'tauT', obj.tau.Z);
+        d = struct('ct', obj.d, 'tauc', obj.tau.d);
+        H = struct('Rt', obj.H, 'tauR', obj.tau.H);
+        
+        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
+        c = struct('ct', obj.c, 'tauc', obj.tau.c);
+        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
+        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
+      else
+        Z = obj.Z;
+        d = obj.d;
+        H = obj.H;
+        
+        T = obj.T;
+        c = obj.c;
+        R = obj.R;
+        Q = obj.Q;
+      end
     end
   end
   
