@@ -87,7 +87,15 @@ classdef StateSpace < AbstractStateSpace
     %% Constructor
     function obj = StateSpace(Z, d, H, T, c, R, Q)
       % StateSpace constructor
-      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
+      if nargin == 0
+        superArgs = {};
+      else
+        superArgs = {Z, d, H, T, c, R, Q};
+      end
+      obj = obj@AbstractStateSpace(superArgs{:});
+      if nargin == 0
+        return;
+      end
       obj.validateStateSpace();
       
       % Check if we can use the univariate filter
@@ -105,17 +113,15 @@ classdef StateSpace < AbstractStateSpace
       % [a, logli, filterOut] = StateSpace.FILTER(...) returns additional
       % quantities computed in the filtered state calculation.
       
-      [obj, y, logliH] = prepareFilter(obj, y);
+      [obj, y] = prepareFilter(obj, y);
       assert(~any(obj.H(1:obj.p+1:end) < 0), 'Negative error variance.');
  
       % Call the filter
       if obj.useMex
-        [a, logliL, filterOut] = obj.filter_mex(y);
+        [a, logli, filterOut] = obj.filter_mex(y);
       else
-        [a, logliL, filterOut] = obj.filter_m(y);
+        [a, logli, filterOut] = obj.filter_m(y);
       end
-      
-      logli = logliL + logliH;
     end
     
     function [alpha, smootherOut, filterOut] = smooth(obj, y)
@@ -127,10 +133,10 @@ classdef StateSpace < AbstractStateSpace
       % [alpha, smootherOut, filterOut] = StateSpace.SMOOTH(...) returns 
       % additional quantities computed in the filtered state calculation.
         
-      [obj, y, logliH] = prepareFilter(obj, y);
+      [obj, y] = prepareFilter(obj, y);
       
       % Get the filtered estimates for use in the smoother
-      [~, logliL, filterOut] = obj.filter(y);
+      [~, logli, filterOut] = obj.filter(y);
       
       % Determine which version of the smoother to run
       if obj.useMex
@@ -139,7 +145,7 @@ classdef StateSpace < AbstractStateSpace
         [alpha, smootherOut] = obj.smoother_m(y, filterOut);
       end
       
-      smootherOut.logli = logliL + logliH;
+      smootherOut.logli = logli;
     end
     
     function [logli, gradient] = gradient(obj, y, tm, theta)
@@ -176,18 +182,10 @@ classdef StateSpace < AbstractStateSpace
   
   methods (Hidden)
     %% Filter/smoother Helper Methods
-    function [obj, y, logliH] = prepareFilter(obj, y)
+    function [obj, y] = prepareFilter(obj, y)
       % Make sure data matches observation dimensions
       obj.validateKFilter();
       obj = obj.checkSample(y);
-      
-      % Collapse by transformation
-      if obj.collapse
-        % ssH = obj; yH = y;
-        [obj, y, logliH] = obj.collapseByTransform(y);
-      else
-        logliH = 0;
-      end
       
       % Set initial values
       obj = setDefaultInitial(obj);
@@ -242,84 +240,6 @@ classdef StateSpace < AbstractStateSpace
       assert(~any(cellfun(@(x) any(any(any(isnan(x)))), obj.parameters)), ...
         ['All parameter values must be known. To estimate unknown '...
         'parameters, see StateSpaceEstimation']);
-    end
-    
-    function [ssC, yL, llH] = collapseByTransform(obj, y)
-
-      % See Jungbacker & Koopman (2014)
-      newP = max(arrayfun(@(x) rank(obj.Z(:,:,x)), 1:size(obj.Z,3)));
-      [originTaus, ~, tauC] = unique([obj.tau.Z obj.tau.H], 'rows');
-      newTauZ = originTaus(tauC, 1);
-      newTauH = originTaus(tauC, 2);
-      
-      AL = zeros(newP, obj.p, max(tauC));
-      collapseErrors = zeros(obj.p, obj.p, max(tauC));
-      Hinv = zeros(obj.p, obj.p, max(tauC));
-      logDetH = nan(max(tauC), 1);
-      
-      % Compute collapse matrix A^L
-      warning off MATLAB:nearlySingularMatrix
-      for iC = 1:max(tauC)
-        Zii = obj.Z(:,:,obj.tau.Z(originTaus(iC, 1)));
-        [Hinv(:,:,iC), logDetH(iC)] = AbstractSystem.pseudoinv(obj.H(:,:,obj.tau.H(originTaus(iC, 2))), 1e-12);
-        Hinvii = Hinv(:,:,iC);
-        
-        C = Zii' * Hinvii * Zii;
-        % C = eye(newP);
-        % FIXME: is this selecting Z correctly?
-        Zdag = Zii * pinv(C);
-        Zdag = Zdag(:,1:newP, iC);
-        AL(:,:,iC) = Zdag' * Hinvii;
-        
-        collapseErrors(:,:,iC) = eye(obj.p) - Zdag * ...
-          AbstractSystem.pseudoinv(Zdag' * Hinvii * Zdag, 1e-12) * Zdag' * Hinvii;
-      end
-     
-      warning on MATLAB:nearlySingularMatrix
-        
-      % Calculate collapsed system matricies
-      newZmat = zeros(newP, obj.m, max(obj.tau.Z));
-      for iZ = 1:max(obj.tau.Z)
-        newZmat(:,:,iZ) = AL(:,:,originTaus(iZ,1)) * obj.Z(:,:,obj.tau.Z(iZ));
-      end
-      newZ = struct('Zt', newZmat, 'tauZ', newTauZ);
-
-      [originTaud, ~, newTaud] = unique([obj.tau.d, tauC], 'rows');
-      newdmat = zeros(newP, 1, max(obj.tau.d));
-      for id = 1:max(obj.tau.d)
-        newdmat(:,:,id) = AL(:,:,originTaud(id,2)) * obj.d(:,:,obj.tau.d(id));
-      end
-      newd = struct('dt', newdmat, 'taud', newTaud);
-
-      newHmat = zeros(newP, newP, max(obj.tau.H));
-      logDetNewH = zeros(max(obj.tau.H), 1);
-      for iH = 1:max(obj.tau.H)
-        iAL = AL(:,:,originTaus(iH,2));
-        newHmat(:,:,iH) = iAL * obj.H(:,:,obj.tau.H(iH)) * iAL';
-        % FIXME: there has to be something more efficient in Magnus. 
-        logDetNewH(iH) = AbstractSystem.cauchyBinet(iAL * chol(obj.H(:,:,obj.tau.H(iH)), 'lower'));
-      end
-      newH = struct('Ht', newHmat, 'tauH', newTauH);      
-      
-      % Use same matricies for the state since they don't see the collapse
-      [~, ~, ~, T, c, R, Q] = obj.getInputParameters();
-
-      ssC = StateSpace(newZ, newd, newH, T, c, R, Q);
-      
-      % Collapse data
-      % FIXME: This should also do the univariate transform
-      n = size(y, 2);
-      yL = nan(newP, n);
-      LogLH = nan(n, 1);
-      for iT = 1:n
-        yL(:,iT) = AL(:,:,tauC(iT)) * y(:,iT);
-        
-        % Compute likelihood adjustment term from collapse errors
-        e = collapseErrors(:,:,tauC(iT)) * y(:,iT);
-        LogLH(iT) = logDetH(obj.tau.H(iT)) - logDetNewH(newTauH(iT)) + ...
-          e' * Hinv(:,:,obj.tau.H(iT)) * e;
-      end
-      llH = -0.5 * sum(LogLH);
     end
     
     function [ssUni, yUni, factorC] = factorMultivariate(obj, y)
@@ -399,7 +319,7 @@ classdef StateSpace < AbstractStateSpace
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
       % Koopman & Durbin (2000). 
               
-      assert(isdiag(obj.H), 'Univarite only!');
+      assert(all(arrayfun(@(iH) isdiag(obj.H(:,:,iH)), 1:size(obj.H, 3))), 'Univarite only!');
       
       % Preallocate
       % Note Pd is the "diffuse" P matrix (P_\infty).

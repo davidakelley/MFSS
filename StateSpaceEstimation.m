@@ -39,7 +39,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     fminsearchMaxIter = 500;
   end
   
-  properties (Hidden=true)
+  properties (Hidden=true, Transient=true)
     progressWin
   end
   
@@ -129,8 +129,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'FunctionTolerance', obj.tol, ...
         'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
-        'OutputFcn', @outfun, ...
-        'TolCon', 0);
+        'TolCon', 0, ...
+        'OutputFcn', @outfun);
       
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
@@ -380,11 +380,15 @@ classdef StateSpaceEstimation < AbstractStateSpace
           rawGradient = [];
         end
         
-        saveLogli = getappdata(obj.progressWin, 'logli');
-        if isempty(saveLogli) || rawLogli > saveLogli
-          setappdata(obj.progressWin, 'logli', rawLogli);
-          setappdata(obj.progressWin, 'a', a);
+        % Put filtered state in figure for plotting
+        if ~isempty(obj.progressWin)
+          saveLogli = getappdata(obj.progressWin, 'logli');
+          if isempty(saveLogli) || rawLogli > saveLogli
+            setappdata(obj.progressWin, 'logli', rawLogli);
+            setappdata(obj.progressWin, 'a', a);
+          end
         end
+        
       catch
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
@@ -503,7 +507,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
     function stop = sseplotpoint(x, ~, state, varargin)
       stop = false;
       
-      persistent plotx
       if strcmpi(state, 'setup')
         axPt = varargin{2};
         
@@ -528,6 +531,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         return
       end
       
+      plotx = findobj('Tag', 'sseplotx');
       set(plotx,'Ydata',x);
     end
     
@@ -543,7 +547,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
       iter = varargin{1};
       currentColor = [mod(iter, 2), 0, 1];
       
-      persistent plotfval
       if strcmpi(state, 'setup')
         axH = varargin{2};
         
@@ -559,6 +562,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         return
       end
       
+      plotfval = findobj('Tag', 'sseplotfval');
+
       iteration = optimValues.iteration;
       llval = -optimValues.fval;
       
@@ -585,8 +590,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
         oldline.Marker = 'none';
         oldline.LineStyle = '-';
         oldline.Color = currentColor;
+        oldline.Tag = '';
         
-        set(plotfval,'Xdata',[], 'Ydata',[]);
+        set(plotfval, 'Xdata',[], 'Ydata',[]);
       end      
     end
     

@@ -746,6 +746,10 @@ classdef ThetaMap < AbstractSystem
       % We don't need to worry about symmetric matricies here since the index
       % matricies should be symmetric as well at this point.
       freeValues = find(logical(obj.index.(matName)));
+      if isempty(freeValues)
+        return
+      end
+      
       for jF = freeValues'
         jTrans = obj.transformations{obj.transformationIndex.(matName)(jF)};
         jTheta = theta(obj.index.(matName)(jF));
