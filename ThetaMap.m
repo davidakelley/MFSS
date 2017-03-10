@@ -712,6 +712,27 @@ classdef ThetaMap < AbstractSystem
       obj = obj.validateThetaMap();
       
     end
+    
+    function thetaStr = paramString(obj)
+      % Create a cell vector of which parameter each theta element influences
+      
+      % Find parameters affected
+      thetaStr  = cell(obj.nTheta, 1);
+      params = obj.fixed.systemParam;
+      matParam = repmat({''}, [obj.nTheta, length(params)]);
+      for iP = 1:length(params)
+        indexes = obj.index.(params{iP});
+        matParam(indexes(indexes~=0), iP) = repmat(params(iP), [sum(indexes(:)~=0), 1]);
+      end
+      
+      % Combine into cell of strings
+      for iT = 1:obj.nTheta
+        goodStrs = matParam(iT,:);
+        goodStrs(cellfun(@isempty, goodStrs)) = [];
+        thetaStr{iT} = strjoin(goodStrs, ', ');
+      end
+    end
+      
   end
   
   methods (Hidden)
@@ -725,6 +746,10 @@ classdef ThetaMap < AbstractSystem
       % We don't need to worry about symmetric matricies here since the index
       % matricies should be symmetric as well at this point.
       freeValues = find(logical(obj.index.(matName)));
+      if isempty(freeValues)
+        return
+      end
+      
       for jF = freeValues'
         jTrans = obj.transformations{obj.transformationIndex.(matName)(jF)};
         jTheta = theta(obj.index.(matName)(jF));

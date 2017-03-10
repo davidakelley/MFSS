@@ -87,10 +87,15 @@ classdef StateSpace < AbstractStateSpace
     %% Constructor
     function obj = StateSpace(Z, d, H, T, c, R, Q)
       % StateSpace constructor
-      % Pass state parameters to construct new object (or pass a structure
-      % containing the neccessary parameters)
-      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
-      
+      if nargin == 0
+        superArgs = {};
+      else
+        superArgs = {Z, d, H, T, c, R, Q};
+      end
+      obj = obj@AbstractStateSpace(superArgs{:});
+      if nargin == 0
+        return;
+      end
       obj.validateStateSpace();
       
       % Check if we can use the univariate filter
@@ -103,11 +108,6 @@ classdef StateSpace < AbstractStateSpace
       % FILTER Estimate the filtered state
       % 
       % a = StateSpace.FILTER(y) returns the filtered state given the data y. 
-      %
-      % a = StateSpace.FILTER(y, a0) 
-      % a = StateSpace.FILTER(y, a0, P0) returns the filtered state given the 
-      % data y and initial state estimates a0 and P0. 
-      %
       % [a, logli] = StateSpace.FILTER(...) also returns the log-likelihood of
       % the data. 
       % [a, logli, filterOut] = StateSpace.FILTER(...) returns an additional
@@ -115,6 +115,8 @@ classdef StateSpace < AbstractStateSpace
       
       [obj, y] = obj.prepareFilter(y);
       
+      assert(~any(obj.H(1:obj.p+1:end) < 0), 'Negative error variance.');
+ 
       % Call the filter
       if obj.useMex
         [a, logli, filterOut] = obj.filter_mex(y);
@@ -124,10 +126,14 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [alpha, smootherOut, filterOut] = smooth(obj, y)
-      % Estimate the smoothed state
-      
-      [obj, y] = obj.prepareFilter(y);
-
+      % SMOOTH Estimate the smoothed state
+      % 
+      % alpha = StateSpace.SMOOTH(y) returns the smoothed state given the data y. 
+      % [alpha, smootherOut] = StateSpace.SMOOTH(...) also returns additional 
+      % quantities computed in the smoothed state calculation. 
+      % [alpha, smootherOut, filterOut] = StateSpace.SMOOTH(...) returns 
+      % additional quantities computed in the filtered state calculation.
+        
       % Get the filtered estimates for use in the smoother
       [~, logli, filterOut] = obj.filter(y);
       
@@ -295,6 +301,18 @@ classdef StateSpace < AbstractStateSpace
   
   methods (Hidden)
     %% Filter/smoother Helper Methods
+    function [obj, y] = prepareFilter(obj, y)
+      % Make sure data matches observation dimensions
+      obj.validateKFilter();
+      obj = obj.checkSample(y);
+      
+      % Set initial values
+      obj = setDefaultInitial(obj);
+
+      % Handle multivariate series
+      [obj, y] = obj.factorMultivariate(y);
+    end
+    
     function obj = checkSample(obj, y)
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
@@ -343,13 +361,14 @@ classdef StateSpace < AbstractStateSpace
         'parameters, see StateSpaceEstimation']);
     end
     
-    function [ssUni, y, factorC] = factorMultivariate(obj, y)
+    function [ssUni, yUni, factorC] = factorMultivariate(obj, y)
       % Compute new Z and H matricies so the univariate treatment can be applied
       
       % If H is already diagonal, do nothing
       if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj,3))
         ssUni = obj;
         ssUni.filterUni = true;
+        yUni = y;
         return
       end
       
@@ -366,12 +385,13 @@ classdef StateSpace < AbstractStateSpace
         [factorC(ind,ind,iH), newHmat(ind,ind,iH)] = ldl(obj.H(ind,ind,oldTauH(iH)), 'lower');
         assert(isdiag(newHmat(ind,ind,iH)), 'ldl returned non-diagonal d matrix.');
       end
-      newH = struct('Ht', newHmat, 'tauH', newTauH);      
+      newH = struct('Ht', abs(newHmat), 'tauH', newTauH);      
       
+      yUni = nan(size(y));
+      inds = logical(obsPattern(newTauH, :));
       for iT = 1:size(y,2)
         % Transform observations
-        ind = logical(obsPattern(newTauH(iT),:));
-        y(ind,iT) = factorC(ind,ind,newTauH(iT)) * y(ind,iT);
+        yUni(inds(iT,:),iT) = factorC(inds(iT,:),inds(iT,:),newTauH(iT)) * y(inds(iT,:),iT);
       end
       
       % We may need to create more slices of Z. 
@@ -402,18 +422,7 @@ classdef StateSpace < AbstractStateSpace
       end
       newd = struct('dt', newdmat, 'taud', newTaud);
       
-      % State matricies
-      if ~isempty(obj.tau)
-        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
-        c = struct('ct', obj.c, 'tauc', obj.tau.c);
-        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
-        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
-      else
-        T = obj.T;
-        c = obj.c;
-        R = obj.R;
-        Q = obj.Q;
-      end
+      [~, ~, ~, T, c, R, Q] = obj.getInputParameters();
       
       ssUni = StateSpace(newZ, newd, newH, T, c, R, Q);
       
@@ -421,18 +430,6 @@ classdef StateSpace < AbstractStateSpace
       P0 = obj.R0 * obj.Q0 * obj.R0';
       P0(obj.A0 * obj.A0' == 1) = Inf;
       ssUni = ssUni.setInitial(obj.a0, P0);
-    end
-    
-    function [obj, y] = prepareFilter(obj, y)
-      % Make sure data matches observation dimensions
-      obj.validateKFilter();
-      obj = obj.checkSample(y);
-      
-      % Set initial values
-      obj = setDefaultInitial(obj);
-
-      % Handle multivariate series
-      [obj, y] = obj.factorMultivariate(y);
     end
     
     function [obsErr, stateErr] = getErrors(obj, y, state, a0)
@@ -538,7 +535,7 @@ classdef StateSpace < AbstractStateSpace
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
       % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
               
-      assert(isdiag(obj.H), 'Univarite only!');
+      assert(all(arrayfun(@(iH) isdiag(obj.H(:,:,iH)), 1:size(obj.H, 3))), 'Univarite only!');
       
       % Preallocate
       % Note Pd is the "diffuse" P matrix (P_\infty).
@@ -1079,6 +1076,31 @@ classdef StateSpace < AbstractStateSpace
       assert(all(abs(eig(obj.T(stationary,stationary,1))) < 1), ...
         ['Stationary section of T isn''t actually stationary. \n' ... 
         'Likely development error.']);
+    end
+    
+    %% General utilities
+    function [Z, d, H, T, c, R, Q] = getInputParameters(obj)
+      % Get parameters to input to constructor
+      
+      if ~isempty(obj.tau)
+        Z = struct('Tt', obj.Z, 'tauT', obj.tau.Z);
+        d = struct('ct', obj.d, 'tauc', obj.tau.d);
+        H = struct('Rt', obj.H, 'tauR', obj.tau.H);
+        
+        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
+        c = struct('ct', obj.c, 'tauc', obj.tau.c);
+        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
+        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
+      else
+        Z = obj.Z;
+        d = obj.d;
+        H = obj.H;
+        
+        T = obj.T;
+        c = obj.c;
+        R = obj.R;
+        Q = obj.Q;
+      end
     end
   end
   

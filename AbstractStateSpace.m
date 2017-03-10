@@ -41,10 +41,12 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % Constructor
       % Inputs: Parameters matricies or a structure of parameters
       if nargin == 1
-        % Structure of parameter values was passed, contains all parameters
+        % Structure of parameter values or AbstractStateSpace object passed
         parameters = Z;
       elseif nargin == 7
         parameters = obj.compileStruct(Z, d, H, T, c, R, Q);
+      elseif nargin == 0
+        return;
       else
         error('Input error.');
       end
@@ -171,6 +173,11 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % space model. Furthermore, by allowing each system matrix/vector to have
       % its own calendar, no redundant matrices are saved in the workspace.
       
+      if isa(parameters, 'StateSpace')
+        [pZ, pd, pH, pT, pc, pR, pQ] = parameters.getInputParameters();
+        parameters = struct('Z', pZ, 'd', pd, 'H', pH, ...
+          'T', pT, 'c', pc, 'R', pR, 'Q', pQ);
+      end
       structParams = structfun(@isstruct, parameters);
       
       if ~any(structParams)
