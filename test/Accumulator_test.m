@@ -19,7 +19,8 @@ classdef Accumulator_test < matlab.unittest.TestCase
   methods(TestClassSetup)
     function setupOnce(testCase)
       % Factor model data
-      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
+      fileName = mfilename('fullpath');
+      baseDir =  [subsref(strsplit(fileName, 'MFSS'), ...
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));

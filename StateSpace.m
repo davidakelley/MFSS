@@ -134,6 +134,8 @@ classdef StateSpace < AbstractStateSpace
       % [alpha, smootherOut, filterOut] = StateSpace.SMOOTH(...) returns 
       % additional quantities computed in the filtered state calculation.
         
+      [obj, y] = obj.prepareFilter(y);
+
       % Get the filtered estimates for use in the smoother
       [~, logli, filterOut] = obj.filter(y);
       
@@ -151,11 +153,14 @@ classdef StateSpace < AbstractStateSpace
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
       
-      % Most of the prepareFilter function:
-      obj.validateKFilter();
+      [ssUni, yUni, factorC] = obj.prepareFilter(y);
+      
+      % Most of the prepareFilter function: 
+      ssUni.validateKFilter();
+      ssUni = ssUni.checkSample(y);
       obj = obj.checkSample(y);
-      obj = setDefaultInitial(obj);
-
+      ssUni = setDefaultInitial(ssUni);
+      
       assert(isa(tm, 'ThetaMap'));
       if nargin < 4
         theta = tm.system2theta(obj);
@@ -165,21 +170,25 @@ classdef StateSpace < AbstractStateSpace
       G = tm.parameterGradients(theta);
       [G.a0, G.P0] = tm.initialValuesGradients(theta, G);
       
-      [alpha, sOut, fOut] = obj.smooth(y);
+      [alpha, sOut, fOut] = ssUni.smooth(yUni);
       logli = sOut.logli;
       
-%       e = obj.getErrors(y, fOut.a(:,1:obj.n));
+      fOutNew = adjustUniOut(obj, fOut, factorC);
+      
+      % We didn't factor multivariate, so we need to get the unfactored errors
+      % For v we can either do the subtraction using the filtered state or
+      % premultiply fOut.v by factorC.
+      % v = obj.getErrors(y, fOut.a(:,1:ssUni.n));
+      
       epsilon = obj.getErrors(y, alpha);
-      [V, D, J] = obj.getErrorVariances(fOut, sOut);
-%       u = sOut.alpha - fOut.a(:,1:obj.n);
-      [u, D] = obj.getGradientQuantities(epsilon, sOut);
-%       u3 = epsilon - e;
+      [V, J, D] = ssUni.getErrorVariances(fOutNew, sOut, factorC);
+      u = obj.getGradientQuantities(epsilon);
       
       % Stick the last filtered estimate on the end of alpha since we'll need
       % \hat{alpha}_{t+1|T}
       alpha = [alpha fOut.a(:,end)]; 
       
-      gradient = obj.gradient_uni_m(y, alpha, u, D, sOut.r, sOut.N, epsilon, V, J, G);        
+      gradient = obj.gradient_uni_m(y, alpha, u, D, sOut.r, sOut.N, epsilon, V, J, G);
     end
     
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
@@ -301,7 +310,7 @@ classdef StateSpace < AbstractStateSpace
   
   methods (Hidden)
     %% Filter/smoother Helper Methods
-    function [obj, y] = prepareFilter(obj, y)
+    function [obj, y, factorC] = prepareFilter(obj, y)
       % Make sure data matches observation dimensions
       obj.validateKFilter();
       obj = obj.checkSample(y);
@@ -310,7 +319,7 @@ classdef StateSpace < AbstractStateSpace
       obj = setDefaultInitial(obj);
 
       % Handle multivariate series
-      [obj, y] = obj.factorMultivariate(y);
+      [obj, y, factorC] = obj.factorMultivariate(y);
     end
     
     function obj = checkSample(obj, y)
@@ -369,6 +378,7 @@ classdef StateSpace < AbstractStateSpace
         ssUni = obj;
         ssUni.filterUni = true;
         yUni = y;
+        factorC = eye(obj.p);
         return
       end
       
@@ -477,10 +487,34 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [V, D, J] = getErrorVariances(obj, fOut, sOut)
+    function fOutNew = adjustUniOut(obj, fOut, factorC)
+      % "Unfactor" the output from the univariate filter
+      
+      fOutNew = struct;
+      
+      K = zeros(size(fOut.K));
+      Finv = zeros(obj.p, obj.p, obj.n);
+      for iT = obj.n:-1:1
+        Zii = obj.Z(:,:,obj.tau.Z(iT));
+        iP = fOut.P(:,:,iT);
+        
+        iC = factorC(:,:,obj.tau.H(iT));
+        
+        uniF(:,:,iT) = Zii * iP * Zii' + obj.H(:,:,obj.tau.H(iT));
+        Finv(:,:,iT) = iC / uniF(:,:,iT) * iC';
+        K(:,:,iT) = obj.T(:,:,obj.tau.T(iT)) * iP * Zii' * (1 ./ uniF(:,:,iT)) * iC;
+      end
+      
+      fOutNew.a = fOut.a;
+      fOutNew.P = fOut.P;
+      fOutNew.Finv = Finv;
+      fOutNew.K = K;
+    end
+    
+    function [V, J, D] = getErrorVariances(obj, fOutNew, sOut, factorC)
       % Get the smoothed state variance and covariance matricies
       % Produces V = Var(alpha | Y_n) and J = Cov(alpha_{t+1}, alpha_t | Y_n)
-      computeJ = nargout > 2;
+      % and D = Var(epsilon_t | Y_n)
       
       I = eye(obj.m);
       Hinv = nan(obj.p, obj.p, size(obj.H, 3));
@@ -489,30 +523,24 @@ classdef StateSpace < AbstractStateSpace
       end
             
       V = nan(obj.m, obj.m, obj.n);
-      D = nan(obj.m, obj.m, obj.n);
       J = nan(obj.m, obj.m, obj.n);
+      D = nan(obj.p, obj.p, obj.n);
       for iT = obj.n:-1:1
-        Zii = obj.Z(:,:,obj.tau.Z(iT));
-        iP = fOut.P(:,:,iT);
-
-        % TODO: This needs to be corrected for the exact initial. See DK p. 133.
-        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;
-        D(:,:,iT) = Hinv(:,:,obj.tau.H(iT)) * ...
-          (obj.H(:,:,obj.tau.H(iT)) - V(:,:,iT)) * ...
-          Hinv(:,:,obj.tau.H(iT));
+        iP = fOutNew.P(:,:,iT);
+        iC = factorC(:,:,obj.tau.H(iT));
         
-        if computeJ
-          % TODO: Can we do this without the F inverses?
-          F = Zii * iP * Zii' + obj.H(:,:,obj.tau.H(iT));
-          K = obj.T(:,:,obj.tau.T(iT)) * iP * Zii' / F;
-          L = obj.T(:,:,obj.tau.T(iT)) - K * obj.Z(:,:,obj.tau.Z(iT));
-
-          J(:,:,iT) = iP * L' * (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
-        end
+        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;
+        
+        L = obj.T(:,:,obj.tau.T(iT)) - fOutNew.K(:,:,iT) * obj.Z(:,:,obj.tau.Z(iT));
+        J(:,:,iT) = iP * L' * (I - sOut.N(:,:,iT+1) * fOutNew.P(:,:,iT+1));
+        
+        % TODO: Can we do this without the F inverses or Ks?
+        D(:,:,iT) = iC' * (fOutNew.Finv(:,:,iT) + ...
+          fOutNew.K(:,:,iT)' * sOut.N(:,:,iT) * fOutNew.K(:,:,iT)) * iC;
       end
     end
     
-    function [smootherErr, smoothErrVar] = getGradientQuantities(obj, epsilon, V)
+    function smootherErr = getGradientQuantities(obj, epsilon)
       % Generate needed quantites for the gradient
       
       % See Durbin & Koopman  sec. 4.5.1 and 5.4
@@ -520,17 +548,18 @@ classdef StateSpace < AbstractStateSpace
       % Based on \hat{epsilon} = H * u, back out u based on epsilon.
       % Based on Var(alpha | Y_n) = V = H - H * D * H, back out D based on V. 
       smootherErr = nan(obj.p, obj.n);
-      smoothErrVar = zeros(obj.p, obj.p, obj.n);
       for iT = 1:obj.n
         smootherErr(:,iT) = obj.H(:,:,obj.tau.H(iT)) \ epsilon(:,iT);
-%         smoothErrVar(:,:,iT) = diag(fOut.F(:,iT)) + ...
-%           fOut.K(:,:,iT)' * sOut.N(:,:,iT) * fOut.K(:,:,iT);
       end
     end
     
     %% Filter/smoother/gradient mathematical methods
     function [a, logli, filterOut] = filter_m(obj, y)
       % Filter using exact initial conditions
+      %
+      % Note that the quantities v, F and K are those that come from the
+      % univariate filter and cannot be transfomed via the Cholesky
+      % factorization to get the quanties from the multivariate filter. 
       %
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
       % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
@@ -602,7 +631,9 @@ classdef StateSpace < AbstractStateSpace
             ati = ati + Kstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii);
             
             Pstarti = Pstarti - Kstar(:,jj,ii) ./ Fstar(jj,ii) * Kstar(:,jj,ii)';
-
+            
+            % Pdti = Pdti;
+              
             LogL(jj,ii) = (log(Fstar(jj,ii)) + (v(jj,ii)^2) ./ Fstar(jj,ii));
           end
         end
@@ -714,7 +745,7 @@ classdef StateSpace < AbstractStateSpace
         for jj = ind'
           Zjj = obj.Z(jj,:,obj.tau.Z(ii));
           
-          if fOut.Fd(jj,ii) ~= 0 % ~isequal(Finf(ind(jj),ii),0)
+          if fOut.Fd(jj,ii) ~= 0
             % Diffuse case
             Ldti = eye(obj.m) - fOut.Kd(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
             L0ti = (fOut.Kd(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) + ...
@@ -775,7 +806,7 @@ classdef StateSpace < AbstractStateSpace
       %
       % See Durbin & Koopman, sec. 7.3.3. 
       % See Jungbacker, Koopman & van der Wel (2011), Appendix B.
-      
+      %
       % The derivative of the likelihood with respect to a parameter matrix is
       % denoted dldX for a parameter X. Also note the following name changes:
       %   This function         JKV                             
@@ -784,9 +815,6 @@ classdef StateSpace < AbstractStateSpace
       %     d_t                   c_t
       %     c_t                   d_t
             
-%       assert(all(all(all(G.R == 0))), ...
-%         'JKV smoother gradient does not support estimated elements of R.');
-      
       vec = @(M) reshape(M, [], 1);
 
       % Precompute commonly used matricies
@@ -864,7 +892,7 @@ classdef StateSpace < AbstractStateSpace
         % Timing - r and N are actually lagged a period compared to any D&K
         % writeup (r(:,obj.n) != 0), r(:,obj.n+1) = 0)). 
 %         if iT < obj.n
-          dldRQR(:,:,tauRQR(iT+1)) =  dldRQR(:,:,tauRQR(iT+1)) + ...
+          dldRQR(:,:,tauRQR(iT+1)) = dldRQR(:,:,tauRQR(iT+1)) + ...
             0.5 * (r(:,iT) * r(:,iT)' - N(:,:,iT));
 %         end
       end
@@ -1060,7 +1088,7 @@ classdef StateSpace < AbstractStateSpace
       delete(wb);
     end
     
-    %% Initialization
+    %% General utilities
     function [stationary, nonstationary] = findStationaryStates(obj)
       % Find which states have stationary distributions given the T matrix.
       [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
@@ -1078,7 +1106,6 @@ classdef StateSpace < AbstractStateSpace
         'Likely development error.']);
     end
     
-    %% General utilities
     function [Z, d, H, T, c, R, Q] = getInputParameters(obj)
       % Get parameters to input to constructor
       

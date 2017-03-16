@@ -144,6 +144,8 @@ classdef estimate_test < matlab.unittest.TestCase
     end
     
     function testGeneratedSmall(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       p = 2; m = 1; timeDim = 500;
       ssTrue = generateARmodel(p, m-1, false);
       y = generateData(ssTrue, timeDim);

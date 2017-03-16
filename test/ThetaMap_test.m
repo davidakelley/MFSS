@@ -83,6 +83,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     end
     
     function thetaSystemTheta_a0P0(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       % Theta -> StateSpace -> Theta with explicit initial values
       Z = 1;
       d = 0;
@@ -109,6 +111,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     end
     
     function systemThetaSystem_a0P0(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       % StateSpace -> Theta -> StateSpace with explicit initial values
       Z = 1;
       d = 0;

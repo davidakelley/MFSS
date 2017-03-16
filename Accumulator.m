@@ -191,15 +191,66 @@ classdef Accumulator < AbstractSystem
       % accumulator and prepare for augmenting that system. This is neccessary
       % since we will be augmenting a system according to the accumulators used
       % in a different system with the ThetaMap.index StateSpace.
+      
       augSpec = struct;
-      augSpec.m = struct;
-      augSpec.m.original = ss.m;
+      m = struct;
+      m.original = ss.m;
       
       % Set tau if it hasn't been set yet
       if isempty(ss.tau)
         ss.n = obj.n;
         ss = ss.setInvariantTau();
       end
+      
+      [augSpec.accumulatorTypes, usedCalendar, usedHorizon, ...
+        augSpec.baseFreqState, accumObsZinx] = obj.computeUsed(ss);
+      
+      [augSpec.addLagsFrom, LagRowPos, m.withLag] = ...
+        obj.determineNeededLags(ss, augSpec.baseFreqState, usedHorizon);
+      
+      % Dimension calculations      
+      augSpec.nAccumulatorStates = size(usedCalendar, 2);
+      m.final = m.withLag + augSpec.nAccumulatorStates;
+      augSpec.m = m;
+      
+      Zspec.originIndexes = sub2ind(size(ss.Z), accumObsZinx, augSpec.baseFreqState');
+      
+      % New Z elements: same observables, now they just load onto the states in
+      % order that the new accumulator states have been defined. 
+      newStates = augSpec.m.withLag + (1:augSpec.nAccumulatorStates)';
+      Zspec.finalIndexes = sub2ind([size(ss.Z, 1) augSpec.m.final], accumObsZinx, newStates);
+      augSpec.Z = Zspec;
+      
+      % T augmentation:
+      Tspec = struct;
+      Ttypes   = [ss.tau.T usedCalendar usedHorizon];
+      [uniqueTs, ~, Tspec.newtau] = unique(Ttypes, 'rows');
+      Tspec.oldtau = uniqueTs(:, 1);
+      Tspec.cal = uniqueTs(:, 1 + (1:augSpec.nAccumulatorStates));
+      Tspec.hor = uniqueTs(:, 1 + augSpec.nAccumulatorStates + (1:augSpec.nAccumulatorStates));
+      Tspec.LagRowPos = LagRowPos;
+      augSpec.T = Tspec;
+      
+      % c augmentation
+      cSpec = struct;
+      ctypes   = [ss.tau.c usedCalendar];
+      [uniquecs, ~, cSpec.newtau] = unique(ctypes, 'rows');
+      cSpec.oldtau = uniquecs(:, 1);
+      cSpec.cal = uniquecs(:, 1 + (1:augSpec.nAccumulatorStates));      
+      augSpec.c = cSpec;
+      
+      % R augmentation
+      Rspec = struct;
+      Rtypes   = [ss.tau.R usedCalendar];
+      [uniqueRs, ~, Rspec.newtau] = unique(Rtypes, 'rows');
+      Rspec.oldtau = uniqueRs(:, 1);
+      Rspec.cal = uniqueRs(:, 1 + (1:augSpec.nAccumulatorStates));
+      augSpec.R = Rspec;
+    end
+    
+    function [usedTypes, usedCalendar, usedHorizon, baseFreqState, Zinx] = computeUsed(obj, ss)
+      % Compute which of the possible accumulators that were defined are being
+      % used based on the structure of the given state space model
       
       [augmentedStates, indexUsedInx] = obj.findUsedAccum(ss);
             
@@ -226,71 +277,19 @@ classdef Accumulator < AbstractSystem
       usedDefinitions = sortUsedAccum(unsort(order));
       APsi = APsiSort(usedDefinitions, :);
       
+      % Pick out structural elements now that we know what we need:
       nPer = size(obj.horizon, 1);
-      
-      augSpec.accumulatorTypes = APsi(:, 2)';
+      baseFreqState = APsi(:, 1)';
+      usedTypes = APsi(:, 2)';
       usedHorizon = APsi(:, 3:nPer + 2)';
       usedCalendar = APsi(:, nPer + 3:end)';
-
-      augSpec.baseFreqState = APsi(:, 1)';
-
-      [augSpec.addLagsFrom, LagRowPos, augSpec.m.withLag] = ...
-        obj.determineNeededLags(ss, augSpec.baseFreqState, usedHorizon);
-      
-      augSpec.nAccumulatorStates = size(usedCalendar, 2);
-      
-      augSpec.m.final = augSpec.m.withLag + augSpec.nAccumulatorStates;
       
       % Compute where Z elements should be moved from and to (linear indexes)
       % Original Z elements: any nonzero elements of rows of Z for used
       % accumulated observables
-      accumulatorObservationsZinx = reshape(obj.index(indexUsedInx(usedDefinitions)), [], 1);
-      
-      Zspec.originIndexes = sub2ind(size(ss.Z), ...
-        accumulatorObservationsZinx, augSpec.baseFreqState');
-      
-      % New Z elements: same observables, now they just load onto the states in
-      % order that the new accumulator states have been defined. 
-      newStates = augSpec.m.withLag + (1:augSpec.nAccumulatorStates)';
-      Zspec.finalIndexes = sub2ind([size(ss.Z, 1) augSpec.m.final], ...
-        accumulatorObservationsZinx, newStates);
-      
-      augSpec.Z = Zspec;
-      
-      % T augmentation:
-      Tspec = struct;
-      Ttypes   = [ss.tau.T usedCalendar usedHorizon];
-      [uniqueTs, ~, Tspec.newtau] = unique(Ttypes, 'rows');
-      
-      Tspec.oldtau = uniqueTs(:, 1);
-      Tspec.cal = uniqueTs(:, 1 + (1:augSpec.nAccumulatorStates));
-      Tspec.hor = uniqueTs(:, 1 + augSpec.nAccumulatorStates + (1:augSpec.nAccumulatorStates));
-      
-      Tspec.LagRowPos = LagRowPos;
-      
-      augSpec.T = Tspec;
-      
-      % c augmentation
-      cSpec = struct;
-      
-      ctypes   = [ss.tau.c usedCalendar];
-      [uniquecs, ~, cSpec.newtau] = unique(ctypes, 'rows');
-      cSpec.oldtau = uniquecs(:, 1);
-      cSpec.cal = uniquecs(:, 1 + (1:augSpec.nAccumulatorStates));      
-      
-      augSpec.c = cSpec;
-      
-      % R augmentation
-      Rspec = struct;
-      
-      Rtypes   = [ss.tau.R usedCalendar];
-      [uniqueRs, ~, Rspec.newtau] = unique(Rtypes, 'rows');
-      Rspec.oldtau = uniqueRs(:, 1);
-      Rspec.cal = uniqueRs(:, 1 + (1:augSpec.nAccumulatorStates));
-      
-      augSpec.R = Rspec;
+      Zinx = reshape(obj.index(indexUsedInx(usedDefinitions)), [], 1);
     end
-
+    
     function augSpec = comptueThetaMapAugSpecification(obj, tm)
       % Determine how to augment a ThetaMap. 
       
@@ -451,9 +450,10 @@ classdef Accumulator < AbstractSystem
       % Checking we have the correct number of lags of the states that need
       % accumulation to be compatible with Horizon
       % 
-      % ss - StateSpace that is being augmented
-      % hiFreqStates - 
-      % augHorizon - 
+      % ss - StateSpace being augmented
+      % hiFreqStates - The states that will be accumulated to a lower frequency
+      %   before they are observed.
+      % augHorizon - horizon the high-frequency states will be accumulated by.
       
       % TODO: move lagRowPos to separate function (ss.LagsInState)
       
@@ -537,6 +537,8 @@ classdef Accumulator < AbstractSystem
     function ss = addLags(ss, addLagsFrom, mWithLag)
       % Add the needed lags to the system matricies.
 
+      assert(ss.m + length(addLagsFrom) == mWithLag, 'Development error.');
+      
       if ss.m == mWithLag
         % No need to add lags, don't expand the state
         return
@@ -556,10 +558,9 @@ classdef Accumulator < AbstractSystem
       % T - Add ones to transmit lags
       T.Tt = zeros(mWithLag, mWithLag, size(ss.T, 3));
       T.Tt(1:ss.m, 1:ss.m, :) = ss.T;
-      lagIndexes = sub2ind(...
-        [mWithLag, mWithLag], (ss.m+1:mWithLag)', addLagsFrom);
+      lagsIndex = sub2ind([mWithLag mWithLag], (ss.m+1:mWithLag)', addLagsFrom);
       % FIXME: I don't think this handles slices correctly:
-      T.Tt(lagIndexes) = 1;
+      T.Tt(lagsIndex) = 1;
       T.tauT = ss.tau.T;
       
       % c - just add zeros below
@@ -726,27 +727,23 @@ classdef Accumulator < AbstractSystem
     end
     
     function [newT, newD, newI] = createTransforms(oldT, oldD, oldI, A, B)
+      % Create new transformations, derivatives and inverses from the linear
+      % scaling factor A and addend B.
       
-        % Compose transformation by multiplying then adding
-        newT = Accumulator.composeLinearFunc(oldT, A, B);
-        
-        % Compose the derivative with the chain rule
-        newD = Accumulator.composeLinearFunc(oldD, A, 0);
-        
-        % "Undo" the linear transformation by first subtracting what was added
-        % then dividing by what was multiplied. 
-        % TODO: simplify by writing a (B, A) version of composeLienarFunc
-        invTemp = Accumulator.composeLinearFunc(oldI, 1, -B);
-        newI = Accumulator.composeLinearFunc(invTemp, 1/A, 0);
+      % Compose transformation by multiplying then adding
+      newT = Accumulator.composeLinearFunc(oldT, A, B);
+      
+      % Compose the derivative with the chain rule
+      newD = Accumulator.composeLinearFunc(oldD, A, 0);
+      
+      % "Undo" the linear transformation with its inverse
+      newI = Accumulator.composeLinearFunc(oldI, 1/A, -B/A);
     end
     
     function newFunc = composeLinearFunc(func, A, B)
       % A helper function for performing a linear transformation to the result
-      % from an arbitrary function handle.
-      % Provides g(x) = A * f(x) + B
-      
+      % from an arbitrary function handle. Provides g(x) = A * f(x) + B      
       newFunc = @(x) A * func(x) + B;
     end
-    
   end
 end

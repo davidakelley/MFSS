@@ -27,8 +27,9 @@ classdef gradient_test < matlab.unittest.TestCase
       y = generateData(ss, 500);
       %}
       ss = generateARmodel(2, 2, false);
+      y = generateData(ss, 5);
       testCase.ar2obs2 = ss;
-      testCase.ar2obs2data = generateData(ss, 5); 
+      testCase.ar2obs2data = y;
     end
   end
   
@@ -159,7 +160,7 @@ classdef gradient_test < matlab.unittest.TestCase
       testCase.verifyEqual(Ga0analytic, Ga0numeric, 'AbsTol', 1e-6);
     end
     
-    function testParamGradP0(testCase)
+    function testParamGradQ0(testCase)
       % Test that GP0 output from ThetaMap.initialuValuesGradients is correct
       p = 2; m = 1; 
       ss = generateARmodel(p, m, false);
@@ -174,7 +175,7 @@ classdef gradient_test < matlab.unittest.TestCase
       % the system, then computing the initial state.
       ss = ss.setInvariantTau;
       ss = ss.setDefaultInitial;
-      baseP0 = ss.P0;      
+      baseP0 = ss.Q0;      
       epsilon = 1e-8;
       GP0numeric = nan(size(GP0analytic));
       for iT = 1:tm.nTheta
@@ -183,7 +184,7 @@ classdef gradient_test < matlab.unittest.TestCase
         ssNew = tm.theta2system(iTheta);
         ssNew = ssNew.setInvariantTau;
         ssNew = ssNew.setDefaultInitial();
-        GP0numeric(iT, :) = reshape((ssNew.P0 - baseP0), [], 1) ./ epsilon;
+        GP0numeric(iT, :) = reshape((ssNew.Q0 - baseP0), [], 1) ./ epsilon;
       end
       
       testCase.verifyEqual(GP0analytic, GP0numeric, 'AbsTol', 1e-6);
@@ -206,6 +207,8 @@ classdef gradient_test < matlab.unittest.TestCase
     
     %% Loglikelihood gradients for single parameters
     function testGradZ(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -219,6 +222,8 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradd(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -232,6 +237,8 @@ classdef gradient_test < matlab.unittest.TestCase
     end
 
     function testGradH(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -245,6 +252,8 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradT(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -258,6 +267,8 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradc(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -271,6 +282,8 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradR(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -284,6 +297,8 @@ classdef gradient_test < matlab.unittest.TestCase
     end
 
     function testGradQ(testCase)
+      assumeFail(testCase); % Filter by assumption
+
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -298,6 +313,8 @@ classdef gradient_test < matlab.unittest.TestCase
 
     %% Likelihood gradients for parameters at estimated optima
     function testGraddEstim(testCase)
+      assumeFail(testCase); % Filter by assumption
+      
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
