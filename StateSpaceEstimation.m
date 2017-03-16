@@ -302,7 +302,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %
       % For states with a fixed (or zeros) error variance... what do we do?
       
-      % TODO: Remove time invariance restriction.
+      % TODO: Write EM algorithm
       assert(obj.timeInvariant, ...
         'EM Algorithm only developed for time-invariant cases.');
       

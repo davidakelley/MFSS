@@ -303,8 +303,6 @@ classdef ThetaMap < AbstractSystem
       %   G:     Structure of gradients for each state space parameter. Each 
       %          gradient will be nTheta X (elements in a slice) X max(tau_x).
       
-      % TODO: Does this function handle TVP correctly?
-      
       % Since every element of the parameter matricies is a function of a 
       % single element of theta and we have derivatives of those functions, 
       % we can simply apply those derivatives to each point to get the full 
@@ -774,9 +772,9 @@ classdef ThetaMap < AbstractSystem
       % Alter transformations - just add a new ones for now, we'll delete the 
       % old ones later in checkThetaMap 
       transInx = obj.transformationIndex.(iParam);
-      newTrans = cell(numel(newLBmat));
-      newDeriv = cell(numel(newLBmat));
-      newInver = cell(numel(newLBmat));
+      newTrans = cell(1, numel(newLBmat));
+      newDeriv = cell(1, numel(newLBmat));
+      newInver = cell(1, numel(newLBmat));
       
       additionalTrans = 0;
       for iElem = 1:numel(newLBmat)
