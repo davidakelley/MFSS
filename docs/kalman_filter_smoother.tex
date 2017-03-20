@@ -52,7 +52,7 @@
 	where $Z_{t,i}^*$ is the $i$th row of $Z_t^*$, $d_{t,i}^*$ is the $i$th element of $d_t^*$, and $H_{t,i}^*$ is the $i$th diagonal element of $H_t^*$. The filtered estimates of the state $a_t = a_{t,1}$ and $P_t = P_{t,1}$ are equivalent to those computed above. Similarly, the univariate smoother provides $r_t = r_{t,0}$ and $N_t = N_{t,0}$:
 	\begin{align*}
 	r_{t,i-1} = Z_{t,i}^{*\prime} F_{t,i}^{-1} v_{t,i}^* + L_{t,i}^{\prime} r_{t,i} \qquad N_{t,i-1} =& Z_{t,i}^{*\prime} F_{t,i}^{-1} Z_{t,i}^* + L_{t,i}^{\prime} N_{t,i} L_{t,i} \qquad L_{t,i} = I_m - K_{t,i} Z_{t,i}^* F_{t,i}^{-1}\\
-	r_{t-1,p} = T_{t}^\prime r_{t,0} &\qquad N_{t-1,p-1} = T_{t-1}^\prime N_{t,0} T_{t-1}
+	r_{t-1,p} = T_{t}^\prime r_{t,0} &\qquad N_{t-1,p} = T_{t-1}^\prime N_{t,0} T_{t-1}
 	\end{align*}
 	where $r_{t+1,p} = 0$ and $N_{t+1,p} = 0$. \\
 
@@ -103,40 +103,40 @@
 	\begin{align*}
 	L_{\infty,t,i} = I_m - K_{\infty,t,i} Z_{t,i}^* F_{\infty,t,i}^{-1} &\qquad
 	L_{*,t,i} = I_m - K_{*,t,i} Z_{t,i}^* F_{*,t,i}^{-1} \\
-	L_{t,i}^{(0)} = \left(K_{\infty,t,i} F_{*,t,i} F_{\infty,t,i}^{-1} {\color{\flag} +} K_{*,t,i} \right) Z_{t,i}^* F_{\infty,t,i}^{-1} &
+	L_{t,i}^{(0)} = \left(K_{\infty,t,i} F_{*,t,i} F_{\infty,t,i}^{-1} - K_{*,t,i} \right) Z_{t,i}^* F_{\infty,t,i}^{-1} &
 	\end{align*}
 	\begin{equation*}
 	r_{t,i-1}^{(0)} = \begin{cases} 
-	   Z_{t,i}^* F_{*,t,i}^{-1} v_{t,i}^* + L_{*,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} = 0 \\
+	   Z_{t,i}^{*\prime} F_{*,t,i}^{-1} v_{t,i}^* + L_{*,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} = 0 \\
 	   L_{\infty,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} \neq 0	   
 	\end{cases} 
 	\end{equation*}
 	\begin{equation*}
 	r_{t,i-1}^{(1)} = \begin{cases} 
 	   r_{t,i}^{(1)} & F_{\infty,t,i} = 0 \\
-	   Z_{t,i}^* F_{\infty,t,i}^{-1} v_{t,i}^* {\color{\flag} -} L_{t,i}^{(0)\prime} r_{t,i}^{(0)} + L_{\infty,t,i}^\prime r_{t,i}^{(1)} & F_{\infty,t,i} \neq 0	   
+	   Z_{t,i}^{*\prime} F_{\infty,t,i}^{-1} v_{t,i}^* + L_{t,i}^{(0)\prime} r_{t,i}^{(0)} + L_{\infty,t,i}^\prime r_{t,i}^{(1)} & F_{\infty,t,i} \neq 0	   
 	\end{cases} 
 	\end{equation*}
 	\begin{equation*}
 	r_{t-1,p}^{(0)} = T_t^\prime r_{t,0}^{(0)} \qquad r_{t-1,p}^{(1)} = T_t^\prime r_{t,0}^{(1)}  \\
 	\end{equation*}
 	\begin{equation*}
-	\hat{\alpha}_t = a_t + P_{*,t,1} r_{t,i}^{(0)} + P_{\infty,t,1} r_{t,i}^{(1)}
+	\hat{\alpha}_t = a_t + P_{*,t,1} r_{t,0}^{(0)} + P_{\infty,t,1} r_{t,0}^{(1)}
 	\end{equation*}
 	where $r_{d,p}^{(0)} = r_{d,p}$ and $r_{d,p}^{(1)} = 0$. Note that $L_{\infty,t,i}$ and $L_{t,i}^{(0)}$ only need to be computed when $F_{\infty,t,i} \neq 0$ and $L_{*,t,i}$ only needs to be computed when $F_{\infty,t,i} = 0$. \\
 
 	For the smoothed variance of the state, 
 	\begin{align*}
-	V_t = P_{*,t,1} - P_{*,t,1} N_{t,0}^{(0)} P_{*,t,1} - \left(P_{\infty,t,1} N_{t,0}^{(1)} P_{*,t,1} \right)^\prime - P_{\infty,t,1} N_{t,0}^{(1)} P_{*,t,1} - P_{\infty,t,1} N_{t,0}^{(2)} P_{\infty,t,1} \\
-	N_{t-1,p}^{(0)} = T_t^\prime N_{t,0}^{(0)} T_t + T_t N_{t,0}^{(1)} T_t \qquad
-	N_{t-1,p}^{(1)} = 0 \qquad
-	N_{t-1,p}^{(2)} = T_t^\prime N_{t,0}^{(1)} T_t + T_t N_{t,0}^{(2)} T_t
+	V_t = P_{*,t,1} - P_{*,t,1} N_{t,0}^{(0)} P_{*,t,1} - \left(P_{\infty,t,1} N_{t,0}^{(1)} P_{*,t,1} \right)^\prime &- P_{\infty,t,1} N_{t,0}^{(1)} P_{*,t,1} - P_{\infty,t,1} N_{t,0}^{(2)} P_{\infty,t,1} \\
+	N_{t-1,p}^{(0)} = T_t^\prime N_{t,0}^{(0)} T_t \qquad
+	N_{t-1,p}^{(1)} = T_t^\prime N_{t,0}^{(1)} T_t &\qquad
+	N_{t-1,p}^{(2)} = T_t^\prime N_{t,0}^{(1)} T_t 
 	\end{align*}
 	where when $F_{\infty,t,i} = 0$, 
 	\begin{align*}
 	N_{t,i-1}^{(0)} = Z_{t,i}^{*\prime} F_{*,t,i}^{-1} Z_{t,i}^* + L_{*,t,i}^\prime N_{t,i}^{(0)} L_{*,t,i} &\qquad
-	N_{t,i-1}^{(1)} = N_{t,i-1}^{(1)} &\qquad
-	N_{t,i-1}^{(2)} = N_{t,i-1}^{(2)} 
+	N_{t,i-1}^{(1)} = N_{t,i}^{(1)} &\qquad
+	N_{t,i-1}^{(2)} = N_{t,i}^{(2)} 
 	\end{align*}
 	and when $F_{\infty,t,i} \neq 0$,
 	\begin{align*}
