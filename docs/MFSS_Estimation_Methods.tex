@@ -1,0 +1,362 @@
+\documentclass[12pt]{article}
+\usepackage{amsthm,amsfonts,amsmath,xcolor,fullpage}
+\usepackage[letterpaper, margin=1in]{geometry}
+\usepackage{enumitem}
+
+% \usepackage[backend=biber,style=alphabetic,citestyle=authoryear]{biblatex}
+
+\setlength{\parindent}{0pt}
+
+\newcommand{\Gt}{G_\theta}
+\newcommand{\vecop}[0]{\text{vec}}
+\newcommand{\Cov}[0]{\text{Cov}}
+\newcommand{\Var}[0]{\text{Var}}
+\newcommand{\flag}[0]{red}
+\newcommand{\tr}[0]{\text{tr}}
+
+\begin{document}
+
+\section{Kalman Filtering and Smoothing Calculations}
+	Using the preferred timing for the state space model,
+	\begin{align*} 
+	y_t = Z_t \alpha_t + d_t + \varepsilon_t &\qquad \varepsilon_t \sim N(0,H_t) \\ 
+	\alpha_{t} = T_t \alpha_{t-1} + c_t + R_t \eta_t &\qquad \eta_t \sim N(0, Q_t)
+	\end{align*} 
+
+	the filtered estimates are given by 
+	\begin{align*}
+	a_{t+1} = T_{t+1} a_t + c_{t+1} + K_t v_t &\qquad
+	P_{t+1} = T_{t+1} P_t L_t^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime \\
+	v_t = y_t - Z_ta_t - d_t &\qquad
+	K_t = T_{t+1} P_t Z_t^\prime F_t^{-1} \\
+	F_t = Z_t P_t Z_t^\prime + H_t &\qquad
+	L_t = T_{t+1} - K_t Z_t 
+	\end{align*} 
+
+	and the smoothed estimates are given by
+	\begin{align*}
+	\hat{\alpha}_t = a_t + P_t r_t &\qquad V_t = P_t - P_t N_t P_t \\ 
+	r_t = Z_t^\prime F_t^{-1} v_t + L_t^\prime r_{t+1} &\qquad N_{t} = Z_t^\prime F_t^{-1} Z_t + L_t^\prime N_{t+1} L_t
+	\end{align*}
+	where $r_{n+1} = 0$ and $N_{n+1} = 0$. 
+
+\subsection*{Univariate Filter}
+	When any $H_t$ is non-diagonal, the observation equation is transformed by taking the LDL factorization of the $H_t$ matrices:
+	\begin{align*}
+	y_t^* = Z_t^* \alpha_t + d_t^* + \varepsilon_t^* &\qquad \varepsilon_t \sim N(0, H_t^*)\\
+	y_t^* = C_t^{-1} y_t \qquad Z_t^* = C_t^{-1} Z_t \qquad d_t^* &= C_t^{-1} d_t \qquad \varepsilon_t^* = C_t^{-1} \varepsilon_t \qquad H_t = C_t H_t^* C_t^\prime
+	\end{align*}
+
+	To avoid taking the inverse of $F_t$ in the above recursion, several quantities are computed using the univariate filter that can be used on this transformed system: 
+	\begin{align*}
+	a_{t, i+1} = a_{t,i} + K_{t,i} v_{t,i}^* &\qquad P_{t,i+1} = P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^{\prime} \\
+	v_{t,i}^* = y_{t,i}^* - Z_{t,i}^* a_{t,i} - d_{t,i}^* \qquad F_{t,i} &= Z_{t,i}^* P_{t,i} Z_{t,i}^{*\prime} + H_{t,i}^* \qquad K_{t,i} = P_{t,i} Z_{t,i}^{*\prime} F_{t,i}^{-1} \\ 
+	a_{t+1,1} = T_{t+1} a_{t, p+1} + c_{t+1} &\qquad P_{t+1,1} = T_{t+1} P_{t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime
+	\end{align*}
+	where $Z_{t,i}^*$ is the $i$th row of $Z_t^*$, $d_{t,i}^*$ is the $i$th element of $d_t^*$, and $H_{t,i}^*$ is the $i$th diagonal element of $H_t^*$. The filtered estimates of the state $a_t = a_{t,1}$ and $P_t = P_{t,1}$ are equivalent to those computed above. Similarly, the univariate smoother provides $r_t = r_{t,0}$ and $N_t = N_{t,0}$:
+	\begin{align*}
+	r_{t,i-1} = Z_{t,i}^{*\prime} F_{t,i}^{-1} v_{t,i}^* + L_{t,i}^{\prime} r_{t,i} \qquad N_{t,i-1} =& Z_{t,i}^{*\prime} F_{t,i}^{-1} Z_{t,i}^* + L_{t,i}^{\prime} N_{t,i} L_{t,i} \qquad L_{t,i} = I_m - K_{t,i} Z_{t,i}^* F_{t,i}^{-1}\\
+	r_{t-1,p} = T_{t}^\prime r_{t,0} &\qquad N_{t-1,p} = T_{t-1}^\prime N_{t,0} T_{t-1}
+	\end{align*}
+	where $r_{t+1,p} = 0$ and $N_{t+1,p} = 0$. \\
+
+\subsection*{Exact Initial Kalman Filter}
+	When the state $\alpha_t$ is stationary, the initial values $a_1$ and $P_1$ can be computed as the unconditional mean and variance of the state given the system parameters by inverting the transition equation. \\
+
+	To handle cases where some states are nonstationary, the state is separated into states with known variance (those that are stationary) and those that are considered diffuse (nonstationary states). Let $\tilde{R}$ be a selection matrix with columns from the identity such that the initial shock $\eta_1$ is applied to the states with known variance. The selection matrix $A$ is composed of the columns of the identity matrix associated with the diffuse states such that taking the limit as $\kappa \rightarrow \infty$ allows the diffuse states to have infinite initial variance where the initial values are given by 
+	\begin{align*}
+	a_1 = a + \tilde{R} \eta_1 + A \delta \qquad& \eta_1 \sim N(0, Q_1) \qquad \delta \sim N(0, \kappa I) \\
+	P_1 = P_{*,1} + \kappa P_{\infty,1} \qquad& P_{*,1} = \tilde{R} \tilde{Q} \tilde{R}^\prime \qquad P_{\infty,1} = A A^\prime 
+	\end{align*}
+	The unconditional mean, $a$, and variance, $P_{*,t,i}$, of the state are computed by inverting the stationary portion of the system. Any elements of $a$ associated with nonstationary or diffuse states are set to 0.
+	\begin{align*}
+	\tilde{R}^\prime a &= (I_m - T_1)^{-1} c_1 \\
+	\vecop(\tilde{R} \tilde{Q} \tilde{R}^\prime) &= (I_{m^2} - T_1 \otimes T_1)^{-1} \vecop(R_1 Q_1 R_1^\prime) 
+	\end{align*}
+	When all states are stationary, this initialization collapses down to the simple case where $\alpha_1 \sim N(a_1, P_1)$, where $a_1$ and $P_1$ are determined by inverting the full system. \\
+
+	Given this initialization, the univariate filter recursions must be altered to separate the states with finite and infinite variances: 
+	\begin{align*}
+	 F_{*,t,i} = Z_{t,i}^* P_{*,t,i} Z_{t,i}^{*\prime} + H_{t,i}^* &\qquad F_{\infty,t,i} = Z_{t,i}^* P_{\infty,t,i} Z_{t,i}^{*\prime}\\
+	K_{*,t,i} = P_{*,t,i} Z_{t,i}^{*\prime} &\qquad K_{\infty,t,i} = P_{\infty,t,i} Z_{t,i}^{*\prime} 
+	\end{align*}
+	\begin{equation*}
+	a_{t,i+1} = \begin{cases} 
+	      a_{t,i} + K_{*,t,i} F_{*,t,i}^{-1} v_{t,i}^* & F_{\infty,t,i} = 0 \\
+	      a_{t,i} + K_{\infty,t,i} F_{\infty,t,i}^{-1} v_{t,i}^* & F_{\infty,t,i} \neq 0
+    \end{cases} 
+    \end{equation*}
+	\begin{equation*}
+	P_{*,t,i+1} = \begin{cases} 
+	   P_{*,t,i} - K_{*,t,i} K_{*,t,i}^\prime F_{*,t,i}^{-1} & F_{\infty,t,i} = 0 \\
+	   P_{*,t,i} + K_{\infty,t,i} K_{\infty,t,i}^\prime F_{*,t,i} F_{\infty,t,i}^{-2} - (K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime) F_{\infty,t,i}^{-1} & F_{\infty,t,i} \neq 0
+	\end{cases}
+	\end{equation*}
+	\begin{equation*}
+	P_{\infty,t,i+1} = \begin{cases} 
+	   P_{\infty,t,i} & F_{\infty,t,i} = 0 \\
+	   P_{\infty,t,i} - K_{\infty,t,i} K_{\infty,t,i}^\prime F_{\infty,t,i}^{-1} & F_{\infty,t,i} \neq 0	   
+	\end{cases} 
+	\end{equation*}
+	\begin{align*}
+	a_{t+1,1} &= T_{t+1} a_{t, p+1} + c_{t+1} \\
+	P_{\infty,t+1,1} = T_{t+1} P_{\infty,t,p+1} T_{t+1}^\prime &\qquad P_{*,t+1,1} = T_{t+1} P_{*,t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime 
+	\end{align*}
+	For any set of system parameters where the state can be identified, there exists some time $d$ such that $F_{\infty,d,i} = 0$ for all $i$. For time $t > d$, the simpler Kalman filter recursion above can be employed. \\
+
+	The smoother must be similarly altered so that beginning at $t = d$, the computation of $r_{t,i}$ is expanded to account for the initialization:
+	\begin{align*}
+	L_{\infty,t,i} = I_m - K_{\infty,t,i} Z_{t,i}^* F_{\infty,t,i}^{-1} &\qquad
+	L_{*,t,i} = I_m - K_{*,t,i} Z_{t,i}^* F_{*,t,i}^{-1} \\
+	L_{t,i}^{(0)} = \left(K_{\infty,t,i} F_{*,t,i} F_{\infty,t,i}^{-1} - K_{*,t,i} \right) Z_{t,i}^* F_{\infty,t,i}^{-1} &
+	\end{align*}
+	\begin{equation*}
+	r_{t,i-1}^{(0)} = \begin{cases} 
+	   Z_{t,i}^{*\prime} F_{*,t,i}^{-1} v_{t,i}^* + L_{*,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} = 0 \\
+	   L_{\infty,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} \neq 0	   
+	\end{cases} 
+	\end{equation*}
+	\begin{equation*}
+	r_{t,i-1}^{(1)} = \begin{cases} 
+	   r_{t,i}^{(1)} & F_{\infty,t,i} = 0 \\
+	   Z_{t,i}^{*\prime} F_{\infty,t,i}^{-1} v_{t,i}^* + L_{t,i}^{(0)\prime} r_{t,i}^{(0)} + L_{\infty,t,i}^\prime r_{t,i}^{(1)} & F_{\infty,t,i} \neq 0	   
+	\end{cases} 
+	\end{equation*}
+	\begin{equation*}
+	r_{t-1,p}^{(0)} = T_t^\prime r_{t,0}^{(0)} \qquad r_{t-1,p}^{(1)} = T_t^\prime r_{t,0}^{(1)}  \\
+	\end{equation*}
+	\begin{equation*}
+	\hat{\alpha}_t = a_t + P_{*,t,1} r_{t,0}^{(0)} + P_{\infty,t,1} r_{t,0}^{(1)}
+	\end{equation*}
+	where $r_{d,p}^{(0)} = r_{d,p}$ and $r_{d,p}^{(1)} = 0$. Note that $L_{\infty,t,i}$ and $L_{t,i}^{(0)}$ only need to be computed when $F_{\infty,t,i} \neq 0$ and $L_{*,t,i}$ only needs to be computed when $F_{\infty,t,i} = 0$. \\
+
+	For the smoothed variance of the state, 
+	\begin{align*}
+	V_t = P_{*,t,1} - P_{*,t,1} N_{t,0}^{(0)} P_{*,t,1} - \left(P_{\infty,t,1} N_{t,0}^{(1)} P_{*,t,1} \right)^\prime &- P_{\infty,t,1} N_{t,0}^{(1)} P_{*,t,1} - P_{\infty,t,1} N_{t,0}^{(2)} P_{\infty,t,1} \\
+	N_{t-1,p}^{(0)} = T_t^\prime N_{t,0}^{(0)} T_t \qquad
+	N_{t-1,p}^{(1)} = T_t^\prime N_{t,0}^{(1)} T_t &\qquad
+	N_{t-1,p}^{(2)} = T_t^\prime N_{t,0}^{(1)} T_t 
+	\end{align*}
+	where when $F_{\infty,t,i} = 0$, 
+	\begin{align*}
+	N_{t,i-1}^{(0)} = Z_{t,i}^{*\prime} F_{*,t,i}^{-1} Z_{t,i}^* + L_{*,t,i}^\prime N_{t,i}^{(0)} L_{*,t,i} &\qquad
+	N_{t,i-1}^{(1)} = N_{t,i}^{(1)} &\qquad
+	N_{t,i-1}^{(2)} = N_{t,i}^{(2)} 
+	\end{align*}
+	and when $F_{\infty,t,i} \neq 0$,
+	\begin{align*}
+	N_{t,i-1}^{(0)} &= L_{\infty,t,i}^\prime N_{t,i}^{(0)} L_{\infty,t,i}\\
+	N_{t,i-1}^{(1)} &= Z_{t,i}^{*\prime} F_{\infty,t,i}^{-1} Z_{t,i}^* + L_{\infty,t,i}^\prime N_{t,i}^{(0)} L_{t,i}^{(0)} + L_{\infty,t,i}^\prime N_{t,i}^{(1)} L_{\infty,t,i}  \\
+	N_{t,i-1}^{(2)} &= Z_{t,i}^{*\prime} F_{\infty,t,i}^{-2} Z_{t,i}^* F_{*,t,i} + L_{t,i}^{(0)\prime} N_{t,i}^{(1)} L_{t,i}^{(0)} + L_{\infty,t,i}^\prime N_{t,i}^{(1)} L_{t,i}^{(0)} + L_{t,i}^{(0)\prime} N_{t,i}^{(1)} L_{\infty,t,i} + L_{\infty,t,i}^\prime N_{t,i}^{(2)} L_{\infty,t,i}
+	\end{align*}
+	where $N_{d,p}^{(0)} = N_{d,p}$ and $N_{d,p}^{(1)} = N_{d,p}^{(2)} = 0$. \\
+
+% \subsubsection*{Other definitions}
+% 	\begin{align*}
+% 	{\color{\flag} u_t = F_t^{-1} v_t + K_t^\prime r_t} &\qquad 
+% 	{\color{\flag} D_t = F_t^{-1} K_t^\prime N_t K_t} \\
+% 	\hat{\eta_t} = Q_t R_t^\prime r_t &\qquad \Var(\eta_t | Y_n) = Q_t - Q_t R_t^\prime N_t R_t Q_t \\
+% 	J_t = \Cov(\alpha_{t+1}, \alpha_t | Y_n) &= P_t L_t (I_m - N_t P_{t+1})
+% 	\end{align*}
+
+\newpage
+\section{Likelihood and Gradient Calculation}
+	The likelihood of of data $y_1, \dots, y_n$ in the standard filter as shown in \cite{dk_book} (\S 7.2) is given by the prediction error decomposition:
+	\begin{equation*}
+	\log L(Y_n) = -\frac{np}{2} \log 2\pi - \frac{1}{2} \sum_{t=1}^n \left(\log |F_t| + v_t^\prime F_{t,i}^{-1} v_t \right)
+	\end{equation*}
+	
+	For the univariate filter, the same decomposition works in the univariate context:
+	\begin{equation} \label{eq:likelihood_uni}
+	\log L(Y_n) = -\frac{np}{2} \log 2\pi - \frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p\log F_{t,i}+ v_{t,i}^2 / F_{t,i} 
+	\end{equation}
+	
+	The likelihood for the exact initial filter allows for some simplifications in $F_{\infty,t,i}$ as shown in \cite{dk_book}:
+	\begin{equation} \label{eq:likelihood_uni_diff}
+	\log L_d(Y_n) = -\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \iota_{t,i} \log 2\pi  - \frac{1}{2}  \sum_{t=1}^d \sum_{i=1}^p w_{t,i} - \frac{1}{2} \sum_{t=d}^n \sum_{i=1}^p \iota_{t,i} \left(\log F_{t,i}+ v_{t,i}^2 / F_{t,i} \right)
+	\end{equation}
+	where  $\iota_{t,i} = 1$ if $F_{*,t,i} \neq 0$ or $ t > d$, and 
+	\begin{equation*}
+	w_{t,i} = \begin{cases} 
+	   \iota_{t,i} (\log (F_{*,t,i}) + v_{t,i}^{(0)2} / F_{*,t,i}) & F_{\infty,t,i} = 0 \\
+	   \log F_{\infty,t,i} & F_{\infty,t,i} \neq 0
+	\end{cases} 
+	\end{equation*}
+	Since these quantities are naturally produced by the Kalman filter, this is the preferred method to calculate the likelihood.
+
+\subsection*{Univariate Gradient}
+	Following the notation of \cite{nagakura}, we denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. See Appendix \ref{sec:gradient_derivation} for details and properties of $\Gt(\cdot)$. \\
+
+	% The gradient of Equation \ref{eq:likelihood_uni} with respect to $\theta$ is then given by: 
+	% \begin{equation} \label{eq:gradient_uni}
+	% \Gt(\log L(Y_n)) = -\frac{1}{2} \sum_{t=1}^{n} \sum_{i=1}^{p} \Gt(F_{t,i}) \left[F_{t,i}^{-1} - v_{t,i}^2 F_{t.i}^{-2}\right] + 2 \Gt(v_{t,i}) F_{t,i}^{-1} v_{t,i} 
+	% \end{equation}
+	% where 
+	% \begin{align*}
+	% \Gt(v_{t,i}) &= - \Gt(Z_{t,i}) a_{t,i} - \Gt(a_{t,i}) Z_{t,i} - \Gt(d_{t,i}) \\ 
+	% \Gt(F_{t,i}) &= \Gt(Z_{t,i}) (P_{t,i} Z_{t,i}^\prime) N_m + \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i})
+	% \end{align*}
+	% where $\Gt(a_{t,i})$ and $\Gt(P_{t,i})$ are given by the recursion 
+	% \begin{align*}
+	% \Gt(a_{t,i+1}) &= \Gt(a_{t,i}) + \Gt(K_{t,i}) (v_{t,i} \otimes I_m) + \Gt(v_{t,i}) K_{t,i}^\prime \\
+	% \Gt(a_{t+1,1}) &= \Gt(T_{t+1})(a_{t,p+1} \otimes I_m) + \Gt(a_{t,p+1}) T_{t+1}^\prime + \Gt(c_{t+1}) \\
+	% \Gt(P_{t,i+1}) &= \Gt(P_{t,i}) - \Gt(K_{t,i})(F_{t,i} K_{t,i}^\prime \otimes I_m) - \Gt(F_{t,i}) (K_{t,i}^\prime \otimes K_{t,i}^\prime) \\
+	% \Gt(P_{t+1,1}) &= \Gt(T_{t+1}) (P_{t,p+1} T_{t+1}^\prime \otimes) N_m + \Gt(P_{t,p+1}) (T_{t+1}^\prime \otimes T_{t+1}^\prime) \\
+	% &\quad + \Gt(R_{t+1}) (Q_{t+1} R_{t+1}^\prime \otimes I_m) N_m + \Gt(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
+	% \Gt(K_{t,i}) &= \left[ \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes I_m) + \Gt(Z_{t,i}) K_{1m} P_{t,i} \right] F_{t,i}^{-1} - \Gt(F_{t,i}) F_{t,i}^{-2} P_{t,i} Z_{t,i}
+	% \end{align*}
+	% where $\Gt(a_{0,1}) = \Gt(a_0)$ and $\Gt(P_{0,1}) = \Gt(P_0)$, which are given below. See Appendix \ref{sec:gradient_derivation} for details. 
+
+	Given the univariate likelihood function \eqref{eq:likelihood_uni}, the identities for the gradient in Appendix \ref{sec:gradient_derivation} produce the expression for the univariate gradient: 
+	\begin{align*}
+	\Gt(\log L(Y_n)) &= \Gt \left(-\frac{np}{2} \log 2\pi - \frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \log F_{t,i}+ v_{t,i}^2 F_{t,i}^{-1}\right) \\
+	&= -\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \Gt(\log F_{t,i}) + \Gt(v_{t,i}^2 F_{t,i}^{-1}) \\
+	&= -\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \Gt(F_{t,i}) \left[F_{t,i}^{-1} - F_{t,i}^{-2} v_{t,i}^2\right] + 2 \Gt(v_{t,i}) F_{t,i}^{-1} v_{t,i}
+	\end{align*}
+	The quantities used in the gradient recursion are computed similarly using the definitions from the univariate filter: 
+
+	\begin{align*}
+	\Gt(v_{t,i}) &= \Gt(y_{t,i} - Z_{t,i} a_{t,i} - d_{t,i}) \\
+	&= -\Gt(Z_{t,i}) a_{t,i} - \Gt(a_{t,i}) Z_{t,i}^\prime - \Gt(d_{t,i}) \\
+	\Gt(F_{t,i}) &= \Gt(Z_{t,i} P_{t,i} Z_{t,i}^\prime + H_{t,i}) \\
+	&= \Gt(Z_{t,i})(P_{t,i} Z_{t,i}^\prime) N_m + \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i}) \\
+	\Gt(K_{t,i}) &= \Gt(P_{t,i} Z_{t,i}^\prime F_{t,i}^{-1}) \\
+	&= \Gt(P_{t,i} Z_{t,i}^\prime) (F_{t,i}^{-1} \otimes I_m) + \Gt(F_{t,i}^{-1}) P_{t,i}^\prime Z_{t,i} \\
+	&= \left[ \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes I_m) + \Gt(Z_{t,i}) K_{1m} P_{t,i} \right] (F_{t,i}^{-1} \otimes I_m) + \Gt(F_{t,i}) F_{t,i}^{-2} P_{t,i}^\prime Z_{t,i} \\
+	\Gt(a_{t+1,1}) &= \Gt(T_{t+1} a_{t,p+1} + c_{t+1}) \\
+	&= \Gt(T_{t+1}) (a_{t,p+1} \otimes I_m) + \Gt(a_{t,p+1}) T_{t+1}^\prime + \Gt(c_{t+1})\\ 
+	\Gt(a_{t,i+1}) &= \Gt(a_{t,i} + K_{t,i} v_{t,i}) \\
+	&= \Gt(a_{t,i}) + \Gt(K_{t,i})(v_{t,i} \otimes I_m) + \Gt(v_{t,i})K_{t,i}^\prime \\
+	\Gt(P_{t+1,1}) &= \Gt(T_{t+1} P_{t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime) \\
+	&= \Gt(T_{t+1})(P_{t,p+1} T_{t+1}^\prime \otimes I_m) N_m + \Gt(P_{t,p+1})(T_{t+1}^\prime \otimes T_{t+1}^\prime) \\
+	&\quad + \Gt(R_{t+1})(Q_{t+1} R_{t+1}^\prime \otimes I_m) N_m + \Gt(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
+	\Gt(P_{t,i+1}) &= \Gt(P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^\prime) \\ 
+	&= \Gt(P_{t,i}) - \Gt(K_{t,i})(F_{t,i}K_{t,i}^\prime \otimes I_m) - \Gt(F_{t,i})(K_{t,i}^\prime \otimes K_{t,i}^\prime)
+	\end{align*}
+	where $\Gt(a_{1,1}) = \Gt(a_1)$ and $\Gt(P_{1,1}) = \Gt(P_1)$, which will be given below. 
+
+\subsection*{Exact Initial Gradient}
+	The process for computing the gradient for use with the exact initial filter is similar. Throughout, it is assumed that the boolean outcome of the tests $F_{*,t,i} = 0$ or $F_{\infty,t,i} = 0$ are unaffected by changes to $\theta$. Beginning with the likelihood function, 
+	
+	\begin{align*}
+	\Gt(\log L_d(Y_n)) &= \Gt\left(-\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \iota_{t,i} \log 2\pi  - \frac{1}{2}  \sum_{t=1}^d \sum_{i=1}^p w_{t,i} - \frac{1}{2} \sum_{t=d}^n \sum_{i=1}^p \iota_{t,i} \left(\log F_{t,i}+ v_{t,i}^2 / F_{t,i} \right) \right)\\
+	&= - \frac{1}{2}  \sum_{t=1}^d \sum_{i=1}^p \Gt(w_{t,i}) -\frac{1}{2} \sum_{t=d}^n \sum_{i=1}^p \Gt(F_{t,i}) \left[F_{t,i}^{-1} - F_{t,i}^{-2} v_{t,i}^2\right] + 2 \Gt(v_{t,i}) F_{t,i}^{-1} v_{t,i}
+	\end{align*}
+	where 
+	\begin{align*}
+	\Gt(w_{t,i}) &= \begin{cases} 
+	   \Gt(\iota_{t,i} (\log (F_{*,t,i}) + v_{t,i}^{(0)2} / F_{*,t,i})) & F_{\infty,t,i} = 0 \\
+	   \Gt(\log F_{\infty,t,i}) & F_{\infty,t,i} \neq 0
+	\end{cases} \\
+	 &= \begin{cases} 
+	   \iota_{t,i} \Gt(F_{*,t,i}) \left[F_{*,t,i}^{-1} - F_{*,t,i}^{-2} v_{t,i}^{(0)2}\right] +  \iota_{t,i} 2 \Gt(v_{t,i}^{(0)}) F_{*,t,i}^{-1} v_{t,i}^{(0)} & F_{\infty,t,i} = 0 \\
+	   \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-1}  & F_{\infty,t,i} \neq 0
+	\end{cases} 
+	\end{align*}
+
+	Again, the required quantities in the recursion come from the definition of the filter: 
+	\begin{align*}
+	\Gt(F_{*,t,i}) &= \Gt(Z_{t,i} P_{*,t,i} Z_{t,i}^\prime + H_{t,i}) \\
+	&= \Gt(Z_{t,i})(P_{*,t,i} Z_{t,i}^\prime) N_m + \Gt(P_{*,t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i}) \\
+	\Gt(F_{\infty,t,i}) &= \Gt(Z_{t,i} P_{\infty,t,i} Z_{t,i}^\prime + H_{t,i}) \\
+	&= \Gt(Z_{t,i})(P_{\infty,t,i} Z_{t,i}^\prime) N_m + \Gt(P_{\infty,t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i}) \\
+	\Gt(K_{*,t,i}) &= \Gt(P_{*,t,i} Z_{t,i}^\prime) \\
+	&= \Gt(P_{*,t,i}) (Z_{t,i}^\prime \otimes I_m) + \Gt(Z_{t,i}) K_{m1} P_{*,t,i} \\
+	\Gt(K_{\infty,t,i}) &= \Gt(P_{\infty,t,i} Z_{t,i}^\prime) \\
+	&= \Gt(P_{\infty,t,i}) (Z_{t,i}^\prime \otimes I_m) + \Gt(Z_{t,i}) K_{m1} P_{\infty,t,i} 
+	\end{align*}
+
+	Between periods, 
+	\begin{align*}
+	\Gt(a_{t+1,1}) &= \Gt(T_{t+1} a_{t,p+1} + c_{t+1}) \\
+	&= \Gt(T_{t+1}) (a_{t,p+1} \otimes I_m) + \Gt(a_{t,p+1}) T_{t+1}^\prime + \Gt(c_{t+1})\\ 
+	\Gt(P_{*,t+1,1}) &= \Gt(T_{t+1} P_{*,t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime) \\
+	&= \Gt(T_{t+1})(P_{*,t,p+1} T_{t+1}^\prime \otimes I_m) N_m + \Gt(P_{*,t,p+1})(T_{t+1}^\prime \otimes T_{t+1}^\prime) \\
+	&\quad + \Gt(R_{t+1})(Q_{t+1} R_{t+1}^\prime \otimes I_m) N_m + \Gt(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
+	\Gt(P_{\infty,t+1,1}) &= \Gt(T_{t+1} P_{\infty,t,p+1} T_{t+1}^\prime) \\
+	&= \Gt(T_{t+1})(P_{\infty,t,p+1} T_{t+1}^\prime \otimes I_m) N_m + \Gt(P_{\infty,t,p+1})(T_{t+1}^\prime \otimes T_{t+1}^\prime)
+	\end{align*}
+
+	When $F_{\infty,t,i} = 0$, 
+	\begin{align*}
+	\Gt(a_{t,i+1}) &= \Gt(a_{t,i} + K_{*,t,i} F_{*,t,i}^{-1} v_{t,i}) \\
+	&= \Gt(a_{t,i}) + \Gt(K_{*,t,i})(F_{*,t,i}^{-1} v_{t,i} \otimes I_m) + \Gt(F_{*,t,i}^{-1} v_{t,i}) K_{*,t,i}  \\
+	&= \Gt(a_{t,i}) + \Gt(K_{*,t,i})(F_{*,t,i}^{-1} v_{t,i} \otimes I_m) - \Gt(F_{*,t,i}) F_{*,t,i}^{-2} K_{*,t,i} + \Gt(v_{t,i}) F_{*,t,i}^{-1} K_{*,t,i}  \\
+	\Gt(P_{*,t,i}) &= \Gt(P_{*,t,i} - K_{*,t,i} K_{*,t,i}^\prime F_{*,t,i}^{-1}) \\
+	&= \Gt(P_{*,t,i}) - \Gt(K_{*,t,i})(F_{*,t,i}K_{*,t,i}^\prime \otimes I_m) - \Gt(F_{*,t,i})(K_{*,t,i}^\prime \otimes K_{*,t,i}^\prime) \\
+	\Gt(P_{\infty,t,i+1}) &= \Gt(P_{\infty,t,i}) 
+	\end{align*}
+	and when $F_{\infty,t,i} \neq 0$, 
+	\begin{align*}
+	\Gt(a_{t,i+1}) &= \Gt(a_{t,i} + K_{\infty,t,i} F_{\infty,t,i}^{-1} v_{t,i}) \\
+	&= \Gt(a_{t,i}) + \Gt(K_{\infty,t,i})(F_{\infty,t,i}^{-1} v_{t,i} \otimes I_m) - \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-2} K_{\infty,t,i} + \Gt(v_{t,i}) F_{\infty,t,i}^{-1} K_{\infty,t,i}  \\
+	\Gt(P_{*,t,i+1}) &= \Gt \left(P_{*,t,i} - K_{\infty,t,i} K_{\infty,t,i}^\prime F_{*,t,i} F_{\infty,t,i}^{-2} - \left(K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime \right)F_{\infty,t,i}^{-1} \right) \\
+	&= \Gt(P_{*,t,i}) - \Gt \left(K_{\infty,t,i} K_{\infty,t,i}^\prime F_{*,t,i} F_{\infty,t,i}^{-2}\right) - \Gt\left((K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime ) F_{\infty,t,i}^{-1} \right) \\
+	&= \Gt(P_{*,t,i}) - \Gt (K_{\infty,t,i}) (K_{\infty,t,i}^\prime \otimes I_m) (F_{*,t,i} F_{\infty,t,i}^{-2} \otimes I_m) \\
+		&\quad - \left[ \Gt(F_{*,t,i}) F_{\infty,t,i}^{-2} - 2 \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-3} F_{*,t,i}) \right] K_{\infty,t,i} K_{\infty,t,i}^\prime \\
+		&\quad - [ \Gt(K_{*,t,i}) \left[(K_{\infty,t,i}^\prime \otimes I_m)  + K_{1m} K_{\infty,t,i}^\prime \right] \\ 
+		&\qquad + \Gt(K_{\infty,t,i})  \left[ K_{1m} K_{*,t,i}^\prime +  (K_{*,t,i}^\prime \otimes I_m) \right] ] (F_{\infty,t,i}^{-1}  \otimes I_m) \\
+		&\quad - \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-2} (K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime ) \\
+	\Gt(P_{\infty,t,i+1}) &= \Gt(P_{\infty,t,i} - K_{\infty,t,i} K_{\infty,t,i}^\prime F_{\infty,t,i}^{-1}) \\
+	&= \Gt(P_{\infty,t,i}) - \Gt(K_{\infty,t,i} K_{\infty,t,i}^\prime) (F_{\infty,t,i}^{-1} \otimes I_m) - \Gt(F_{\infty,t,i}^{-1}) (K_{\infty,t,i} K_{\infty,t,i}^\prime) \\
+	&= \Gt(P_{\infty,t,i}) - \Gt(K_{\infty,t,i})(K_{\infty,t,i}^\prime \otimes I_m) N_m (F_{\infty,t,i}^{-1} \otimes I_m) + \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-2} (K_{\infty,t,i} K_{\infty,t,i}^\prime) \\
+	\end{align*}
+	since
+	\begin{align*}
+	\Gt \left(K_{\infty,t,i} K_{\infty,t,i}^\prime F_{*,t,i} F_{\infty,t,i}^{-2}\right) &= \Gt (K_{\infty,t,i} K_{\infty,t,i}^\prime) (F_{*,t,i} F_{\infty,t,i}^{-2} \otimes I_m) \\
+	&\quad + \Gt(F_{*,t,i} F_{\infty,t,i}^{-2}) K_{\infty,t,i} K_{\infty,t,i}^\prime \\
+	&= \Gt (K_{\infty,t,i}) (K_{\infty,t,i}^\prime \otimes I_m) (F_{*,t,i} F_{\infty,t,i}^{-2} \otimes I_m) \\
+	&\quad + \left[ \Gt(F_{*,t,i}) F_{\infty,t,i}^{-2} - 2 \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-3} F_{*,t,i}) \right] K_{\infty,t,i} K_{\infty,t,i}^\prime \\
+	\Gt \left((K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime ) F_{\infty,t,i}^{-1} \right) &= \Gt \left((K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime ) \right) (F_{\infty,t,i}^{-1}  \otimes I_m) \\
+	&\quad + \Gt(F_{\infty,t,i}^{-1}) (K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime ) \\
+	&= [ \Gt(K_{*,t,i}) (K_{\infty,t,i}^\prime \otimes I_m) + \Gt(K_{\infty,t,i}) K_{1m} K_{*,t,i}^\prime  \\
+	&\quad + \Gt (K_{\infty,t,i}) (K_{*,t,i}^\prime \otimes I_m) + \Gt (K_{*,t,i}) K_{1m} K_{\infty,t,i}^\prime  ] (F_{\infty,t,i}^{-1}  \otimes I_m) \\
+	&\quad + \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-2} (K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime ) \\
+	&= [ \Gt(K_{*,t,i}) \left[(K_{\infty,t,i}^\prime \otimes I_m)  + K_{1m} K_{\infty,t,i}^\prime \right] \\ 
+	&\quad + \Gt(K_{\infty,t,i})  \left[ K_{1m} K_{*,t,i}^\prime +  (K_{*,t,i}^\prime \otimes I_m) \right] ] (F_{\infty,t,i}^{-1}  \otimes I_m) \\
+	&\quad + \Gt(F_{\infty,t,i}) F_{\infty,t,i}^{-2} (K_{*,t,i} K_{\infty,t,i}^\prime + K_{\infty,t,i} K_{*,t,i}^\prime )
+	\end{align*}
+
+\subsection*{Initial Conditions}
+	The initial conditions for the recursion are given via the expressions for $a_1$ and $P_1$. We assume that the rank of $A$ and $R_0$ do not affected by $\theta$: 
+	\begin{align*}
+	\Gt(a_1) &= \Gt(a) + \Gt(R_0 \eta_0) + \Gt(A \delta) = \Gt(a) \\
+	\Gt(P_1) &= \Gt(\tilde{R} \tilde{Q} \tilde{R}) + \Gt(\kappa A A^\prime) = \Gt(\tilde{R} \tilde{Q} \tilde{R})\\
+	% &= \Gt(\tilde{Q})(\tilde{R}^\prime \otimes \tilde{R}^\prime)
+	\end{align*}
+
+	From the definitions of $a$ and $\tilde{R} \tilde{Q} \tilde{R}$ above, 
+	\begin{align*}
+	\Gt(a) &= \Gt([I_m - T_1]^{-1} c_1) \\ 
+		&= \Gt([I_m - T_1]^{-1}) (c_1 \otimes I_m) + \Gt(c_1) (I_m - T_1)^{-1})^\prime \\ 
+		&= -\Gt(I_m - T_1) [(I_m - T_1)^{-1} \otimes (I_m - T_1)^{\prime-1} ](c_1 \otimes I_m) +  \Gt(c_1) (I_m - T_1)^{\prime-1} \\ 
+		&= \Gt(T_1) [(I_m - T_1)^{-1} \otimes (I_m - T_1)^{\prime-1}] (c_1 \otimes I_m) +  \Gt(c_1) (I_m - T_1)^{\prime-1} \\
+	\Gt(\tilde{R} \tilde{Q} \tilde{R}^\prime) &= \Gt(S \ \vecop(R_1 Q_1 R_1^\prime))\\
+		&= \Gt(S) [\vecop(R_1 Q_1 R_1^\prime) \otimes I_{m^2}] + \Gt(\vecop(R_1 Q_1 R_1^\prime))(I_1 \otimes S^\prime) \\
+		&= -\Gt(I_{m^2} - T_1 \otimes T_1)(S \otimes S^\prime) [\vecop(R_1 Q_1 R_1^\prime) \otimes I_{m^2}]\\ 
+		&\quad + [\Gt(R_1)(Q_1 R_1^\prime \otimes I_m) N_m + \Gt(Q_1)(R_1^\prime \otimes R_1^\prime)] S^\prime \\
+		&= \Gt(T_1 \otimes T_1)(S \otimes S^\prime) [\vecop(R_1 Q_1 R_1^\prime) \otimes I_{m^2}] \\
+		&\quad + [\Gt(R_1)(Q_1 R_1^\prime \otimes I_m) N_m + \Gt(Q_1)(R_1^\prime \otimes R_1^\prime)] S^\prime
+	\end{align*}
+	where $S = (I_{m^2} - T_1 \otimes T_1)^{-1}$. Note that $\Gt(T_1 \otimes T_1)$ must be computed separately. For the diffuse filter, note that $\Gt(P_{*,1}) = \Gt(P_1)$ and $\Gt(P_{\infty,1}) = 0$.
+
+\appendix
+\section{Gradient Derivation} \label{sec:gradient_derivation}
+	Denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. Several identities are needed in computing the gradient (assume matrices are of dimensions such that the expression on the left-hand side exists):
+
+	\begin{enumerate}[label=(\alph*)]
+	\item \label{gradID:sum} $\Gt(A + B) = \Gt(A) + \Gt(B)$
+	\item \label{gradID:mult} $\Gt(A B) = \Gt(A) (B \otimes I_{p_A}) + \Gt(B)(I_{q_B} \otimes A)$
+	\item \label{gradID:trans} $\Gt(A^\prime) = \Gt(A) K_{nm}$ 
+	\item \label{gradID:quad} $\Gt(ACA^\prime) = \Gt(A)(CA^\prime \otimes I_m) N_m + \Gt(C)(A^\prime \otimes A^\prime)$
+	\item \label{gradID:inv} $\Gt(D^{-1}) = -\Gt(D)(D^{-1} \otimes D^{-1})$ 
+	\item \label{gradID:logdet} $\Gt(\log |D|) = \Gt(D) D^{\prime-1}$
+	\end{enumerate}
+	where $C$ is symmetric, $D$ is nonsingular, $K_{mn}$ is a commutation matrix of size $mn$, and $N_m = I_{m^2} + K_{mm}$. Note that $\Gt(AA^\prime)$ can easily be computed from \ref{gradID:quad} by treating $C$ as the identity matrix. Also note that $A \otimes I_1 = A$ and $\log |B| = \log B$ if $B$ is a scalar:
+
+
+\bibliographystyle{plain}
+\bibliography{kalman_filter_smoother} 
+
+\end{document}
+
