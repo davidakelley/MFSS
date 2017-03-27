@@ -592,7 +592,6 @@ classdef StateSpace < AbstractStateSpace
       Pstar(:,:,ii+1) = Tii * Pstar0 * Tii' + ...
         obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
 
-      ii = 0;
       % Initial recursion
       while ~all(all(Pd(:,:,ii+1) == 0))
         if ii >= obj.n
@@ -601,7 +600,7 @@ classdef StateSpace < AbstractStateSpace
         end
         
         ii = ii + 1;
-        ind = find( ~isnan(y(:,ii)) );
+        ind = find(~isnan(y(:,ii)));
         
         ati = a(:,ii);
         Pstarti = Pstar(:,:,ii);
@@ -654,7 +653,7 @@ classdef StateSpace < AbstractStateSpace
       
       % Standard Kalman filter recursion
       for ii = dt+1:obj.n
-        ind = find( ~isnan(y(:,ii)) );
+        ind = find(~isnan(y(:,ii)));
         ati    = a(:,ii);
         Pti    = P(:,:,ii);
         for jj = ind'
@@ -677,7 +676,9 @@ classdef StateSpace < AbstractStateSpace
         P(:,:,ii+1) = Tii * Pti * Tii' + ...
           obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
       end
-
+      
+      % Consider changing to 
+      %   sum(sum(F(:,d+1:end)~=0)) + sum(sum(Fstar(:,1:d)~=0))
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
       filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
@@ -705,14 +706,15 @@ classdef StateSpace < AbstractStateSpace
       % Univariate smoother
       
       alpha = zeros(obj.m, obj.n);
+      V     = zeros(obj.m, obj.m, obj.n);
       eta   = zeros(obj.g, obj.n);
       r     = zeros(obj.m, obj.n);
-      N     = zeros(obj.m, obj.m, obj.n+1);
+      N     = zeros(obj.m, obj.m, obj.n);
       
       rti = zeros(obj.m,1);
       Nti = zeros(obj.m,obj.m);
       for ii = obj.n:-1:fOut.dt+1
-        ind = flipud(find( ~isnan(y(:,ii)) ));
+        ind = flipud(find(~isnan(y(:,ii))));
         
         for jj = ind'
           Lti = eye(obj.m) - fOut.K(:,jj,ii) * ...
@@ -727,50 +729,78 @@ classdef StateSpace < AbstractStateSpace
         N(:,:,ii) = Nti;
         
         alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii);
+        V(:,:,ii) = fOut.P(:,:,ii) - fOut.P(:,:,ii) * N(:,:,ii) * fOut.P(:,:,ii);
         eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))' * r(:,ii); 
         
         rti = obj.T(:,:,obj.tau.T(ii))' * rti;
         Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
       end
       
-      % Note: r0 = r;
       r1 = zeros(obj.m, fOut.dt+1);
+      N1 = zeros(obj.m, obj.m, fOut.dt+1);
+      N2 = zeros(obj.m, obj.m, fOut.dt+1);
+
+      % Note: r0 = r and N0 = N
+      r0ti = r(:,fOut.dt+1);
+      r1ti = r1(:,fOut.dt+1);
+      N0ti = N(:,:,fOut.dt+1);
+      N1ti = N1(:,:,fOut.dt+1);
+      N2ti = N2(:,:,fOut.dt+1);
       
       % Exact initial smoother
       for ii = fOut.dt:-1:1
-        r0ti = r(:,ii+1);
-        r1ti = r1(:,ii+1);
-        
-        ind = flipud(find( ~isnan(y(:,ii)) ));
+        ind = flipud(find(~isnan(y(:,ii))));
         for jj = ind'
           Zjj = obj.Z(jj,:,obj.tau.Z(ii));
           
           if fOut.Fd(jj,ii) ~= 0
             % Diffuse case
             Ldti = eye(obj.m) - fOut.Kd(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
-            L0ti = (fOut.Kd(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) + ...
+            % NOTE: minus sign!
+            L0ti = (fOut.Kd(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) - ... 
               fOut.K(:,jj,ii)) * Zjj / fOut.Fd(jj,ii);
             
-            r1ti = Zjj' / fOut.Fd(jj,ii) * fOut.v(jj,ii) - L0ti' * r0ti + Ldti' * r1ti;
-            
             r0ti = Ldti' * r0ti;
+            % NOTE: plus sign!
+            r1ti = Zjj' / fOut.Fd(jj,ii) * fOut.v(jj,ii) + L0ti' * r0ti + Ldti' * r1ti; 
+            
+            N0ti = Ldti' * N0ti * Ldti;
+            N1ti = Zjj' / fOut.Fd(jj,ii) * Zjj + Ldti' * N0ti * L0ti + Ldti' * N1ti * Ldti;
+            N2ti = Zjj' * fOut.Fd(jj,ii)^(-2) * Zjj * fOut.F(jj,ii) + ...
+              L0ti' * N1ti * L0ti + Ldti' * N1ti * L0ti + ...
+              L0ti' * N1ti * Ldti + Ldti' * N2ti * Ldti;
           else
             % Known
             Lstarti = eye(obj.m) - fOut.K(:,jj,ii) * Zjj / fOut.F(jj,ii);
             r0ti = Zjj' / fOut.F(jj,ii) * fOut.v(jj,ii) + Lstarti' * r0ti;
+            
+            N0ti = Zjj' / fOut.F(jj,ii) * Zjj + Lstarti' * N0ti * Lstarti;
           end
         end
+        
         r(:,ii) = r0ti;
         r1(:,ii) = r1ti;
+        N(:,:,ii) = N0ti;
+        N1(:,:,ii) = N1ti;
+        N2(:,:,ii) = N2ti;        
         
         % What here needs tau_{ii+1}?
         alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii) + ...
           fOut.Pd(:,:,ii) * r1(:,ii);
-        
+        V(:,:,ii) = fOut.P(:,:,ii) - ...
+          fOut.P(:,:,ii) * N(:,:,ii) * fOut.P(:,:,ii) - ...
+          (fOut.Pd(:,:,ii) * N1(:,:,ii) * fOut.P(:,:,ii))' - ...
+          fOut.P(:,:,ii) * N1(:,:,ii) * fOut.Pd(:,:,ii) - ...
+          fOut.Pd(:,:,ii) * N2(:,:,ii) * fOut.Pd(:,:,ii);
+
         eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
         
         r0ti = obj.T(:,:,obj.tau.T(ii))' * r0ti;
         r1ti = obj.T(:,:,obj.tau.T(ii))' * r1ti;
+        
+        N0ti = obj.T(:,:,obj.tau.T(ii))' * N0ti * obj.T(:,:,obj.tau.T(ii));
+        N1ti = obj.T(:,:,obj.tau.T(ii))' * N1ti * obj.T(:,:,obj.tau.T(ii));
+        N2ti = obj.T(:,:,obj.tau.T(ii))' * N2ti * obj.T(:,:,obj.tau.T(ii));
       end
       
       Pstar0 = obj.R0 * obj.Q0 * obj.R0';
@@ -781,7 +811,7 @@ classdef StateSpace < AbstractStateSpace
         a0tilde = obj.a0 + Pstar0 * rti;
       end
       
-      smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
+      smootherOut = obj.compileStruct(alpha, V, eta, r, N, N1, N2, a0tilde);
     end
     
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
