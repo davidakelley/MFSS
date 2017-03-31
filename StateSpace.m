@@ -463,9 +463,9 @@ classdef StateSpace < AbstractStateSpace
       assert(max(max(abs(error))) < 1e-10, 'Development error');
       
       factorCinv = inv(factorC);
-      kronCinv = kron(factorCinv, factorCinv);
+      kronCinv = kron(factorCinv, factorCinv');
       Guni.Z = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.Z * kron(eye(obj.m), factorCinv);
-      Guni.d = -GC * kronCinv * kron(ssMulti.d, eye(obj.p)) + GMulti.d * factorCinv;
+      Guni.d = -GC * kronCinv * kron(ssMulti.d, eye(obj.p)) + GMulti.d / factorC;
       
       GY = zeros(size(GMulti.H, 1), obj.n, obj.p);
       for iT = 1:obj.n
