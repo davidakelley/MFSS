@@ -2,8 +2,7 @@
 \usepackage{amsthm,amsfonts,amsmath,xcolor,fullpage}
 \usepackage[letterpaper, margin=1in]{geometry}
 \usepackage{enumitem}
-
-% \usepackage[backend=biber,style=alphabetic,citestyle=authoryear]{biblatex}
+\usepackage{parskip}
 
 \setlength{\parindent}{0pt}
 
@@ -14,16 +13,30 @@
 \newcommand{\flag}[0]{red}
 \newcommand{\tr}[0]{\text{tr}}
 
+\title{MFSS Estimation Methods}
+\date{}
+\author{}
+
 \begin{document}
 
-\section{Kalman Filtering and Smoothing Calculations}
-	Using the preferred timing for the state space model,
-	\begin{align*} 
-	y_t = Z_t \alpha_t + d_t + \varepsilon_t &\qquad \varepsilon_t \sim N(0,H_t) \\ 
-	\alpha_{t} = T_t \alpha_{t-1} + c_t + R_t \eta_t &\qquad \eta_t \sim N(0, Q_t)
-	\end{align*} 
+\maketitle
 
-	the filtered estimates are given by 
+	We are interested in estimating state space models with time-varying parameters of the form
+	\begin{align*} 
+	y_t = Z_t \alpha_t + d_t + \varepsilon_t &\qquad \varepsilon_t \sim \mathcal{N}(0,H_t) \\ 
+	\alpha_{t} = T_t \alpha_{t-1} + c_t + R_t \eta_t &\qquad \eta_t \sim \mathcal{N}(0, Q_t) \qquad
+	\alpha_1 \sim \mathcal{N}(a_1, P_1) 
+	\end{align*} 
+	The elements of the parameter matrices $Z_t$, $d_t$, $H_t$, $T_t$, $c_t$, $R_t$, and $Q_t$ are divided into those that are known and those that are to be estimated. Each estimated element of a parameter matrix must be a transformation of a single element of the vector of parameters to be estimated, $\theta$. Commonly used transformations include the identity, exponential, negative exponential, and logistic transformations to allow for an unbounded $\theta \in \mathbb{R}^{n_\theta}$ while maintaining bounds on the parameter matrices. 
+
+	Multiple parameter matrix elements may be designated as functions of the same element of $\theta$ to allow for restrictions in the estimation. This is most commonly used in constructing the accumulated states that enable mixed-frequency observations.
+
+	Instructions for how to set up a state space and estimate the maximum likelihood parameters can be found in the MFSS documentation. This document attempts to detail how the likelihood and its gradient are calculated for a given system.
+
+\section{Kalman Filtering and Smoothing Calculations}
+
+\subsection*{Multivariate Filter}
+	As shown in \cite{dk_book}, the filtered estimates are given by 
 	\begin{align*}
 	a_{t+1} = T_{t+1} a_t + c_{t+1} + K_t v_t &\qquad
 	P_{t+1} = T_{t+1} P_t L_t^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime \\
@@ -41,27 +54,29 @@
 	where $r_{n+1} = 0$ and $N_{n+1} = 0$. 
 
 \subsection*{Univariate Filter}
-	When any $H_t$ is non-diagonal, the observation equation is transformed by taking the LDL factorization of the $H_t$ matrices:
+	When any $H_t$ is non-diagonal, the observation equation is transformed by taking the LDL factorization of the $H_t$ matrices. The transformed parameters are marked with $^*$ to denote that they have been transformed.
 	\begin{align*}
 	y_t^* = Z_t^* \alpha_t + d_t^* + \varepsilon_t^* &\qquad \varepsilon_t \sim N(0, H_t^*)\\
 	y_t^* = C_t^{-1} y_t \qquad Z_t^* = C_t^{-1} Z_t \qquad d_t^* &= C_t^{-1} d_t \qquad \varepsilon_t^* = C_t^{-1} \varepsilon_t \qquad H_t = C_t H_t^* C_t^\prime
 	\end{align*}
 
-	To avoid taking the inverse of $F_t$ in the above recursion, several quantities are computed using the univariate filter that can be used on this transformed system: 
+	To avoid taking the inverse of $F_t$ in the above recursion, several quantities are computed using the univariate filter that can be used on the transformed system: 
 	\begin{align*}
-	a_{t, i+1} = a_{t,i} + K_{t,i} v_{t,i}^* &\qquad P_{t,i+1} = P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^{\prime} \\
-	v_{t,i}^* = y_{t,i}^* - Z_{t,i}^* a_{t,i} - d_{t,i}^* \qquad F_{t,i} &= Z_{t,i}^* P_{t,i} Z_{t,i}^{*\prime} + H_{t,i}^* \qquad K_{t,i} = P_{t,i} Z_{t,i}^{*\prime} F_{t,i}^{-1} \\ 
+	a_{t, i+1} = a_{t,i} + K_{t,i} v_{t,i} &\qquad P_{t,i+1} = P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^{\prime} \\
+	v_{t,i} = y_{t,i} - Z_{t,i} a_{t,i} - d_{t,i} \qquad F_{t,i} &= Z_{t,i} P_{t,i} Z_{t,i}^\prime + H_{t,i} \qquad K_{t,i} = P_{t,i} Z_{t,i}^\prime F_{t,i}^{-1} \\ 
 	a_{t+1,1} = T_{t+1} a_{t, p+1} + c_{t+1} &\qquad P_{t+1,1} = T_{t+1} P_{t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime
 	\end{align*}
-	where $Z_{t,i}^*$ is the $i$th row of $Z_t^*$, $d_{t,i}^*$ is the $i$th element of $d_t^*$, and $H_{t,i}^*$ is the $i$th diagonal element of $H_t^*$. The filtered estimates of the state $a_t = a_{t,1}$ and $P_t = P_{t,1}$ are equivalent to those computed above. Similarly, the univariate smoother provides $r_t = r_{t,0}$ and $N_t = N_{t,0}$:
+	where $y_{i,t}$ is the $i$th element of $y_t^*$, $Z_{t,i}$ is the $i$th row of $Z_t^*$, $d_{t,i}$ is the $i$th element of $d_t^*$, and $H_{t,i}$ is the $i$th diagonal element of $H_t^*$. The filtered estimates of the state $a_t = a_{t,1}$ and $P_t = P_{t,1}$ are equivalent to those computed above. However, there is no convenient transformation of the quantities $v_{t,i}$, $F_{t,i}$ or $K_{t,i}$ that recovers the multivariate versions computed above.
+
+	Similarly, the univariate smoother provides $r_t = r_{t,0}$ and $N_t = N_{t,0}$:
 	\begin{align*}
-	r_{t,i-1} = Z_{t,i}^{*\prime} F_{t,i}^{-1} v_{t,i}^* + L_{t,i}^{\prime} r_{t,i} \qquad N_{t,i-1} =& Z_{t,i}^{*\prime} F_{t,i}^{-1} Z_{t,i}^* + L_{t,i}^{\prime} N_{t,i} L_{t,i} \qquad L_{t,i} = I_m - K_{t,i} Z_{t,i}^* F_{t,i}^{-1}\\
+	r_{t,i-1} = Z_{t,i}^\prime F_{t,i}^{-1} v_{t,i} + L_{t,i}^{\prime} r_{t,i} \qquad N_{t,i-1} =& Z_{t,i}^\prime F_{t,i}^{-1} Z_{t,i} + L_{t,i}^{\prime} N_{t,i} L_{t,i} \qquad L_{t,i} = I_m - K_{t,i} Z_{t,i} F_{t,i}^{-1}\\
 	r_{t-1,p} = T_{t}^\prime r_{t,0} &\qquad N_{t-1,p} = T_{t-1}^\prime N_{t,0} T_{t-1}
 	\end{align*}
-	where $r_{t+1,p} = 0$ and $N_{t+1,p} = 0$. \\
+	where $r_{t+1,p} = 0$ and $N_{t+1,p} = 0$. 
 
 \subsection*{Exact Initial Kalman Filter}
-	When the state $\alpha_t$ is stationary, the initial values $a_1$ and $P_1$ can be computed as the unconditional mean and variance of the state given the system parameters by inverting the transition equation. \\
+	When the state $\alpha_t$ is stationary, the initial values $a_1$ and $P_1$ can be computed as the unconditional mean and variance of the state given the system parameters by inverting the transition equation. 
 
 	To handle cases where some states are nonstationary, the state is separated into states with known variance (those that are stationary) and those that are considered diffuse (nonstationary states). Let $\tilde{R}$ be a selection matrix with columns from the identity such that the initial shock $\eta_1$ is applied to the states with known variance. The selection matrix $A$ is composed of the columns of the identity matrix associated with the diffuse states such that taking the limit as $\kappa \rightarrow \infty$ allows the diffuse states to have infinite initial variance where the initial values are given by 
 	\begin{align*}
@@ -73,17 +88,17 @@
 	\tilde{R}^\prime a &= (I_m - T_1)^{-1} c_1 \\
 	\vecop(\tilde{R} \tilde{Q} \tilde{R}^\prime) &= (I_{m^2} - T_1 \otimes T_1)^{-1} \vecop(R_1 Q_1 R_1^\prime) 
 	\end{align*}
-	When all states are stationary, this initialization collapses down to the simple case where $\alpha_1 \sim N(a_1, P_1)$, where $a_1$ and $P_1$ are determined by inverting the full system. \\
+	When all states are stationary, this initialization collapses down to the simple case where $\alpha_1 \sim N(a_1, P_1)$, where $a_1$ and $P_1$ are determined by inverting the full system. 
 
 	Given this initialization, the univariate filter recursions must be altered to separate the states with finite and infinite variances: 
 	\begin{align*}
-	 F_{*,t,i} = Z_{t,i}^* P_{*,t,i} Z_{t,i}^{*\prime} + H_{t,i}^* &\qquad F_{\infty,t,i} = Z_{t,i}^* P_{\infty,t,i} Z_{t,i}^{*\prime}\\
-	K_{*,t,i} = P_{*,t,i} Z_{t,i}^{*\prime} &\qquad K_{\infty,t,i} = P_{\infty,t,i} Z_{t,i}^{*\prime} 
+	 F_{*,t,i} = Z_{t,i} P_{*,t,i} Z_{t,i}^\prime + H_{t,i} &\qquad F_{\infty,t,i} = Z_{t,i} P_{\infty,t,i} Z_{t,i}^\prime\\
+	K_{*,t,i} = P_{*,t,i} Z_{t,i}^\prime &\qquad K_{\infty,t,i} = P_{\infty,t,i} Z_{t,i}^\prime
 	\end{align*}
 	\begin{equation*}
 	a_{t,i+1} = \begin{cases} 
-	      a_{t,i} + K_{*,t,i} F_{*,t,i}^{-1} v_{t,i}^* & F_{\infty,t,i} = 0 \\
-	      a_{t,i} + K_{\infty,t,i} F_{\infty,t,i}^{-1} v_{t,i}^* & F_{\infty,t,i} \neq 0
+	      a_{t,i} + K_{*,t,i} F_{*,t,i}^{-1} v_{t,i} & F_{\infty,t,i} = 0 \\
+	      a_{t,i} + K_{\infty,t,i} F_{\infty,t,i}^{-1} v_{t,i} & F_{\infty,t,i} \neq 0
     \end{cases} 
     \end{equation*}
 	\begin{equation*}
@@ -102,24 +117,24 @@
 	a_{t+1,1} &= T_{t+1} a_{t, p+1} + c_{t+1} \\
 	P_{\infty,t+1,1} = T_{t+1} P_{\infty,t,p+1} T_{t+1}^\prime &\qquad P_{*,t+1,1} = T_{t+1} P_{*,t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime 
 	\end{align*}
-	For any set of system parameters where the state can be identified, there exists some time $d$ such that $F_{\infty,d,i} = 0$ for all $i$. For time $t > d$, the simpler Kalman filter recursion above can be employed. \\
+	For any set of system parameters where the state can be identified, there exists some time $d$ such that $F_{\infty,d,i} = 0$ for all $i$. For time $t > d$, the simpler Kalman filter recursion above can be employed. 
 
 	The smoother must be similarly altered so that beginning at $t = d$, the computation of $r_{t,i}$ is expanded to account for the initialization:
 	\begin{align*}
-	L_{\infty,t,i} = I_m - K_{\infty,t,i} Z_{t,i}^* F_{\infty,t,i}^{-1} &\qquad
-	L_{*,t,i} = I_m - K_{*,t,i} Z_{t,i}^* F_{*,t,i}^{-1} \\
-	L_{t,i}^{(0)} = \left(K_{\infty,t,i} F_{*,t,i} F_{\infty,t,i}^{-1} - K_{*,t,i} \right) Z_{t,i}^* F_{\infty,t,i}^{-1} &
+	L_{\infty,t,i} = I_m - K_{\infty,t,i} Z_{t,i} F_{\infty,t,i}^{-1} &\qquad
+	L_{*,t,i} = I_m - K_{*,t,i} Z_{t,i} F_{*,t,i}^{-1} \\
+	L_{t,i}^{(0)} = \left(K_{\infty,t,i} F_{*,t,i} F_{\infty,t,i}^{-1} - K_{*,t,i} \right) Z_{t,i} F_{\infty,t,i}^{-1} &
 	\end{align*}
 	\begin{equation*}
 	r_{t,i-1}^{(0)} = \begin{cases} 
-	   Z_{t,i}^{*\prime} F_{*,t,i}^{-1} v_{t,i}^* + L_{*,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} = 0 \\
+	   Z_{t,i}^\prime F_{*,t,i}^{-1} v_{t,i} + L_{*,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} = 0 \\
 	   L_{\infty,t,i}^\prime r_{t,i}^{(0)} & F_{\infty,t,i} \neq 0	   
 	\end{cases} 
 	\end{equation*}
 	\begin{equation*}
 	r_{t,i-1}^{(1)} = \begin{cases} 
 	   r_{t,i}^{(1)} & F_{\infty,t,i} = 0 \\
-	   Z_{t,i}^{*\prime} F_{\infty,t,i}^{-1} v_{t,i}^* + L_{t,i}^{(0)\prime} r_{t,i}^{(0)} + L_{\infty,t,i}^\prime r_{t,i}^{(1)} & F_{\infty,t,i} \neq 0	   
+	   Z_{t,i}^\prime F_{\infty,t,i}^{-1} v_{t,i} + L_{t,i}^{(0)\prime} r_{t,i}^{(0)} + L_{\infty,t,i}^\prime r_{t,i}^{(1)} & F_{\infty,t,i} \neq 0	   
 	\end{cases} 
 	\end{equation*}
 	\begin{equation*}
@@ -128,7 +143,7 @@
 	\begin{equation*}
 	\hat{\alpha}_t = a_t + P_{*,t,1} r_{t,0}^{(0)} + P_{\infty,t,1} r_{t,0}^{(1)}
 	\end{equation*}
-	where $r_{d,p}^{(0)} = r_{d,p}$ and $r_{d,p}^{(1)} = 0$. Note that $L_{\infty,t,i}$ and $L_{t,i}^{(0)}$ only need to be computed when $F_{\infty,t,i} \neq 0$ and $L_{*,t,i}$ only needs to be computed when $F_{\infty,t,i} = 0$. \\
+	where $r_{d,p}^{(0)} = r_{d,p}$ and $r_{d,p}^{(1)} = 0$. Note that $L_{\infty,t,i}$ and $L_{t,i}^{(0)}$ only need to be computed when $F_{\infty,t,i} \neq 0$ and $L_{*,t,i}$ only needs to be computed when $F_{\infty,t,i} = 0$. 
 
 	For the smoothed variance of the state, 
 	\begin{align*}
@@ -139,17 +154,17 @@
 	\end{align*}
 	where when $F_{\infty,t,i} = 0$, 
 	\begin{align*}
-	N_{t,i-1}^{(0)} = Z_{t,i}^{*\prime} F_{*,t,i}^{-1} Z_{t,i}^* + L_{*,t,i}^\prime N_{t,i}^{(0)} L_{*,t,i} &\qquad
+	N_{t,i-1}^{(0)} = Z_{t,i}^\prime F_{*,t,i}^{-1} Z_{t,i} + L_{*,t,i}^\prime N_{t,i}^{(0)} L_{*,t,i} &\qquad
 	N_{t,i-1}^{(1)} = N_{t,i}^{(1)} &\qquad
 	N_{t,i-1}^{(2)} = N_{t,i}^{(2)} 
 	\end{align*}
 	and when $F_{\infty,t,i} \neq 0$,
 	\begin{align*}
 	N_{t,i-1}^{(0)} &= L_{\infty,t,i}^\prime N_{t,i}^{(0)} L_{\infty,t,i}\\
-	N_{t,i-1}^{(1)} &= Z_{t,i}^{*\prime} F_{\infty,t,i}^{-1} Z_{t,i}^* + L_{\infty,t,i}^\prime N_{t,i}^{(0)} L_{t,i}^{(0)} + L_{\infty,t,i}^\prime N_{t,i}^{(1)} L_{\infty,t,i}  \\
-	N_{t,i-1}^{(2)} &= Z_{t,i}^{*\prime} F_{\infty,t,i}^{-2} Z_{t,i}^* F_{*,t,i} + L_{t,i}^{(0)\prime} N_{t,i}^{(1)} L_{t,i}^{(0)} + L_{\infty,t,i}^\prime N_{t,i}^{(1)} L_{t,i}^{(0)} + L_{t,i}^{(0)\prime} N_{t,i}^{(1)} L_{\infty,t,i} + L_{\infty,t,i}^\prime N_{t,i}^{(2)} L_{\infty,t,i}
+	N_{t,i-1}^{(1)} &= Z_{t,i}^{*\prime} F_{\infty,t,i}^{-1} Z_{t,i} + L_{\infty,t,i}^\prime N_{t,i}^{(0)} L_{t,i}^{(0)} + L_{\infty,t,i}^\prime N_{t,i}^{(1)} L_{\infty,t,i}  \\
+	N_{t,i-1}^{(2)} &= Z_{t,i}^\prime F_{\infty,t,i}^{-2} Z_{t,i} F_{*,t,i} + L_{t,i}^{(0)\prime} N_{t,i}^{(1)} L_{t,i}^{(0)} + L_{\infty,t,i}^\prime N_{t,i}^{(1)} L_{t,i}^{(0)} + L_{t,i}^{(0)\prime} N_{t,i}^{(1)} L_{\infty,t,i} + L_{\infty,t,i}^\prime N_{t,i}^{(2)} L_{\infty,t,i}
 	\end{align*}
-	where $N_{d,p}^{(0)} = N_{d,p}$ and $N_{d,p}^{(1)} = N_{d,p}^{(2)} = 0$. \\
+	where $N_{d,p}^{(0)} = N_{d,p}$ and $N_{d,p}^{(1)} = N_{d,p}^{(2)} = 0$. 
 
 % \subsubsection*{Other definitions}
 % 	\begin{align*}
@@ -185,7 +200,9 @@
 	Since these quantities are naturally produced by the Kalman filter, this is the preferred method to calculate the likelihood.
 
 \subsection*{Univariate Gradient}
-	Following the notation of \cite{nagakura}, we denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. See Appendix \ref{sec:gradient_derivation} for details and properties of $\Gt(\cdot)$. \\
+	Following the notation of \cite{nagakura}, we denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. See Appendix \ref{sec:gradient_derivation} for details and properties of $\Gt(\cdot)$.
+
+	Since each element of the parameter matrices is a function of a single element of $\theta$, their derivatives with respect to $\theta$ are easily computed as the derivative of the given function.
 
 	% The gradient of Equation \ref{eq:likelihood_uni} with respect to $\theta$ is then given by: 
 	% \begin{equation} \label{eq:gradient_uni}
@@ -211,33 +228,31 @@
 	\begin{align*}
 	\Gt(\log L(Y_n)) &= \Gt \left(-\frac{np}{2} \log 2\pi - \frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \log F_{t,i}+ v_{t,i}^2 F_{t,i}^{-1}\right) \\
 	&= -\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \Gt(\log F_{t,i}) + \Gt(v_{t,i}^2 F_{t,i}^{-1}) \\
-	&= -\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \Gt(F_{t,i}) \left[F_{t,i}^{-1} - F_{t,i}^{-2} v_{t,i}^2\right] + 2 \Gt(v_{t,i}) F_{t,i}^{-1} v_{t,i}
+	&= - \sum_{t=1}^n \sum_{i=1}^p \frac{1}{2}  \Gt(F_{t,i}) \left[F_{t,i}^{-1} - F_{t,i}^{-2} v_{t,i}^2\right] +  \Gt(v_{t,i}) F_{t,i}^{-1} v_{t,i}
 	\end{align*}
 	The quantities used in the gradient recursion are computed similarly using the definitions from the univariate filter: 
-
 	\begin{align*}
 	\Gt(v_{t,i}) &= \Gt(y_{t,i} - Z_{t,i} a_{t,i} - d_{t,i}) \\
 	&= -\Gt(Z_{t,i}) a_{t,i} - \Gt(a_{t,i}) Z_{t,i}^\prime - \Gt(d_{t,i}) \\
 	\Gt(F_{t,i}) &= \Gt(Z_{t,i} P_{t,i} Z_{t,i}^\prime + H_{t,i}) \\
-	&= \Gt(Z_{t,i})(P_{t,i} Z_{t,i}^\prime) N_m + \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i}) \\
+	&= 2 \Gt(Z_{t,i})(P_{t,i} Z_{t,i}^\prime) + \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i}) \\
 	\Gt(K_{t,i}) &= \Gt(P_{t,i} Z_{t,i}^\prime F_{t,i}^{-1}) \\
-	&= \Gt(P_{t,i} Z_{t,i}^\prime) (F_{t,i}^{-1} \otimes I_m) + \Gt(F_{t,i}^{-1}) P_{t,i}^\prime Z_{t,i} \\
-	&= \left[ \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes I_m) + \Gt(Z_{t,i}) K_{1m} P_{t,i} \right] (F_{t,i}^{-1} \otimes I_m) + \Gt(F_{t,i}) F_{t,i}^{-2} P_{t,i}^\prime Z_{t,i} \\
+	&= \Gt(P_{t,i} Z_{t,i}^\prime) F_{t,i}^{-1} + \Gt(F_{t,i}^{-1}) Z_{t,i} P_{t,i} \\
+	&= \Gt(P_{t,i}) (Z_{t,i}^\prime F_{t,i}^{-1} \otimes I_m) + \Gt(Z_{t,i}) P_{t,i} F_{t,i}^{-1} - \Gt(F_{t,i}) F_{t,i}^{-2} Z_{t,i} P_{t,i} \\
 	\Gt(a_{t+1,1}) &= \Gt(T_{t+1} a_{t,p+1} + c_{t+1}) \\
 	&= \Gt(T_{t+1}) (a_{t,p+1} \otimes I_m) + \Gt(a_{t,p+1}) T_{t+1}^\prime + \Gt(c_{t+1})\\ 
-	\Gt(a_{t,i+1}) &= \Gt(a_{t,i} + K_{t,i} v_{t,i}) \\
-	&= \Gt(a_{t,i}) + \Gt(K_{t,i})(v_{t,i} \otimes I_m) + \Gt(v_{t,i})K_{t,i}^\prime \\
+	\Gt(a_{t,i+1}) &= \Gt(a_{t,i} + K_{t,i} v_{t,i}) \\	
+	&= \Gt(a_{t,i}) + \Gt(K_{t,i})v_{t,i} + \Gt(v_{t,i})K_{t,i}^\prime \\
 	\Gt(P_{t+1,1}) &= \Gt(T_{t+1} P_{t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime) \\
 	&= \Gt(T_{t+1})(P_{t,p+1} T_{t+1}^\prime \otimes I_m) N_m + \Gt(P_{t,p+1})(T_{t+1}^\prime \otimes T_{t+1}^\prime) \\
 	&\quad + \Gt(R_{t+1})(Q_{t+1} R_{t+1}^\prime \otimes I_m) N_m + \Gt(Q_{t+1})(R_{t+1}^\prime \otimes R_{t+1}^\prime) \\
 	\Gt(P_{t,i+1}) &= \Gt(P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^\prime) \\ 
-	&= \Gt(P_{t,i}) - \Gt(K_{t,i})(F_{t,i}K_{t,i}^\prime \otimes I_m) - \Gt(F_{t,i})(K_{t,i}^\prime \otimes K_{t,i}^\prime)
+	&= \Gt(P_{t,i}) - \Gt(K_{t,i})(F_{t,i}K_{t,i}^\prime \otimes I_m) N_m - \Gt(F_{t,i})(K_{t,i}^\prime \otimes K_{t,i}^\prime)
 	\end{align*}
 	where $\Gt(a_{1,1}) = \Gt(a_1)$ and $\Gt(P_{1,1}) = \Gt(P_1)$, which will be given below. 
 
 \subsection*{Exact Initial Gradient}
-	The process for computing the gradient for use with the exact initial filter is similar. Throughout, it is assumed that the boolean outcome of the tests $F_{*,t,i} = 0$ or $F_{\infty,t,i} = 0$ are unaffected by changes to $\theta$. Beginning with the likelihood function, 
-	
+	The process for computing the gradient for use with the exact initial filter is similar. Throughout, it is assumed that the boolean outcome of the tests $F_{*,t,i} = 0$ or $F_{\infty,t,i} = 0$ are unaffected by changes to $\theta$. Beginning with the likelihood function, 	
 	\begin{align*}
 	\Gt(\log L_d(Y_n)) &= \Gt\left(-\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \iota_{t,i} \log 2\pi  - \frac{1}{2}  \sum_{t=1}^d \sum_{i=1}^p w_{t,i} - \frac{1}{2} \sum_{t=d}^n \sum_{i=1}^p \iota_{t,i} \left(\log F_{t,i}+ v_{t,i}^2 / F_{t,i} \right) \right)\\
 	&= - \frac{1}{2}  \sum_{t=1}^d \sum_{i=1}^p \Gt(w_{t,i}) -\frac{1}{2} \sum_{t=d}^n \sum_{i=1}^p \Gt(F_{t,i}) \left[F_{t,i}^{-1} - F_{t,i}^{-2} v_{t,i}^2\right] + 2 \Gt(v_{t,i}) F_{t,i}^{-1} v_{t,i}
@@ -340,23 +355,42 @@
 	\end{align*}
 	where $S = (I_{m^2} - T_1 \otimes T_1)^{-1}$. Note that $\Gt(T_1 \otimes T_1)$ must be computed separately. For the diffuse filter, note that $\Gt(P_{*,1}) = \Gt(P_1)$ and $\Gt(P_{\infty,1}) = 0$.
 
+\subsection*{Univariate Treatment of Multivariate Series}
+
+	For the univariate treatment of multivariate series, we need to find $\Gt(Z_t^*)$, $\Gt(d_t^*)$, and $\Gt(H_t^*)$ given $\Gt(Z_t)$, $\Gt(d_t)$, $\Gt(H_t)$, and $C_t$, the univariate factorization matrix. To do so, we  solve for $\Gt(H_t^*)$ and $\Gt(C_t)$, noting that elements of $\Gt(C_t)$ associated with the upper triangular elements of $C_t$ must be zero while elements of $\Gt(H_t^*)$ associated with off-diagonal elements of $H_t^*$ must be zero: 
+	\begin{align*}
+	\Gt(H_t) &= \Gt(C_t H_t^* C_t^\prime) \\
+	&= \Gt(C_t)(H_t^* C_t^\prime \otimes I_p) N_p + \Gt(H_t^*)(C_t^\prime \otimes C_t^\prime) \\
+	&= \begin{bmatrix} \Gt(C_t) & \Gt(H_t^*) \end{bmatrix} \begin{bmatrix} (H_t^* C_t^\prime \otimes I_p) N_p \\ C_t^\prime \otimes C_t^\prime \end{bmatrix} 
+	= G_t W_t
+	= \tilde{G}_t \tilde{W}_t
+	\end{align*}
+	where $\tilde{G}_t$ contains the nonzero columns of $G_t$ and $\tilde{W}_t$ contains the corresponding rows of $W_t$. The product $\Gt(H_t) \tilde{W}_t^+$ then provides an approximate solution for $\tilde{G}_t$ that can be reordered to solve for $\Gt(C_t)$ and $\Gt(H_t^*)$
+
+	Having solved for $\Gt(C_t)$, we can solve for the other gradients: 
+	\begin{align*} 
+	\Gt(Z_t^*) &= -\Gt(C_t)(C_t^{-1} \otimes C_t^{-1})(Z_t \otimes I_p) + \Gt(Z_t)(I_m \otimes C_t^{-1}) \\
+	\Gt(d_t^*) &= -\Gt(C_t)(C_t^{-1} \otimes C_t^{-1})(d_t \otimes I_p) + \Gt(d_t)C_t^{-1}
+	\end{align*}
+
 \appendix
+\newpage
 \section{Gradient Derivation} \label{sec:gradient_derivation}
 	Denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. Several identities are needed in computing the gradient (assume matrices are of dimensions such that the expression on the left-hand side exists):
 
 	\begin{enumerate}[label=(\alph*)]
 	\item \label{gradID:sum} $\Gt(A + B) = \Gt(A) + \Gt(B)$
-	\item \label{gradID:mult} $\Gt(A B) = \Gt(A) (B \otimes I_{p_A}) + \Gt(B)(I_{q_B} \otimes A)$
-	\item \label{gradID:trans} $\Gt(A^\prime) = \Gt(A) K_{nm}$ 
-	\item \label{gradID:quad} $\Gt(ACA^\prime) = \Gt(A)(CA^\prime \otimes I_m) N_m + \Gt(C)(A^\prime \otimes A^\prime)$
+	\item \label{gradID:mult} $\Gt(A B) = \Gt(A) (B \otimes I_{p_A}) + \Gt(B)(I_{q_B} \otimes A^\prime)$
+	\item \label{gradID:trans} $\Gt(A^\prime) = \Gt(A) K_{p_A q_A}$ 
+	\item \label{gradID:quad} $\Gt(ACA^\prime) = \Gt(A)(CA^\prime \otimes I_{p_A}) N_{p_A} + \Gt(C)(A^\prime \otimes A^\prime)$
 	\item \label{gradID:inv} $\Gt(D^{-1}) = -\Gt(D)(D^{-1} \otimes D^{-1})$ 
 	\item \label{gradID:logdet} $\Gt(\log |D|) = \Gt(D) D^{\prime-1}$
 	\end{enumerate}
-	where $C$ is symmetric, $D$ is nonsingular, $K_{mn}$ is a commutation matrix of size $mn$, and $N_m = I_{m^2} + K_{mm}$. Note that $\Gt(AA^\prime)$ can easily be computed from \ref{gradID:quad} by treating $C$ as the identity matrix. Also note that $A \otimes I_1 = A$ and $\log |B| = \log B$ if $B$ is a scalar:
+	where $C$ is symmetric, $D$ is nonsingular, $K_{mn}$ is a commutation matrix of size $mn$, and $N_m = I_{m^2} + K_{mm}$. For any given matrix $M$ is of dimension $p_M \times q_M$. Note that $\Gt(AA^\prime)$ can easily be computed from \ref{gradID:quad} by treating $C$ as the identity matrix. Also note that $A \otimes I_1 = A$ and $\log |B| = \log B$ if $B$ is a scalar. 
 
 
-\bibliographystyle{plain}
 \bibliography{kalman_filter_smoother} 
+\bibliographystyle{unsrt}
 
 \end{document}
 

@@ -34,7 +34,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
-    useGrad = false;   % Indicator for use of analytic gradient
+    useGrad = true;   % Indicator for use of analytic gradient
     
     fminsearchMaxIter = 500;
   end

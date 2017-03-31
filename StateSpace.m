@@ -152,43 +152,32 @@ classdef StateSpace < AbstractStateSpace
     function [logli, gradient] = gradient(obj, y, tm, theta)
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
-      
-      [ssUni, yUni, factorC] = obj.prepareFilter(y);
-      
-      % Most of the prepareFilter function: 
-      ssUni.validateKFilter();
-      ssUni = ssUni.checkSample(y);
-      obj = obj.checkSample(y);
-      ssUni = setDefaultInitial(ssUni);
-      
-      assert(isa(tm, 'ThetaMap'));
+
+      % Handle inputs
+      assert(isa(tm, 'ThetaMap'), 'tm must be a ThetaMap.');
       if nargin < 4
         theta = tm.system2theta(obj);
       end
+      assert(all(size(theta) == [tm.nTheta 1]), ...
+        'theta must be a nTheta x 1 vector.');
+
+      ssMulti = obj;
+      [obj, yUni, factorC] = obj.prepareFilter(y);
       
       % Generate parameter gradient structure
-      G = tm.parameterGradients(theta);
-      [G.a0, G.P0] = tm.initialValuesGradients(theta, G);
+      GMulti = tm.parameterGradients(theta);
+      [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(theta, GMulti);
+
+      % Transform to univariate filter gradients
+      if factorC ~= eye(obj.p)
+        GUni = obj.factorGradient(GMulti, ssMulti, factorC);
+      else
+        GUni = GMulti;
+      end
       
-      [alpha, sOut, fOut] = ssUni.smooth(yUni);
-      logli = sOut.logli;
-      
-      fOutNew = adjustUniOut(obj, fOut, factorC);
-      
-      % We didn't factor multivariate, so we need to get the unfactored errors
-      % For v we can either do the subtraction using the filtered state or
-      % premultiply fOut.v by factorC.
-      % v = obj.getErrors(y, fOut.a(:,1:ssUni.n));
-      
-      epsilon = obj.getErrors(y, alpha);
-      [V, J, D] = ssUni.getErrorVariances(fOutNew, sOut, factorC);
-      u = obj.getGradientQuantities(epsilon);
-      
-      % Stick the last filtered estimate on the end of alpha since we'll need
-      % \hat{alpha}_{t+1|T}
-      alpha = [alpha fOut.a(:,end)]; 
-      
-      gradient = obj.gradient_uni_m(y, alpha, u, D, sOut.r, sOut.N, epsilon, V, J, G);
+      % Run filter with extra outputs, comput gradient
+      [~, logli, fOut, ftiOut] = obj.filter_detail_m(yUni);      
+      gradient = obj.gradient_filter_m(GUni, fOut, ftiOut);
     end
     
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
@@ -442,6 +431,47 @@ classdef StateSpace < AbstractStateSpace
       ssUni = ssUni.setInitial(obj.a0, P0);
     end
     
+    function Guni = factorGradient(obj, GMulti, ssMulti, factorC)
+      % factorGradient transforms the gradient of the multivariate model to the
+      % univarite model given the univariate parameters and the factorzation
+      % matrix. 
+      
+      assert(size(GMulti.H, 3) == 1, 'TVP not yet developed.');
+      
+      Guni = GMulti;
+      
+      % Get the indexes we'll need to separate out GC and GHstar
+      indexMat = reshape(1:obj.p^2, [obj.p obj.p]);
+      diagCols = diag(indexMat);
+      lowerTril = tril(indexMat, -1);
+      lowerDiagCols = lowerTril(lowerTril ~= 0);
+      
+      % Find GC and GHstar 
+      Kp = AbstractSystem.genCommutation(obj.p);
+      Np = eye(obj.p^2) + Kp;
+      Cmult = kron(obj.H * factorC', eye(obj.p)) * Np;
+      Hstarmult = kron(factorC', factorC');
+      
+      Wtilde = [Cmult(lowerDiagCols,:); Hstarmult(diagCols,:)];
+      Gtilde = GMulti.H * pinv(Wtilde);
+      
+      GC = zeros(size(GMulti.H));
+      GC(:, lowerDiagCols) = Gtilde(:,1:length(lowerDiagCols));
+      GHstar = zeros(size(GMulti.H));
+      GHstar(:, diagCols) = Gtilde(:,length(lowerDiagCols)+1:end);
+      
+      Guni.H = GHstar;
+
+      % Check
+      error = GC * Cmult + GHstar * Hstarmult - GMulti.H;
+      assert(max(max(abs(error))) < 1e-10, 'Development error');
+      
+      factorCinv = inv(factorC);
+      kronCinv = kron(factorCinv, factorCinv);
+      Guni.Z = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.Z * kron(eye(obj.m), factorCinv);
+      Guni.d = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.d * factorCinv;
+    end
+    
     function [obsErr, stateErr] = getErrors(obj, y, state, a0)
       % Get the errors epsilon & eta given an estimate of the state 
       % Either the filtered or smoothed estimates can be calculated by passing
@@ -487,30 +517,6 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function fOutNew = adjustUniOut(obj, fOut, factorC)
-      % "Unfactor" the output from the univariate filter
-      
-      fOutNew = struct;
-      
-      K = zeros(size(fOut.K));
-      Finv = zeros(obj.p, obj.p, obj.n);
-      for iT = obj.n:-1:1
-        Zii = obj.Z(:,:,obj.tau.Z(iT));
-        iP = fOut.P(:,:,iT);
-        
-        iC = factorC(:,:,obj.tau.H(iT));
-        
-        uniF(:,:,iT) = Zii * iP * Zii' + obj.H(:,:,obj.tau.H(iT));
-        Finv(:,:,iT) = iC / uniF(:,:,iT) * iC';
-        K(:,:,iT) = obj.T(:,:,obj.tau.T(iT)) * iP * Zii' * (1 ./ uniF(:,:,iT)) * iC;
-      end
-      
-      fOutNew.a = fOut.a;
-      fOutNew.P = fOut.P;
-      fOutNew.Finv = Finv;
-      fOutNew.K = K;
-    end
-    
     function [V, J, D] = getErrorVariances(obj, fOutNew, sOut, factorC)
       % Get the smoothed state variance and covariance matricies
       % Produces V = Var(alpha | Y_n) and J = Cov(alpha_{t+1}, alpha_t | Y_n)
@@ -539,20 +545,7 @@ classdef StateSpace < AbstractStateSpace
           fOutNew.K(:,:,iT)' * sOut.N(:,:,iT) * fOutNew.K(:,:,iT)) * iC;
       end
     end
-    
-    function smootherErr = getGradientQuantities(obj, epsilon)
-      % Generate needed quantites for the gradient
-      
-      % See Durbin & Koopman  sec. 4.5.1 and 5.4
-      % We're generating u and D here.
-      % Based on \hat{epsilon} = H * u, back out u based on epsilon.
-      % Based on Var(alpha | Y_n) = V = H - H * D * H, back out D based on V. 
-      smootherErr = nan(obj.p, obj.n);
-      for iT = 1:obj.n
-        smootherErr(:,iT) = obj.H(:,:,obj.tau.H(iT)) \ epsilon(:,iT);
-      end
-    end
-    
+        
     %% Filter/smoother/gradient mathematical methods
     function [a, logli, filterOut] = filter_m(obj, y)
       % Filter using exact initial conditions
@@ -682,6 +675,156 @@ classdef StateSpace < AbstractStateSpace
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
       filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
+    end
+    
+    function [a, logli, filterOut, detailOut] = filter_detail_m(obj, y)
+      % Filter using exact initial conditions
+      %
+      % Note that the quantities v, F and K are those that come from the
+      % univariate filter and cannot be transfomed via the Cholesky
+      % factorization to get the quanties from the multivariate filter. 
+      %
+      % See "Fast Filtering and Smoothing for Multivariate State Space Models",
+      % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
+              
+      assert(all(arrayfun(@(iH) isdiag(obj.H(:,:,iH)), 1:size(obj.H, 3))), 'Univarite only!');
+      
+      % Preallocate
+      % Note Pd is the "diffuse" P matrix (P_\infty).
+      a = zeros(obj.m, obj.n+1);
+      ati = zeros(obj.m, obj.n+1, obj.p+1);
+      v = zeros(obj.p, obj.n);
+      
+      Pd = zeros(obj.m, obj.m, obj.n+1);
+      Pdti = zeros(obj.m, obj.m, obj.n+1, obj.p+1);
+      Pstar = zeros(obj.m, obj.m, obj.n+1);
+      Pstarti = zeros(obj.m, obj.m, obj.n+1, obj.p+1);
+      Fd = zeros(obj.p, obj.n);
+      Fstar = zeros(obj.p, obj.n);
+      
+      Kd = zeros(obj.m, obj.p, obj.n);
+      Kstar = zeros(obj.m, obj.p, obj.n);
+      
+      LogL = zeros(obj.p, obj.n);
+      
+      % Initialize - Using the FRBC timing 
+      iT = 0;
+      Tii = obj.T(:,:,obj.tau.T(iT+1));
+      a(:,iT+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(iT+1));
+      
+      Pd0 = obj.A0 * obj.A0';
+      Pstar0 = obj.R0 * obj.Q0 * obj.R0';
+      
+      Pd(:,:,iT+1)  = Tii * Pd0 * Tii';
+      Pstar(:,:,iT+1) = Tii * Pstar0 * Tii' + ...
+        obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
+
+      % Initial recursion
+      while ~all(all(Pd(:,:,iT+1) == 0))
+        if iT >= obj.n
+          error(['Degenerate model. ' ...
+          'Exact initial filter unable to transition to standard filter.']);
+        end
+        
+        iT = iT + 1;
+       
+        ati(:,iT,1) = a(:,iT);
+        Pstarti(:,:,iT,1) = Pstar(:,:,iT);
+        Pdti(:,:,iT,1) = Pd(:,:,iT);
+        for iP = 1:obj.p 
+          if isnan(y(:,iT))
+            ati(:,iT,iP+1) = ati(:,iT,iP);
+            Pdti(:,:,iT,iP+1) = Pdti(:,:,iT,iP);
+            Pstarti(:,:,iT,iP+1) = Pstarti(:,:,iT,iP);
+            continue
+          end
+          
+          Zjj = obj.Z(iP,:,obj.tau.Z(iT));
+          v(iP,iT) = y(iP, iT) - Zjj * ati(:,iT,iP) - obj.d(iP,obj.tau.d(iT));
+          
+          Fd(iP,iT) = Zjj * Pdti(:,:,iT,iP) * Zjj';
+          Fstar(iP,iT) = Zjj * Pstarti(:,:,iT,iP) * Zjj' + obj.H(iP,iP,obj.tau.H(iT));
+          
+          Kd(:,iP,iT) = Pdti(:,:,iT,iP) * Zjj';
+          Kstar(:,iP,iT) = Pstarti(:,:,iT,iP) * Zjj';
+          
+          if Fd(iP,iT) ~= 0
+            % F diffuse nonsingular
+            ati(:,iT,iP+1) = ati(:,iT,iP) + ...
+              Kd(:,iP,iT) ./ Fd(iP,iT) * v(iP,iT);
+            
+            Pstarti(:,:,iT,iP+1) = Pstarti(:,:,iT,iP) + ...
+              Kd(:,iP,iT) * Kd(:,iP,iT)' * Fstar(iP,iT) * (Fd(iP,iT).^-2) - ...
+              (Kstar(:,iP,iT) * Kd(:,iP,iT)' + Kd(:,iP,iT) * Kstar(:,iP,iT)') ./ Fd(iP,iT);
+            
+            Pdti(:,:,iT,iP+1) = Pdti(:,:,iT,iP) - ...
+              Kd(:,iP,iT) .* Kd(:,iP,iT)' ./ Fd(iP,iT);
+            
+            LogL(iP,iT) = log(Fd(iP,iT));
+          else
+            % F diffuse = 0
+            ati(:,iT,iP+1) = ati(:,iT,iP) + ...
+              Kstar(:,iP,iT) ./ Fstar(iP,iT) * v(iP,iT);
+            
+            Pstarti(:,:,iT,iP+1) = Pstarti(:,:,iT,iP) - ...
+              Kstar(:,iP,iT) ./ Fstar(iP,iT) * Kstar(:,iP,iT)';
+            
+            Pdti(:,:,iT,iP+1) = Pdti(:,:,iT,iP);
+              
+            LogL(iP,iT) = (log(Fstar(iP,iT)) + (v(iP,iT)^2) ./ Fstar(iP,iT));
+          end
+        end
+        
+        Tii = obj.T(:,:,obj.tau.T(iT+1));
+        a(:,iT+1) = Tii * ati(:,iT,obj.p+1) + obj.c(:,obj.tau.c(iT+1));
+        
+        Pd(:,:,iT+1)  = Tii * Pdti(:,:,iT,obj.p+1) * Tii';
+        Pstar(:,:,iT+1) = Tii * Pstarti(:,:,iT,obj.p+1) * Tii' + ...
+          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
+      end
+      
+      dt = iT;
+      
+      F = Fstar;
+      K = Kstar;
+      P = Pstar;
+      Pti = Pstarti;
+      
+      % Standard Kalman filter recursion
+      for iT = dt+1:obj.n
+        ind = find(~isnan(y(:,iT)));
+        ati(:,iT,1) = a(:,iT);
+        Pti(:,:,iT,1) = P(:,:,iT);
+        for iP = ind'
+          Zjj = obj.Z(iP,:,obj.tau.Z(iT));
+          
+          v(iP,iT) = y(iP,iT) - Zjj * ati(:,iT,iP) - obj.d(iP,obj.tau.d(iT));
+          
+          F(iP,iT) = Zjj * Pti(:,:,iT,iP) * Zjj' + obj.H(iP,iP,obj.tau.H(iT));
+          K(:,iP,iT) = Pti(:,:,iT,iP) * Zjj';
+          
+          LogL(iP,iT) = (log(F(iP,iT)) + (v(iP,iT)^2) / F(iP,iT));
+          
+          ati(:,iT,iP+1) = ati(:,iT,iP) + K(:,iP,iT) / F(iP,iT) * v(iP,iT);
+          Pti(:,:,iT,iP+1) = Pti(:,:,iT,iP) - K(:,iP,iT) / F(iP,iT) * K(:,iP,iT)';
+        end
+        
+        Tii = obj.T(:,:,obj.tau.T(iT+1));
+        
+        a(:,iT+1) = Tii * ati(:,iT,obj.p+1) + obj.c(:,obj.tau.c(iT+1));
+        P(:,:,iT+1) = Tii * Pti(:,:,iT,obj.p+1) * Tii' + ...
+          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
+      end
+      
+      ati(:,obj.n+1,:) = repmat(a(:,obj.n+1), [1 1 obj.p+1]);
+      Pti(:,:,obj.n+1,:) = repmat(P(:,:,obj.n+1), [1 1 1 obj.p+1]);
+          
+      % Consider changing to 
+      %   sum(sum(F(:,d+1:end)~=0)) + sum(sum(Fstar(:,1:d)~=0))
+      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
+      
+      filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
+      detailOut = obj.compileStruct(ati, Pti, Pdti);
     end
     
     function [a, logli, filterOut] = filter_mex(obj, y)
@@ -831,208 +974,73 @@ classdef StateSpace < AbstractStateSpace
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
     
-    function gradient = gradient_uni_m(obj, y, alpha, u, D, r, N, epsilon, V, J, G)
-      % Loglikelihood gradient calculation based on univariate smoother
-      %
-      % See Durbin & Koopman, sec. 7.3.3. 
-      % See Jungbacker, Koopman & van der Wel (2011), Appendix B.
-      %
-      % The derivative of the likelihood with respect to a parameter matrix is
-      % denoted dldX for a parameter X. Also note the following name changes:
-      %   This function         JKV                             
-      %     V                     P_{t|n}
-      %     J                     P_{t+1,t|n}
-      %     d_t                   c_t
-      %     c_t                   d_t
-            
-      vec = @(M) reshape(M, [], 1);
-
-      % Precompute commonly used matricies
-      Rbar = nan(obj.g, obj.m, size(obj.R, 3));
-      for iR = 1:size(obj.R, 3)
-        Rbar(:,:,iR) = (obj.R(:,:,iR)' * obj.R(:,:,iR)) \ obj.R(:,:,iR)';
-      end
-      
-      Hinv = nan(obj.p, obj.p, size(obj.H, 3));
-      for iH = 1:size(obj.H, 3)
-        Hinv(:,:,iH) = AbstractSystem.pseudoinv(obj.H(:,:,iH), 1e-12);
-      end
-      
-      Qinv = nan(obj.g, obj.g, size(obj.Q, 3));
-      for iQ = 1:size(obj.Q, 3)
-        Qinv(:,:,iQ) = AbstractSystem.pseudoinv(obj.Q(:,:,iQ), 1e-12);
-      end
-      
-      [uniqueRows, rowSource, tauRQR] = unique([obj.tau.R obj.tau.Q], 'rows');
-      GRQR = nan(size(G.Q, 1), size(obj.R, 1).^2, max(tauRQR));
-      Nm = AbstractStateSpace.genCommutation(obj.m) + eye(obj.m.^2);
-      for iRQR = 1:max(tauRQR)
-        % See Nagakura (working paper)
-        itauR = uniqueRows(rowSource(iRQR), 1);
-        itauQ = uniqueRows(rowSource(iRQR), 2);
-        iR = obj.R(:,:,itauR);
-        
-        GRQR(:,:,iRQR) = G.R(:,:,itauR) * ...
-          kron(obj.Q(:,:,itauQ) * iR', eye(obj.m)) * Nm + ...
-          G.Q(:,:,itauQ) * kron(iR', iR');
-      end
-      
-      dldZ = zeros(size(obj.Z));
-      dldd = zeros(size(obj.d));
-      dldH = zeros(size(obj.H));
-      dldT = zeros(size(obj.T));
-      dldc = zeros(size(obj.c));
-      dldRQR = zeros(obj.m, obj.m);
-      for iT = 1:obj.n
-        % Observation equation gradients
-        Zii = obj.Z(:,:,obj.tau.Z(iT));
-        iHinv = Hinv(:,:,obj.tau.H(iT));
-
-        % Gradient of Z
-        MZ = alpha(:,iT) * alpha(:,iT)' + V(:,:,iT);
-        dldZ(:,:,obj.tau.Z(iT)) = dldZ(:,:,obj.tau.Z(iT)) + ...
-          iHinv * ((y(:,iT) - obj.d(:,obj.tau.d(iT))) * alpha(:,iT)' - Zii * MZ);
-        
-        % Gradient of d
-        dldd(:,:,obj.tau.d(iT)) = dldd(:,:,obj.tau.d(iT)) + ...
-          iHinv * epsilon(:,iT);
-        
-        % Gradient of H
-        dldH(:,:,obj.tau.H(iT)) = dldH(:,:,obj.tau.H(iT)) + ...
-          0.5 * (u(:,iT) * u(:,iT)' - D(:,:,iT));
-        
-        % State equation gradients - remember paramter tau timing is t+1
-        % Gradient of T
-        iQinv = Qinv(:,:,obj.tau.Q(iT+1));
-        iRbarQinvRbar = Rbar(:,:,obj.tau.R(iT+1))' * ...
-          iQinv * Rbar(:,:,obj.tau.R(iT+1));
-        
-        MT = alpha(:,iT+1) * alpha(:,iT)' + J(:,:,iT);
-        dldT(:,:,obj.tau.T(iT+1)) = dldT(:,:,obj.tau.T(iT+1)) + ...
-          iRbarQinvRbar * (MT - obj.T(:,:,obj.tau.T(iT+1)) * MZ);
-        
-        % Gradient of c
-        dldc(:,:,obj.tau.c(iT+1)) = dldc(:,:,obj.tau.c(iT+1)) + ...
-          iRbarQinvRbar * ...
-          (alpha(:,iT+1) - obj.T(:,:,obj.tau.T(iT+1)) * alpha(:,iT) - ...
-          obj.c(:,obj.tau.c(iT+1))); 
-        
-        % Gradient of R and Q
-        % Looping over 1:n-1 here
-        % Timing - r and N are actually lagged a period compared to any D&K
-        % writeup (r(:,obj.n) != 0), r(:,obj.n+1) = 0)). 
-%         if iT < obj.n
-          dldRQR(:,:,tauRQR(iT+1)) = dldRQR(:,:,tauRQR(iT+1)) + ...
-            0.5 * (r(:,iT) * r(:,iT)' - N(:,:,iT));
-%         end
-      end
-      
-      gradient = G.Z * vec(dldZ) + G.d * vec(dldd) + G.H * vec(dldH) + ...
-        G.T * vec(dldT) + G.c * vec(dldc) + GRQR * vec(dldRQR);
-    end
-    
-    function gradient = gradient_multi_filter_m(obj, y, G, fOut)
-      % Gradient algorithm from Diasuke Nagakura (SSRN # 1634552).
-      %
-      % Note that G.x is 3D for everything except a and P (and a0 and P0). 
-      % G.a and G.P denote the one-step ahead gradient (i.e., G_\theta(a_{t+1}))
-      
+    function gradient = gradient_filter_m(obj, G, fOut, ftiOut)
       nTheta = size(G.T, 1);
       
       Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
-      vec = @(M) reshape(M, [], 1);
       
-      % Compute partial results that have less time-variation (even with TVP)
-      kronRR = zeros(obj.g*obj.g, obj.m*obj.m, max(obj.tau.R));
-      for iR = 1:max(obj.tau.R)
-        kronRR(:, :, iR) = kron(obj.R(:,:,iR)', obj.R(:,:,iR)');
+      Gati = zeros(nTheta, obj.m, obj.n, obj.p+1);
+      Gati(:,:,1,1) = G.a1;
+      
+      GPti = zeros(nTheta, obj.m^2, obj.n, obj.p+1);
+      GPti(:,:,1,1) = G.P1;
+      
+      Gvti = zeros(nTheta, obj.n, obj.p);
+      GFti = zeros(nTheta, obj.n, obj.p);
+      GKti = zeros(nTheta, obj.m, obj.n, obj.p);
+      
+      grad = zeros(nTheta, obj.n, obj.p);
+      for iT = fOut.dt+1:obj.n
+        for iP = 1:obj.p
+          if fOut.v(iP,iT) == 0
+            continue 
+          end
+          
+          % Fetch commonly used quantities
+          Zti = obj.Z(iP,:,obj.tau.Z(iT));
+          GZti = G.Z(:, iP:obj.p:(obj.p*obj.m), obj.tau.Z(iT));
+          GHind = 1 + (iP-1)*(obj.p+1); 
+          GHti = G.H(:, GHind, obj.tau.H(iT)); % iP-th diagonal element of H
+          
+          % Compute basics
+          Gvti(:,iT,iP) = -GZti * ftiOut.ati(:,iT,iP) - ...
+            Gati(:,:,iT,iP) * Zti' - G.d(:,iP,obj.tau.d(iT));
+          GFti(:,iT,iP) = 2 * GZti * (ftiOut.Pti(:,:,iT,iP) * Zti') + ...
+            GPti(:,:,iT,iP) * kron(Zti', Zti') + GHti;
+          GKti(:,:,iT,iP) = GPti(:,:,iT,iP) * kron(Zti' * fOut.F(iP,iT)^(-1), eye(obj.m)) + ...
+            GZti * ftiOut.Pti(:,:,iT,iP) * fOut.F(iP,iT)^(-1) - ...
+            (GFti(:,iT,iP) * fOut.F(iP,iT)^(-2) * Zti * ftiOut.Pti(:,:,iT,iP)); 
+          
+          % Comptue the period contribution to the gradient
+          grad(:,iT,iP) = 0.5 * GFti(:,iT,iP) * ...
+            (1./fOut.F(iP,iT) - (fOut.v(iP,iT)^2 ./ fOut.F(iP,iT)^2)) + ...
+            Gvti(:,iT,iP) * fOut.v(iP,iT) ./ fOut.F(iP,iT);
+          
+          % Transition from i to i+1
+          Gati(:,:,iT,iP+1) = Gati(:,:,iT,iP) + ...
+            GKti(:,:,iT,iP) * fOut.v(iP,iT) + ...
+            Gvti(:,iT,iP) * fOut.K(:,iP,iT)';
+          GKFK = GKti(:,:,iT,iP) * kron(fOut.F(iP,iT) * fOut.K(:,iP,iT)', eye(obj.m)) * Nm + ...
+            GFti(:,iT,iP) * kron(fOut.K(:,iP,iT)', fOut.K(:,iP,iT)');
+          GPti(:,:,iT,iP+1) = GPti(:,:,iT,iP) - GKFK;
+        end
+        
+        % Transition from time t to t+1
+        Tt = obj.T(:,:,obj.tau.T(iT+1));
+        Rt = obj.R(:,:,obj.tau.R(iT+1));
+        Qt = obj.Q(:,:,obj.tau.Q(iT+1));
+        
+        Gati(:,:,iT+1,1) = G.T(:,:,obj.tau.T(iT+1)) * kron(ftiOut.ati(:,iT,obj.p+1), eye(obj.m)) + ...
+          Gati(:,:,iT,obj.p+1) * Tt' + G.c(:,:,obj.tau.c(iT+1));
+        GTPT = G.T(:,:,obj.tau.T(iT+1)) * ...
+          kron(ftiOut.Pti(:,:,iT,obj.p+1) * Tt', eye(obj.m)) * Nm + ...
+          GPti(:,:,iT,obj.p+1) * kron(Tt', Tt');
+        GRQR = G.R(:,:,obj.tau.R(iT+1)) * kron(Qt * Rt', eye(obj.m)) * Nm + ...
+          G.Q(:,:,obj.tau.Q(iT+1)) * kron(Rt', Rt');
+        GPti(:,:,iT+1,1) = GTPT + GRQR;
       end
       
-      [tauQRrows, ~, tauQR] = unique([obj.tau.R obj.tau.Q], 'rows');
-      kronQRI = zeros(obj.g * obj.m, obj.m * obj.m, max(tauQR));
-      for iQR = 1:max(tauQR)
-        kronQRI(:, :, iQR) = kron(obj.Q(:,:,tauQRrows(iQR, 2)) * obj.R(:,:,tauQRrows(iQR, 1))', ...
-          eye(obj.m));
-      end
-      
-      % Initial period: G.a and G.P capture effects of a0, T
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-
-      G.a = G.a0 * obj.T(:,:,obj.tau.T(1))' + ...
-        G.c(:, :, obj.tau.c(1)) + ... % Yes, G.c is 3D.
-        G.T(:,:,obj.tau.T(1)) * kron(obj.a0, eye(obj.m));
-      G.P = G.P0 * kron(obj.T(:,:,obj.tau.T(1))', obj.T(:,:,obj.tau.T(1))') + ...
-        G.Q(:,:,obj.tau.Q(1)) * kron(obj.R(:,:,obj.tau.R(1))', obj.R(:,:,obj.tau.R(1))') + ...
-        (G.T(:,:,obj.tau.T(1)) * kron(P0 * obj.T(:,:,obj.tau.T(1))', eye(obj.m)) + ...
-        G.R(:,:,obj.tau.R(1)) * kron(obj.Q(:,:,obj.tau.Q(1)) * ...
-        obj.R(:,:,obj.tau.R(1))', eye(obj.m))) * ...
-          Nm;
-      
-      % Recursion through time periods
-      W_base = logical(sparse(eye(obj.p)));
-      
-      grad = zeros(obj.n, nTheta);
-      for ii = 1:obj.n
-        ind = ~isnan(y(:,ii));
-        W = W_base((ind==1),:);
-        kronWW = kron(W', W');
-        
-        Zii = W * obj.Z(:, :, obj.tau.Z(ii));
-        
-        ww = fOut.w(ind,ii) * fOut.w(ind,ii)';
-        Mv = fOut.M(:,:,ii) * fOut.v(:, ii);
-        
-        grad(ii, :) = G.a * Zii' * fOut.w(ind,ii) + ...
-          0.5 * G.P * vec(Zii' * ww * Zii - Zii' * fOut.Finv(ind,ind,ii) * Zii) + ...
-          G.d(:,:,obj.tau.d(ii)) * W' * fOut.w(ind,ii) + ...
-          G.Z(:,:,obj.tau.Z(ii)) * vec(W' * (fOut.w(ind,ii) * fOut.a(:,ii)' + ...
-            fOut.w(ind,ii) * Mv' - fOut.M(:,ind,ii)')) + ...
-          0.5 * G.H(:,:,obj.tau.H(ii)) * kronWW * vec(ww - fOut.Finv(ind,ind,ii));
-        
-        % Set t+1 values
-        PL = fOut.P(:,:,ii) * fOut.L(:,:,ii)';
-        
-        kronZwL = kron(Zii' * fOut.w(ind,ii), fOut.L(:,:,ii)');
-        kronPLw = kron(PL, fOut.w(:,ii));
-        kronaMvK = kron(fOut.a(:,ii) + Mv, fOut.K(:,:,ii)');
-        kronwK = kron(fOut.w(:,ii), fOut.K(:,:,ii)');
-        kronAMvI = kron(fOut.a(:,ii) + Mv, eye(obj.m));
-        
-        G.a = G.a * fOut.L(:,:,ii)' + ...
-          G.P * kronZwL + ...
-          G.c(:,:,obj.tau.c(ii+1)) - ...
-          G.d(:,:,obj.tau.d(ii)) * fOut.K(:,:,ii)' + ...
-          G.Z(:,:,obj.tau.Z(ii)) * (kronPLw - kronaMvK) - ...
-          G.H(:,:,obj.tau.H(ii)) * kronwK + ...
-          G.T(:,:,obj.tau.T(ii+1)) * kronAMvI;
-        
-        kronLL = kron(fOut.L(:,:,ii)', fOut.L(:,:,ii)');
-        kronKK = kron(fOut.K(:,:,ii)', fOut.K(:,:,ii)');
-        kronPLI = kron(PL, eye(obj.m));
-        kronPLK = kron(PL, fOut.K(:,:,ii)');
-        
-        G.P = G.P * kronLL + ...
-          G.H(:,:,obj.tau.H(ii)) * kronKK + ...
-          G.Q(:,:,obj.tau.Q(ii+1)) * kronRR(:,:, obj.tau.R(ii+1)) + ...
-          (G.T(:,:,obj.tau.T(ii+1)) * kronPLI - ...
-            G.Z(:,:,obj.tau.Z(ii)) * kronPLK + ...
-            G.R(:,:,obj.tau.R(ii+1)) * kronQRI(:, :, tauQR(ii+1))) * ...
-            Nm;
-      end
-      
-      gradient = sum(grad, 1)';
-    end
-    
-    function gradient = gradient_multi_filter_mex(obj, y, G, fOut)
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      
-      ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
-        'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
-        'a0', obj.a0, 'P0', P0, ...
-        'tau', obj.tau, ...
-        'p', obj.p, 'm', obj.m, 'g', obj.g, 'n', obj.n);
-      
-      gradient = mfss_mex.gradient_multi(y, ssStruct, G, fOut);
+      gradient = -sum(sum(grad, 3), 2);
     end
     
     %% Decomposition mathematical methods

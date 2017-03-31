@@ -82,22 +82,23 @@ classdef (Abstract) AbstractSystem
       end
     end
     
-    function K = genCommutation(m)
+    function K = genCommutation(m, n)
       % Generate commutation matrix
       % 
-      % K = genCommutation(m) returns a commutation matrix for a
-      % square matrix A of size m such that K * vec(A) = vec(A'). 
+      % K = genCommutation(m, n) returns a commutation matrix for an m X n
+      % matrix A such that K * vec(A) = vec(A'). 
       
-      % From Magnus & Neudecker (1979), Definition 3.1, a commutation matrix is 
+      % From Magnus & Neudecker (1979) (Definition 3.1): a commutation matrix is 
       % "a suqare mn-dimensional matrix partitioned into mn sub-matricies of 
       % order (n, m) such that the ij-th submatrix has a 1 in its ji-th position 
       % and zeros elsewhere."
+      if nargin == 1, n = m; end
       
-      E = @(i, j) [zeros(i-1, m); ...
-        zeros(1, j-1), 1, zeros(1, m-j); zeros(m-i, m)];
-      K = zeros(m^2);
+      E = @(i, j) [zeros(i-1, n); ...
+        zeros(1, j-1), 1, zeros(1, n-j); zeros(m-i, n)];
+      K = zeros(m * n);
       for iComm = 1:m
-        for jComm = 1:m
+        for jComm = 1:n
           K = K + kron(E(iComm, jComm), E(iComm, jComm)');
         end
       end

@@ -32,9 +32,10 @@ for iT = 1:tm.nTheta
   
   ssTest = tm.theta2system(iTheta);
   ssTest = ssTest.checkSample(y);
+  ssTest = ssTest.setDefaultInitial();
   
   % We need to use the multivariate filter to make sure we're consisent.
-  ssTest.filterUni = false;
+%   ssTest.filterUni = false;
       
   [~, logl_delta] = ssTest.filter(y);
   numeric(iT) = (logl_delta - logl_fix) ./ delta;
