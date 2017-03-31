@@ -233,7 +233,7 @@
 	The quantities used in the gradient recursion are computed similarly using the definitions from the univariate filter: 
 	\begin{align*}
 	\Gt(v_{t,i}) &= \Gt(y_{t,i} - Z_{t,i} a_{t,i} - d_{t,i}) \\
-	&= -\Gt(Z_{t,i}) a_{t,i} - \Gt(a_{t,i}) Z_{t,i}^\prime - \Gt(d_{t,i}) \\
+	&= \Gt(y_{t,i}) -\Gt(Z_{t,i}) a_{t,i} - \Gt(a_{t,i}) Z_{t,i}^\prime - \Gt(d_{t,i}) \\
 	\Gt(F_{t,i}) &= \Gt(Z_{t,i} P_{t,i} Z_{t,i}^\prime + H_{t,i}) \\
 	&= 2 \Gt(Z_{t,i})(P_{t,i} Z_{t,i}^\prime) + \Gt(P_{t,i}) (Z_{t,i}^\prime \otimes Z_{t,i}^\prime) + \Gt(H_{t,i}) \\
 	\Gt(K_{t,i}) &= \Gt(P_{t,i} Z_{t,i}^\prime F_{t,i}^{-1}) \\
@@ -250,6 +250,13 @@
 	&= \Gt(P_{t,i}) - \Gt(K_{t,i})(F_{t,i}K_{t,i}^\prime \otimes I_m) N_m - \Gt(F_{t,i})(K_{t,i}^\prime \otimes K_{t,i}^\prime)
 	\end{align*}
 	where $\Gt(a_{1,1}) = \Gt(a_1)$ and $\Gt(P_{1,1}) = \Gt(P_1)$, which will be given below. 
+
+	The values of $\Gt(y_{t,i})$ are computed according to 
+	\begin{align*}
+	\Gt(y_t^*) &= \Gt(C_t^{-1} y_t) \\
+	&= -\Gt(C_t) (C_t^{-1} \otimes C_t^{-1}) (y_t \otimes I_p)
+	\end{align*}
+	where $\Gt(y_{t,i})$ is the $i$th column of $\Gt(y_t^*)$.
 
 \subsection*{Exact Initial Gradient}
 	The process for computing the gradient for use with the exact initial filter is similar. Throughout, it is assumed that the boolean outcome of the tests $F_{*,t,i} = 0$ or $F_{\infty,t,i} = 0$ are unaffected by changes to $\theta$. Beginning with the likelihood function, 	

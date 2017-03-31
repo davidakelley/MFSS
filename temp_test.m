@@ -1,55 +1,43 @@
-% %temp_test.m
-%{
-addpath(fullfile(favDirs('mfss'), 'test'))
-addpath(fullfile(favDirs('mfss'), 'examples'))
-%}
+% temp_test.m
+% addpath(fullfile(favDirs('mfss'), 'test'))
+% addpath(fullfile(favDirs('mfss'), 'examples'))
 
 % Current limitations: 
-%   T must be zeros
-%   p must be 1 
+%   T must be really small / in combination with RQR'
 
 timePers = 200;
-p = 1; 
+p = 2; 
 m = 2;
-g = 1;
+g = 2;
 
 rng('shuffle');
-% Z = randn(p, m);
-Z = ones(p, m);
-% d = randn(p, 1);
-d = ones(p, 1);
-% Hchol = 1 + tril(randn(p));
-% Hchol(1:p+1:end) = abs(Hchol(1:p+1:end));
-% H = Hchol * Hchol';
-% H = diag(diag(H));
-H = diag(ones(p, 1));
+Z = randn(p, m);
+% Z = ones(p, m);
+d = randn(p, 1);
+% d = ones(p, 1);
+Hchol = 1 + tril(randn(p));
+Hchol(1:p+1:end) = abs(Hchol(1:p+1:end));
+H = Hchol * Hchol';
+H = diag(diag(H));
+% H = 3 * diag(ones(p, 1));
 
 T = 2 * eye(m) + diag(abs(randn(m,1))) + 0.1 * randn(m);
 T = T ./ (abs(max(eig(T))) + 0.3);
-% T = 0;
-% T = zeros(m);
-% T = 0.9;
+T = zeros(m);
 
 % c = 0.1 * randn(m, 1);
-c = zeros(m, 1);
+c = 0 * ones(m, 1);
 % R = abs(randn(m, g));
-R = 10 * ones(m, g);
+R = 4 * eye(m); %ones(m, g);
 % Q = diag(diag(abs(randn(g))));
-Q = 0.01 * diag(ones(g,1));
+Q = diag(ones(g,1));
 
 ss = StateSpace(Z, d, H, T, c, R, Q);
 
-rng(1);
 [y, alpha] = generateData(ss, timePers);
 
 tm = ThetaMap.ThetaMapAll(ss);
 % tm.index.H = diag(diag(tm.index.H));
-% tm.index.Z(:) = 0;
-% tm.index.d(:) = 0;
-% tm.index.H(:) = 0;
-% tm.index.T(:) = 0;
-% tm.index.c(:) = 0;
-% tm.index.R(:) = 0;
 % tm = tm.validateThetaMap();
 
 plot(alpha');
@@ -65,7 +53,7 @@ tocA = toc;
 
 fprintf('Analytic took %3.2f%% of the numeric time.\n', tocA./tocN*100);
 diffTab = array2table([numeric grad (grad - numeric) (grad - numeric)./numeric], ...
-  'VariableNames', {'Numeric', 'Analytic', 'Diff', 'RelativebDiff'});
+  'VariableNames', {'Numeric', 'Analytic', 'Diff', 'RelativeDiff'});
 diffTab.Variable = tm2matList(tm);
 diffTab = diffTab(:,[5 1:4]);
 disp(diffTab);

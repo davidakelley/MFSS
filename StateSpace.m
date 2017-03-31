@@ -169,15 +169,11 @@ classdef StateSpace < AbstractStateSpace
       [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(theta, GMulti);
 
       % Transform to univariate filter gradients
-      if factorC ~= eye(obj.p)
-        GUni = obj.factorGradient(GMulti, ssMulti, factorC);
-      else
-        GUni = GMulti;
-      end
+      [GUni, GY] = obj.factorGradient(y, GMulti, ssMulti, factorC);
       
       % Run filter with extra outputs, comput gradient
       [~, logli, fOut, ftiOut] = obj.filter_detail_m(yUni);      
-      gradient = obj.gradient_filter_m(GUni, fOut, ftiOut);
+      gradient = obj.gradient_filter_m(GUni, GY, fOut, ftiOut);
     end
     
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
@@ -431,7 +427,7 @@ classdef StateSpace < AbstractStateSpace
       ssUni = ssUni.setInitial(obj.a0, P0);
     end
     
-    function Guni = factorGradient(obj, GMulti, ssMulti, factorC)
+    function [Guni, GY] = factorGradient(obj, y, GMulti, ssMulti, factorC)
       % factorGradient transforms the gradient of the multivariate model to the
       % univarite model given the univariate parameters and the factorzation
       % matrix. 
@@ -469,7 +465,12 @@ classdef StateSpace < AbstractStateSpace
       factorCinv = inv(factorC);
       kronCinv = kron(factorCinv, factorCinv);
       Guni.Z = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.Z * kron(eye(obj.m), factorCinv);
-      Guni.d = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.d * factorCinv;
+      Guni.d = -GC * kronCinv * kron(ssMulti.d, eye(obj.p)) + GMulti.d * factorCinv;
+      
+      GY = zeros(size(GMulti.H, 1), obj.n, obj.p);
+      for iT = 1:obj.n
+        GY(:,iT,:) = GC * kronCinv * kron(y(:,iT), eye(obj.p));
+      end
     end
     
     function [obsErr, stateErr] = getErrors(obj, y, state, a0)
@@ -974,7 +975,7 @@ classdef StateSpace < AbstractStateSpace
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
     
-    function gradient = gradient_filter_m(obj, G, fOut, ftiOut)
+    function gradient = gradient_filter_m(obj, G, GY, fOut, ftiOut)
       nTheta = size(G.T, 1);
       
       Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
@@ -999,11 +1000,11 @@ classdef StateSpace < AbstractStateSpace
           % Fetch commonly used quantities
           Zti = obj.Z(iP,:,obj.tau.Z(iT));
           GZti = G.Z(:, iP:obj.p:(obj.p*obj.m), obj.tau.Z(iT));
-          GHind = 1 + (iP-1)*(obj.p+1); 
+          GHind = 1 + (obj.p+1)*(iP-1); 
           GHti = G.H(:, GHind, obj.tau.H(iT)); % iP-th diagonal element of H
           
           % Compute basics
-          Gvti(:,iT,iP) = -GZti * ftiOut.ati(:,iT,iP) - ...
+          Gvti(:,iT,iP) = GY(:,iT,iP) - GZti * ftiOut.ati(:,iT,iP) - ...
             Gati(:,:,iT,iP) * Zti' - G.d(:,iP,obj.tau.d(iT));
           GFti(:,iT,iP) = 2 * GZti * (ftiOut.Pti(:,:,iT,iP) * Zti') + ...
             GPti(:,:,iT,iP) * kron(Zti', Zti') + GHti;
