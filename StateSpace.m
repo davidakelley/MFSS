@@ -993,17 +993,16 @@ classdef StateSpace < AbstractStateSpace
       grad = zeros(nTheta, obj.n, obj.p);
       for iT = fOut.dt+1:obj.n
         for iP = 1:obj.p
-          if fOut.v(iP,iT) == 0
-            continue 
-          end
-          
+          % There's probably a simplification we can make if the y_t,i is
+          % missing but I think its safer for now to not have anything about it.
+
           % Fetch commonly used quantities
           Zti = obj.Z(iP,:,obj.tau.Z(iT));
           GZti = G.Z(:, iP:obj.p:(obj.p*obj.m), obj.tau.Z(iT));
           GHind = 1 + (obj.p+1)*(iP-1); 
           GHti = G.H(:, GHind, obj.tau.H(iT)); % iP-th diagonal element of H
           
-          % Compute basics
+          % Compute non-recursive gradient quantities
           Gvti(:,iT,iP) = GY(:,iT,iP) - GZti * ftiOut.ati(:,iT,iP) - ...
             Gati(:,:,iT,iP) * Zti' - G.d(:,iP,obj.tau.d(iT));
           GFti(:,iT,iP) = 2 * GZti * (ftiOut.Pti(:,:,iT,iP) * Zti') + ...

@@ -27,16 +27,14 @@
 	\alpha_{t} = T_t \alpha_{t-1} + c_t + R_t \eta_t &\qquad \eta_t \sim \mathcal{N}(0, Q_t) \qquad
 	\alpha_1 \sim \mathcal{N}(a_1, P_1) 
 	\end{align*} 
-	The elements of the parameter matrices $Z_t$, $d_t$, $H_t$, $T_t$, $c_t$, $R_t$, and $Q_t$ are divided into those that are known and those that are to be estimated. Each estimated element of a parameter matrix must be a transformation of a single element of the vector of parameters to be estimated, $\theta$. Commonly used transformations include the identity, exponential, negative exponential, and logistic transformations to allow for an unbounded $\theta \in \mathbb{R}^{n_\theta}$ while maintaining bounds on the parameter matrices. 
+	The elements of the parameter matrices $Z_t$, $d_t$, $H_t$, $T_t$, $c_t$, $R_t$, and $Q_t$ are divided into those that are known and those that are to be estimated as a function of the parameter vector $\theta$. We are interested in the maximum likelihood estimate of those parameters given data $Y_n = \{y_1, \dots, y_n\}$. 
 
-	Multiple parameter matrix elements may be designated as functions of the same element of $\theta$ to allow for restrictions in the estimation. This is most commonly used in constructing the accumulated states that enable mixed-frequency observations.
-
-	Instructions for how to set up a state space and estimate the maximum likelihood parameters can be found in the MFSS documentation. This document attempts to detail how the likelihood and its gradient are calculated for a given system.
+	Instructions for how to set up the state space and estimate the maximum likelihood of the unknown parameters can be found in the MFSS user guide. This document attempts to detail how the likelihood and its gradient are calculated for a given system, and how the parameters in $\theta$ will be estimated.
 
 \section{Kalman Filtering and Smoothing Calculations}
 
 \subsection*{Multivariate Filter}
-	As shown in \cite{dk_book}, the filtered estimates are given by 
+	As shown in \cite{dk_book} (\S 4.3), the filtered estimates of the state, $a_t = \mathbb{E}(\alpha_t | Y_t)$ and $P_t = \Var(\alpha_t | Y_t)$, are given by 
 	\begin{align*}
 	a_{t+1} = T_{t+1} a_t + c_{t+1} + K_t v_t &\qquad
 	P_{t+1} = T_{t+1} P_t L_t^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime \\
@@ -46,7 +44,7 @@
 	L_t = T_{t+1} - K_t Z_t 
 	\end{align*} 
 
-	and the smoothed estimates are given by
+	and the smoothed estimates, $\hat{\alpha}_t = \mathbb{E}(\alpha_t | Y_n)$ and $V_t = \Var(\alpha_t | Y_n)$ are given by
 	\begin{align*}
 	\hat{\alpha}_t = a_t + P_t r_t &\qquad V_t = P_t - P_t N_t P_t \\ 
 	r_t = Z_t^\prime F_t^{-1} v_t + L_t^\prime r_{t+1} &\qquad N_{t} = Z_t^\prime F_t^{-1} Z_t + L_t^\prime N_{t+1} L_t
@@ -54,19 +52,21 @@
 	where $r_{n+1} = 0$ and $N_{n+1} = 0$. 
 
 \subsection*{Univariate Filter}
+	Substantial computational gains are available using the univariate Kalman filter by avoiding the inversion of the $F_t$ matrix above (as well as enabling the use of the exact initial filter, see below). For more details, see \cite{dk_book} (\S 6.4). 
+
 	When any $H_t$ is non-diagonal, the observation equation is transformed by taking the LDL factorization of the $H_t$ matrices. The transformed parameters are marked with $^*$ to denote that they have been transformed.
 	\begin{align*}
-	y_t^* = Z_t^* \alpha_t + d_t^* + \varepsilon_t^* &\qquad \varepsilon_t \sim N(0, H_t^*)\\
+	y_t^* = Z_t^* \alpha_t + d_t^* + \varepsilon_t^* &\qquad \varepsilon_t^* \sim N(0, H_t^*)\\
 	y_t^* = C_t^{-1} y_t \qquad Z_t^* = C_t^{-1} Z_t \qquad d_t^* &= C_t^{-1} d_t \qquad \varepsilon_t^* = C_t^{-1} \varepsilon_t \qquad H_t = C_t H_t^* C_t^\prime
 	\end{align*}
 
-	To avoid taking the inverse of $F_t$ in the above recursion, several quantities are computed using the univariate filter that can be used on the transformed system: 
+	The multivariate filter and smoother is then modified by computing several quantities via the univariate filter  on the transformed system: 
 	\begin{align*}
 	a_{t, i+1} = a_{t,i} + K_{t,i} v_{t,i} &\qquad P_{t,i+1} = P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^{\prime} \\
 	v_{t,i} = y_{t,i} - Z_{t,i} a_{t,i} - d_{t,i} \qquad F_{t,i} &= Z_{t,i} P_{t,i} Z_{t,i}^\prime + H_{t,i} \qquad K_{t,i} = P_{t,i} Z_{t,i}^\prime F_{t,i}^{-1} \\ 
 	a_{t+1,1} = T_{t+1} a_{t, p+1} + c_{t+1} &\qquad P_{t+1,1} = T_{t+1} P_{t,p+1} T_{t+1}^\prime + R_{t+1} Q_{t+1} R_{t+1}^\prime
 	\end{align*}
-	where $y_{i,t}$ is the $i$th element of $y_t^*$, $Z_{t,i}$ is the $i$th row of $Z_t^*$, $d_{t,i}$ is the $i$th element of $d_t^*$, and $H_{t,i}$ is the $i$th diagonal element of $H_t^*$. The filtered estimates of the state $a_t = a_{t,1}$ and $P_t = P_{t,1}$ are equivalent to those computed above. However, there is no convenient transformation of the quantities $v_{t,i}$, $F_{t,i}$ or $K_{t,i}$ that recovers the multivariate versions computed above.
+	where $y_{i,t}$ is the $i$th element of $y_t^*$, $Z_{t,i}$ is the $i$th row of $Z_t^*$, $d_{t,i}$ is the $i$th element of $d_t^*$, and $H_{t,i}$ is the $i$th diagonal element of $H_t^*$. The filtered estimates of the state $a_t = a_{t,1}$ and $P_t = P_{t,1}$ are equivalent to those computed above. Note that $F_{t,i}$ is a scalar, so that $F_{t,i}^{-1}$ is simply scalar division instead of more computationally expensive matrix inversion. However, this comes at the cost of there being no convenient transformation of the quantities $v_{t,i}$, $F_{t,i}$ or $K_{t,i}$ that recovers the multivariate versions computed above.
 
 	Similarly, the univariate smoother provides $r_t = r_{t,0}$ and $N_t = N_{t,0}$:
 	\begin{align*}
@@ -78,19 +78,19 @@
 \subsection*{Exact Initial Kalman Filter}
 	When the state $\alpha_t$ is stationary, the initial values $a_1$ and $P_1$ can be computed as the unconditional mean and variance of the state given the system parameters by inverting the transition equation. 
 
-	To handle cases where some states are nonstationary, the state is separated into states with known variance (those that are stationary) and those that are considered diffuse (nonstationary states). Let $\tilde{R}$ be a selection matrix with columns from the identity such that the initial shock $\eta_1$ is applied to the states with known variance. The selection matrix $A$ is composed of the columns of the identity matrix associated with the diffuse states such that taking the limit as $\kappa \rightarrow \infty$ allows the diffuse states to have infinite initial variance where the initial values are given by 
+	To handle cases where some states are nonstationary, the state is separated into states with known variance (those that are stationary) and those that are initialized as diffuse (the nonstationary states). Let $\tilde{R}$ be a selection matrix with columns from the identity such that the initial shock $\eta_1$ is applied to the states with known variance. The selection matrix $A$ is composed of the columns of the identity matrix associated with the diffuse states such that taking the limit as $\kappa \rightarrow \infty$ allows the diffuse states to have infinite initial variance where the initial values are given by 
 	\begin{align*}
-	a_1 = a + \tilde{R} \eta_1 + A \delta \qquad& \eta_1 \sim N(0, Q_1) \qquad \delta \sim N(0, \kappa I) \\
+	a_1 = a + \tilde{R} \eta_1 + A \delta \qquad& \eta_1 \sim N(0, \tilde{Q}) \qquad \delta \sim N(0, \kappa I) \\
 	P_1 = P_{*,1} + \kappa P_{\infty,1} \qquad& P_{*,1} = \tilde{R} \tilde{Q} \tilde{R}^\prime \qquad P_{\infty,1} = A A^\prime 
 	\end{align*}
-	The unconditional mean, $a$, and variance, $P_{*,t,i}$, of the state are computed by inverting the stationary portion of the system. Any elements of $a$ associated with nonstationary or diffuse states are set to 0.
+	The unconditional mean, $a$, and variance, $P_{*,1}$, of the state are computed by inverting the stationary portion of the system. Any elements of $a$ associated with nonstationary or diffuse states are set to 0. Letting $\tilde{T} = \tilde{R}^\prime T_1 \tilde{R}$ and $\tilde{c} = \tilde{R}^\prime c_1$, this is accomplished by
 	\begin{align*}
-	\tilde{R}^\prime a &= (I_m - T_1)^{-1} c_1 \\
-	\vecop(\tilde{R} \tilde{Q} \tilde{R}^\prime) &= (I_{m^2} - T_1 \otimes T_1)^{-1} \vecop(R_1 Q_1 R_1^\prime) 
+	\tilde{R}^\prime a &= (I_m - \tilde{T})^{-1} \tilde{c} \\
+	\vecop(\tilde{R} \tilde{Q} \tilde{R}^\prime) &= (I_{m^2} - \tilde{T} \otimes \tilde{T})^{-1} \vecop(\tilde{R}^\prime R_1 Q_1 R_1^\prime \tilde{R}) 
 	\end{align*}
-	When all states are stationary, this initialization collapses down to the simple case where $\alpha_1 \sim N(a_1, P_1)$, where $a_1$ and $P_1$ are determined by inverting the full system. 
+	When all states are stationary, this initialization collapses down to the simple case where $\alpha_1 \sim N(a_1, P_1)$, where $a_1$ and $P_1$ are the unconditional mean and variance of the state, determined by inverting the full system. 
 
-	Given this initialization, the univariate filter recursions must be altered to separate the states with finite and infinite variances: 
+	Given this initialization, the univariate filter recursions must be altered to separate the states with finite and infinite variances (see \cite{dk_book} (\S 5.2) and \cite{dk_fast}): 
 	\begin{align*}
 	 F_{*,t,i} = Z_{t,i} P_{*,t,i} Z_{t,i}^\prime + H_{t,i} &\qquad F_{\infty,t,i} = Z_{t,i} P_{\infty,t,i} Z_{t,i}^\prime\\
 	K_{*,t,i} = P_{*,t,i} Z_{t,i}^\prime &\qquad K_{\infty,t,i} = P_{\infty,t,i} Z_{t,i}^\prime
@@ -186,7 +186,7 @@
 	\log L(Y_n) = -\frac{np}{2} \log 2\pi - \frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p\log F_{t,i}+ v_{t,i}^2 / F_{t,i} 
 	\end{equation}
 	
-	The likelihood for the exact initial filter allows for some simplifications in $F_{\infty,t,i}$ as shown in \cite{dk_book}:
+	The likelihood for the exact initial filter allows for some simplifications in $F_{\infty,t,i}$ as shown in \cite{dk_book} (\S 7.2):
 	\begin{equation} \label{eq:likelihood_uni_diff}
 	\log L_d(Y_n) = -\frac{1}{2} \sum_{t=1}^n \sum_{i=1}^p \iota_{t,i} \log 2\pi  - \frac{1}{2}  \sum_{t=1}^d \sum_{i=1}^p w_{t,i} - \frac{1}{2} \sum_{t=d}^n \sum_{i=1}^p \iota_{t,i} \left(\log F_{t,i}+ v_{t,i}^2 / F_{t,i} \right)
 	\end{equation}
@@ -200,9 +200,7 @@
 	Since these quantities are naturally produced by the Kalman filter, this is the preferred method to calculate the likelihood.
 
 \subsection*{Univariate Gradient}
-	Following the notation of \cite{nagakura}, we denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. See Appendix \ref{sec:gradient_derivation} for details and properties of $\Gt(\cdot)$.
-
-	Since each element of the parameter matrices is a function of a single element of $\theta$, their derivatives with respect to $\theta$ are easily computed as the derivative of the given function.
+	Following the notation of \cite{nagakura}, we denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. See Appendix \ref{sec:gradient_derivation} for details and properties of $\Gt(\cdot)$. For the calculation of the gradients of the state space parameters, see section \ref{sec:parameter_estimation}.
 
 	% The gradient of Equation \ref{eq:likelihood_uni} with respect to $\theta$ is then given by: 
 	% \begin{equation} \label{eq:gradient_uni}
@@ -340,7 +338,7 @@
 	\end{align*}
 
 \subsection*{Initial Conditions}
-	The initial conditions for the recursion are given via the expressions for $a_1$ and $P_1$. We assume that the rank of $A$ and $R_0$ do not affected by $\theta$: 
+	The initial conditions for the recursion are given via the expressions for $a_1$ and $P_1$. We assume that the rank of $A$ and $R_0$ are not affected by $\theta$: 
 	\begin{align*}
 	\Gt(a_1) &= \Gt(a) + \Gt(R_0 \eta_0) + \Gt(A \delta) = \Gt(a) \\
 	\Gt(P_1) &= \Gt(\tilde{R} \tilde{Q} \tilde{R}) + \Gt(\kappa A A^\prime) = \Gt(\tilde{R} \tilde{Q} \tilde{R})\\
@@ -372,7 +370,7 @@
 	= G_t W_t
 	= \tilde{G}_t \tilde{W}_t
 	\end{align*}
-	where $\tilde{G}_t$ contains the nonzero columns of $G_t$ and $\tilde{W}_t$ contains the corresponding rows of $W_t$. The product $\Gt(H_t) \tilde{W}_t^+$ then provides an approximate solution for $\tilde{G}_t$ that can be reordered to solve for $\Gt(C_t)$ and $\Gt(H_t^*)$
+	where $\tilde{G}_t$ contains the nonzero columns of $G_t$ and $\tilde{W}_t$ contains the corresponding rows of $W_t$. The product $\Gt(H_t) \tilde{W}_t^+$ then provides an approximate solution for $\tilde{G}_t$ that can be reordered to solve for $\Gt(C_t)$ and $\Gt(H_t^*)$.
 
 	Having solved for $\Gt(C_t)$, we can solve for the other gradients: 
 	\begin{align*} 
@@ -380,10 +378,23 @@
 	\Gt(d_t^*) &= -\Gt(C_t)(C_t^{-1} \otimes C_t^{\prime-1})(d_t \otimes I_p) + \Gt(d_t)C_t^{-1}
 	\end{align*}
 
+\newpage
+\section{Parameter Estimation}
+	\label{sec:parameter_estimation}
+	We are interested in the maximum likelihood estimate of a set of \emph{structural parameters} ($\theta$) given data $y_1, \dots, y_n$ where elements of the \emph{state space parameters} ($Z_t$, $d_t$, $H_t$, $T_t$, $c_t$, $R_t$, and $Q_t$) depend on $\theta$. For computational simplicity, the state space parameters will be restricted such that each of their scalar elements must be a function of a single element of a vector of the \emph{reduced form parameters} ($\psi$) which depend on $\theta$. The reduced form parameters are unrestricted in how they may depend on $\theta$, allowing for a rich specification of parameter restrictions. In most estimations, there will be the same number of structural parameters and reduced form parameters. 
+
+	More formally, let $\theta \in \mathbb{R}^{n_\theta}$ and $\psi \in \mathbb{R}^{n_\psi}$ where $n_\theta \leq n_\psi$. Define a set of functions $\Psi_i: \mathbb{R}^{n_\theta} \rightarrow \mathbb{R}$ such that each element of $\psi$ is a function of the structural parameters, $\psi_i = \Psi_i(\theta)$. Except in cases of cross-parameter restrictions, $n_\theta = n_\psi$ and $\Psi_i(\theta) = \theta_i$ so that $\psi = \theta$. In cases of cross-parameter restrictions, the user must define the $\Psi_i$ functions for each restricted element. Also, unless initial values will be given as the vector $\theta$, the inverse function $\Psi^{-1} : \mathbb{R}^{n_\psi} \rightarrow \mathbb{R}^{n_\theta}$ must be specified.
+
+	Additionally define a set of functions $\tau_{X_{i,j}}: \mathbb{R} \rightarrow \mathbb{R}$ for $X \in \{ Z_t, d_t, H_t, T_t, c_t, R_t, Q_t \}$ such that each element of the parameter matrices to be estimated is a transformation of an element of $\psi$. Common $\tau_{X_{i,j}}$ transformations include the identity, exponential, negative exponential, and logistic transformations to allow for an unbounded $\psi \in \mathbb{R}^{n_\psi}$ while maintaining bounds on the parameter matrices. When estimating models with mixed-frequency data, all state space parameters shared between the high-frequency and low-frequency states depend on the same reduced form parameters simply by using different $\tau_{X_{i,j}}$ functions. In almost all cases, the specification of the $\tau_{X_{i,j}}$ functions will be done automatically to account for state space parameter bounds and accumulator definitions. User definitions of $\tau_{X_{i,j}}$ should be rare. 
+
+	The gradients of the state space parameters with respect to the reduced form parameters, $G_\psi(X)$, are  easily computed according to the derivatives of $\tau_{X_{i,j}}$. The gradients of the state space parameters with respect to $\theta$ simply require the chain rule, $\Gt(X) = \Gt(\psi) G_\psi(X) $. Note that in cases where $\psi \neq \theta$, $\Gt(\psi)$ must be provided by the user.
+
+	With the likelihood and gradient of the structural parameters defined, the optimization can be performed using common gradient ascent methods available in the Matlab Optimization Toolbox. In practice, it has been observed that further improvements in the likelihood are possible using simplex based optimization methods the gradient ascent method has converged. Due to this, the two methods are repeated until neither is able to improve the likelihood using standard convergence criteria. 
+
 \appendix
 \newpage
 \section{Gradient Derivation} \label{sec:gradient_derivation}
-	Denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. Several identities are needed in computing the gradient (assume matrices are of dimensions such that the expression on the left-hand side exists):
+	Denote $\partial \left[ \vecop(A)^\prime \right] / \partial \theta$ by $\Gt(A)$, where for an $m \times n$ matrix $A$ and a $\theta$ of length $n_\theta$, $\Gt(A)$ will be a $n_\theta \times mn$ matrix of partial derivatives. Several identities from \cite{nagakura} are needed in computing the gradient (assume matrices are of dimensions such that the expression on the left-hand side exists):
 
 	\begin{enumerate}[label=(\alph*)]
 	\item \label{gradID:sum} $\Gt(A + B) = \Gt(A) + \Gt(B)$
@@ -395,6 +406,11 @@
 	\end{enumerate}
 	where $C$ is symmetric, $D$ is nonsingular, $K_{mn}$ is a commutation matrix of size $mn$, and $N_m = I_{m^2} + K_{mm}$. For any given matrix $M$ is of dimension $p_M \times q_M$. Note that $\Gt(AA^\prime)$ can easily be computed from \ref{gradID:quad} by treating $C$ as the identity matrix. Also note that $A \otimes I_1 = A$ and $\log |B| = \log B$ if $B$ is a scalar. 
 
+	The chain rule for the operator $\Gt(\cdot)$ is simply $\Gt(A) = \Gt(\psi) G_\psi(A)$ where $A$ is a function of $\psi$, which is itself a function of $\theta$. This can be shown by noting that 
+	\begin{equation*}
+	\frac{\partial A_{i,j}}{\partial \theta_k} = \sum_{l = 1}^{n_\psi} \frac{\partial A_{i,j}}{\partial \psi_l} \frac{\partial \psi_l}{\partial \theta_k}
+	\end{equation*}
+	which defines the appropriate element of the matrix product $\Gt(\psi)G_\psi(A)$.
 
 \bibliography{kalman_filter_smoother} 
 \bibliographystyle{unsrt}
