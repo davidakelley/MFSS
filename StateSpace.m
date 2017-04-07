@@ -386,7 +386,7 @@ classdef StateSpace < AbstractStateSpace
       inds = logical(obsPattern(newTauH, :));
       for iT = 1:size(y,2)
         % Transform observations
-        yUni(inds(iT,:),iT) = factorC(inds(iT,:),inds(iT,:),newTauH(iT)) * y(inds(iT,:),iT);
+        yUni(inds(iT,:),iT) = factorC(inds(iT,:),inds(iT,:),newTauH(iT)) \ y(inds(iT,:),iT);
       end
       
       % We may need to create more slices of Z. 
@@ -469,7 +469,7 @@ classdef StateSpace < AbstractStateSpace
       
       GY = zeros(size(GMulti.H, 1), obj.n, obj.p);
       for iT = 1:obj.n
-        GY(:,iT,:) = GC * kronCinv * kron(y(:,iT), eye(obj.p));
+        GY(:,iT,:) = -GC * kronCinv * kron(y(:,iT), eye(obj.p)); 
       end
     end
     
