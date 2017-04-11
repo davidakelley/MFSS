@@ -247,9 +247,7 @@
 	\Gt(P_{t,i+1}) &= \Gt(P_{t,i} - K_{t,i} F_{t,i} K_{t,i}^\prime) \\ 
 	&= \Gt(P_{t,i}) - \Gt(K_{t,i})(F_{t,i}K_{t,i}^\prime \otimes I_m) N_m - \Gt(F_{t,i})(K_{t,i}^\prime \otimes K_{t,i}^\prime)
 	\end{align*}
-	where $\Gt(a_{1,1}) = \Gt(a_1)$ and $\Gt(P_{1,1}) = \Gt(P_1)$, which will be given below. 
-
-	The values of $\Gt(y_{t,i})$ are computed according to 
+	where $N_m = I_{m^2} + K_{mm}$ for a commutation matrix $K_{mm}$. The initial period gradients $\Gt(a_{1,1}) = \Gt(a_1)$ and $\Gt(P_{1,1}) = \Gt(P_1)$ will be given below. The values of $\Gt(y_{t,i})$ are computed according to 
 	\begin{align*}
 	\Gt(y_t^*) &= \Gt(C_t^{-1} y_t) \\
 	&= -\Gt(C_t) (C_t^{-1} \otimes C_t^{\prime-1}) (y_t \otimes I_p)
@@ -383,7 +381,7 @@
 	\label{sec:parameter_estimation}
 	We are interested in the maximum likelihood estimate of a set of \emph{structural parameters} ($\theta$) given data $y_1, \dots, y_n$ where elements of the \emph{state space parameters} ($Z_t$, $d_t$, $H_t$, $T_t$, $c_t$, $R_t$, and $Q_t$) depend on $\theta$. For computational simplicity, the state space parameters will be restricted such that each of their scalar elements must be a function of a single element of a vector of the \emph{reduced form parameters} ($\psi$) which depend on $\theta$. The reduced form parameters are unrestricted in how they may depend on $\theta$, allowing for a rich specification of parameter restrictions. In most estimations, there will be the same number of structural parameters and reduced form parameters. 
 
-	More formally, let $\theta \in \mathbb{R}^{n_\theta}$ and $\psi \in \mathbb{R}^{n_\psi}$ where $n_\theta \leq n_\psi$. Define a set of functions $\Psi_i: \mathbb{R}^{n_\theta} \rightarrow \mathbb{R}$ such that each element of $\psi$ is a function of the structural parameters, $\psi_i = \Psi_i(\theta)$. Except in cases of cross-parameter restrictions, $n_\theta = n_\psi$ and $\Psi_i(\theta) = \theta_i$ so that $\psi = \theta$. In cases of cross-parameter restrictions, the user must define the $\Psi_i$ functions for each restricted element. Also, unless initial values will be given as the vector $\theta$, the inverse function $\Psi^{-1} : \mathbb{R}^{n_\psi} \rightarrow \mathbb{R}^{n_\theta}$ must be specified.
+	More formally, let $\theta \in \mathbb{R}^{n_\theta}$ and $\psi \in \mathbb{R}^{n_\psi}$ where $n_\theta \leq n_\psi$. Define a set of functions $\Psi_i: \mathbb{R}^{n_\theta} \rightarrow \mathbb{R}$ such that each element of $\psi$ is a function of the structural parameters, $\psi_i = \Psi_i(\theta)$. Except in cases of cross-parameter restrictions, $n_\theta = n_\psi$ and $\Psi_i(\theta) = \theta_i$ so that $\psi = \theta$. In cases of cross-parameter restrictions, the user must define the $\Psi_i$ functions for each restricted element. Also, unless initial values will be given as the vector $\theta$ (which is often inconvenient), the inverse function $\Psi^{-1} : \mathbb{R}^{n_\psi} \rightarrow \mathbb{R}^{n_\theta}$ must be specified.
 
 	Additionally define a set of functions $\tau_{X_{i,j}}: \mathbb{R} \rightarrow \mathbb{R}$ for $X \in \{ Z_t, d_t, H_t, T_t, c_t, R_t, Q_t \}$ such that each element of the parameter matrices to be estimated is a transformation of an element of $\psi$. Common $\tau_{X_{i,j}}$ transformations include the identity, exponential, negative exponential, and logistic transformations to allow for an unbounded $\psi \in \mathbb{R}^{n_\psi}$ while maintaining bounds on the parameter matrices. When estimating models with mixed-frequency data, all state space parameters shared between the high-frequency and low-frequency states depend on the same reduced form parameters simply by using different $\tau_{X_{i,j}}$ functions. In almost all cases, the specification of the $\tau_{X_{i,j}}$ functions will be done automatically to account for state space parameter bounds and accumulator definitions. User definitions of $\tau_{X_{i,j}}$ should be rare. 
 
@@ -402,11 +400,11 @@
 	\item \label{gradID:trans} $\Gt(A^\prime) = \Gt(A) K_{p_A q_A}$ 
 	\item \label{gradID:quad} $\Gt(ACA^\prime) = \Gt(A)(CA^\prime \otimes I_{p_A}) N_{p_A} + \Gt(C)(A^\prime \otimes A^\prime)$
 	\item \label{gradID:inv} $\Gt(D^{-1}) = -\Gt(D)(D^{-1} \otimes D^{\prime-1})$ 
-	\item \label{gradID:logdet} $\Gt(\log |D|) = \Gt(D) D^{\prime-1}$
+	\item \label{gradID:logdet} $\Gt(\log |D|) = \Gt(D) \text{ vec} (D^{\prime-1})$
 	\end{enumerate}
 	where $C$ is symmetric, $D$ is nonsingular, $K_{mn}$ is a commutation matrix of size $mn$, and $N_m = I_{m^2} + K_{mm}$. For any given matrix $M$ is of dimension $p_M \times q_M$. Note that $\Gt(AA^\prime)$ can easily be computed from \ref{gradID:quad} by treating $C$ as the identity matrix. Also note that $A \otimes I_1 = A$ and $\log |B| = \log B$ if $B$ is a scalar. 
 
-	The chain rule for the operator $\Gt(\cdot)$ is simply $\Gt(A) = \Gt(\psi) G_\psi(A)$ where $A$ is a function of $\psi$, which is itself a function of $\theta$. This can be shown by noting that 
+	The chain rule for the operator $\Gt(\cdot)$ is simply $\Gt(A) = \Gt(\psi) G_\psi(A)$ where $A$ is a function of $\psi$ which is a function of $\theta$. This can be shown by noting that 
 	\begin{equation*}
 	\frac{\partial A_{i,j}}{\partial \theta_k} = \sum_{l = 1}^{n_\psi} \frac{\partial A_{i,j}}{\partial \psi_l} \frac{\partial \psi_l}{\partial \theta_k}
 	\end{equation*}

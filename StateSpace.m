@@ -36,9 +36,6 @@ classdef StateSpace < AbstractStateSpace
   % or the approximate diffuse case with large kappa. The value of kappa
   % can be set with ss.kappa before the use of the filter/smoother.
   %
-  % The univariate filter/smoother will be used if H is diagonal. Set
-  % ss.filterUni to false to force the use of the multivaritate versions.
-  %
   % Mex versions will be used unless ss.useMex is set to false or the mex
   % files cannot be found.
   
@@ -97,10 +94,6 @@ classdef StateSpace < AbstractStateSpace
         return;
       end
       obj.validateStateSpace();
-      
-      % Check if we can use the univariate filter
-      slicesH = num2cell(obj.H, [1 2]);
-      obj.filterUni = ~any(~cellfun(@isdiag, slicesH));
     end
     
     %% State estimation methods 
@@ -161,6 +154,7 @@ classdef StateSpace < AbstractStateSpace
       assert(all(size(theta) == [tm.nTheta 1]), ...
         'theta must be a nTheta x 1 vector.');
 
+      % Transform parameters to allow for univariate treatment
       ssMulti = obj;
       [obj, yUni, factorC] = obj.prepareFilter(y);
       
@@ -361,7 +355,6 @@ classdef StateSpace < AbstractStateSpace
       % If H is already diagonal, do nothing
       if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj,3))
         ssUni = obj;
-        ssUni.filterUni = true;
         yUni = y;
         factorC = eye(obj.p);
         return
@@ -432,6 +425,7 @@ classdef StateSpace < AbstractStateSpace
       % univarite model given the univariate parameters and the factorzation
       % matrix. 
       
+      % TODO: Allow for time-varrying parameters
       assert(size(GMulti.H, 3) == 1, 'TVP not yet developed.');
       
       Guni = GMulti;
@@ -464,8 +458,8 @@ classdef StateSpace < AbstractStateSpace
       
       factorCinv = inv(factorC);
       kronCinv = kron(factorCinv, factorCinv');
-      Guni.Z = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.Z * kron(eye(obj.m), factorCinv);
-      Guni.d = -GC * kronCinv * kron(ssMulti.d, eye(obj.p)) + GMulti.d / factorC;
+      Guni.Z = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.Z * kron(eye(obj.m), factorCinv');
+      Guni.d = -GC * kronCinv * kron(ssMulti.d, eye(obj.p)) + GMulti.d / factorC';
       
       GY = zeros(size(GMulti.H, 1), obj.n, obj.p);
       for iT = 1:obj.n
@@ -656,12 +650,12 @@ classdef StateSpace < AbstractStateSpace
           v(jj,ii) = y(jj,ii) - Zjj * ati - obj.d(jj,obj.tau.d(ii));
           
           F(jj,ii) = Zjj * Pti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
-          K(:,jj,ii) = Pti * Zjj';
+          K(:,jj,ii) = Pti * Zjj' / F(jj,ii);
           
           LogL(jj,ii) = (log(F(jj,ii)) + (v(jj,ii)^2) / F(jj,ii));
           
-          ati = ati + K(:,jj,ii) / F(jj,ii) * v(jj,ii);
-          Pti = Pti - K(:,jj,ii) / F(jj,ii) * K(:,jj,ii)';
+          ati = ati + K(:,jj,ii) * v(jj,ii);
+          Pti = Pti - K(:,jj,ii) * F(jj,ii) * K(:,jj,ii)';
         end
         
         Tii = obj.T(:,:,obj.tau.T(ii+1));
@@ -802,12 +796,12 @@ classdef StateSpace < AbstractStateSpace
           v(iP,iT) = y(iP,iT) - Zjj * ati(:,iT,iP) - obj.d(iP,obj.tau.d(iT));
           
           F(iP,iT) = Zjj * Pti(:,:,iT,iP) * Zjj' + obj.H(iP,iP,obj.tau.H(iT));
-          K(:,iP,iT) = Pti(:,:,iT,iP) * Zjj';
+          K(:,iP,iT) = Pti(:,:,iT,iP) * Zjj' / F(iP,iT);
           
           LogL(iP,iT) = (log(F(iP,iT)) + (v(iP,iT)^2) / F(iP,iT));
           
-          ati(:,iT,iP+1) = ati(:,iT,iP) + K(:,iP,iT) / F(iP,iT) * v(iP,iT);
-          Pti(:,:,iT,iP+1) = Pti(:,:,iT,iP) - K(:,iP,iT) / F(iP,iT) * K(:,iP,iT)';
+          ati(:,iT,iP+1) = ati(:,iT,iP) + K(:,iP,iT) * v(iP,iT);
+          Pti(:,:,iT,iP+1) = Pti(:,:,iT,iP) - K(:,iP,iT) * F(iP,iT) * K(:,iP,iT)';
         end
         
         Tii = obj.T(:,:,obj.tau.T(iT+1));
@@ -980,16 +974,9 @@ classdef StateSpace < AbstractStateSpace
       
       Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
       
-      Gati = zeros(nTheta, obj.m, obj.n, obj.p+1);
-      Gati(:,:,1,1) = G.a1;
-      
-      GPti = zeros(nTheta, obj.m^2, obj.n, obj.p+1);
-      GPti(:,:,1,1) = G.P1;
-      
-      Gvti = zeros(nTheta, obj.n, obj.p);
-      GFti = zeros(nTheta, obj.n, obj.p);
-      GKti = zeros(nTheta, obj.m, obj.n, obj.p);
-      
+      Gati = G.a1;
+      GPti = G.P1;
+            
       grad = zeros(nTheta, obj.n, obj.p);
       for iT = fOut.dt+1:obj.n
         for iP = 1:obj.p
@@ -1003,26 +990,23 @@ classdef StateSpace < AbstractStateSpace
           GHti = G.H(:, GHind, obj.tau.H(iT)); % iP-th diagonal element of H
           
           % Compute non-recursive gradient quantities
-          Gvti(:,iT,iP) = GY(:,iT,iP) - GZti * ftiOut.ati(:,iT,iP) - ...
-            Gati(:,:,iT,iP) * Zti' - G.d(:,iP,obj.tau.d(iT));
-          GFti(:,iT,iP) = 2 * GZti * (ftiOut.Pti(:,:,iT,iP) * Zti') + ...
-            GPti(:,:,iT,iP) * kron(Zti', Zti') + GHti;
-          GKti(:,:,iT,iP) = GPti(:,:,iT,iP) * kron(Zti' * fOut.F(iP,iT)^(-1), eye(obj.m)) + ...
-            GZti * ftiOut.Pti(:,:,iT,iP) * fOut.F(iP,iT)^(-1) - ...
-            (GFti(:,iT,iP) * fOut.F(iP,iT)^(-2) * Zti * ftiOut.Pti(:,:,iT,iP)); 
+          Gvti = GY(:,iT,iP) - GZti * ftiOut.ati(:,iT,iP) ...
+            - Gati * Zti' - G.d(:,iP,obj.tau.d(iT));
+          GFti = 2 * GZti * ftiOut.Pti(:,:,iT,iP) * Zti' ...
+            + GPti * kron(Zti', Zti') + GHti;
+          GKti = GPti * kron(Zti' ./ fOut.F(iP,iT), eye(obj.m)) ...
+            + GZti * ftiOut.Pti(:,:,iT,iP) ./ fOut.F(iP,iT) ...
+            - (GFti .* fOut.F(iP,iT)^(-2) * Zti * ftiOut.Pti(:,:,iT,iP));
           
           % Comptue the period contribution to the gradient
-          grad(:,iT,iP) = 0.5 * GFti(:,iT,iP) * ...
-            (1./fOut.F(iP,iT) - (fOut.v(iP,iT)^2 ./ fOut.F(iP,iT)^2)) + ...
-            Gvti(:,iT,iP) * fOut.v(iP,iT) ./ fOut.F(iP,iT);
+          grad(:,iT,iP) = 0.5 * GFti ...
+            * (1./fOut.F(iP,iT) - (fOut.v(iP,iT)^2 ./ fOut.F(iP,iT)^2)) ...
+            + Gvti * fOut.v(iP,iT) ./ fOut.F(iP,iT);
           
           % Transition from i to i+1
-          Gati(:,:,iT,iP+1) = Gati(:,:,iT,iP) + ...
-            GKti(:,:,iT,iP) * fOut.v(iP,iT) + ...
-            Gvti(:,iT,iP) * fOut.K(:,iP,iT)';
-          GKFK = GKti(:,:,iT,iP) * kron(fOut.F(iP,iT) * fOut.K(:,iP,iT)', eye(obj.m)) * Nm + ...
-            GFti(:,iT,iP) * kron(fOut.K(:,iP,iT)', fOut.K(:,iP,iT)');
-          GPti(:,:,iT,iP+1) = GPti(:,:,iT,iP) - GKFK;
+          Gati = Gati + GKti * fOut.v(iP,iT) + Gvti * fOut.K(:,iP,iT)';
+          GPti = GPti - GKti * kron(fOut.F(iP,iT) * fOut.K(:,iP,iT)', eye(obj.m)) * Nm ...
+            - GFti * kron(fOut.K(:,iP,iT)', fOut.K(:,iP,iT)');
         end
         
         % Transition from time t to t+1
@@ -1030,14 +1014,14 @@ classdef StateSpace < AbstractStateSpace
         Rt = obj.R(:,:,obj.tau.R(iT+1));
         Qt = obj.Q(:,:,obj.tau.Q(iT+1));
         
-        Gati(:,:,iT+1,1) = G.T(:,:,obj.tau.T(iT+1)) * kron(ftiOut.ati(:,iT,obj.p+1), eye(obj.m)) + ...
-          Gati(:,:,iT,obj.p+1) * Tt' + G.c(:,:,obj.tau.c(iT+1));
-        GTPT = G.T(:,:,obj.tau.T(iT+1)) * ...
-          kron(ftiOut.Pti(:,:,iT,obj.p+1) * Tt', eye(obj.m)) * Nm + ...
-          GPti(:,:,iT,obj.p+1) * kron(Tt', Tt');
-        GRQR = G.R(:,:,obj.tau.R(iT+1)) * kron(Qt * Rt', eye(obj.m)) * Nm + ...
-          G.Q(:,:,obj.tau.Q(iT+1)) * kron(Rt', Rt');
-        GPti(:,:,iT+1,1) = GTPT + GRQR;
+        Gati = G.T(:,:,obj.tau.T(iT+1)) * kron(ftiOut.ati(:,iT,obj.p+1), eye(obj.m)) ...
+          + Gati * Tt' + G.c(:,:,obj.tau.c(iT+1));
+        GTPT = G.T(:,:,obj.tau.T(iT+1)) ...
+          * kron(ftiOut.Pti(:,:,iT,obj.p+1) * Tt', eye(obj.m)) * Nm ...
+          + GPti * kron(Tt', Tt');
+        GRQR = G.R(:,:,obj.tau.R(iT+1)) * kron(Qt * Rt', eye(obj.m)) * Nm ...
+          + G.Q(:,:,obj.tau.Q(iT+1)) * kron(Rt', Rt');
+        GPti = GTPT + GRQR;
       end
       
       gradient = -sum(sum(grad, 3), 2);

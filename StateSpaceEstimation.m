@@ -204,13 +204,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
             obj.useGrad = tempGrad;
             minfunc = @(theta) obj.minimizeFun(theta, y);
             
-            if obj.filterUni
-              ssHat = obj.ThetaMapping.theta2system(thetaHat);
-              ssHat.filterUni = false;
-              [~, trueLogli] = ssHat.filter(y);
-              logli = -trueLogli;
-            end
-            
             gradient = [];
         end
         
@@ -357,7 +350,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
     function [negLogli, gradient] = minimizeFun(obj, theta, y)
       % Get the likelihood of
       ss1 = obj.ThetaMapping.theta2system(theta);
-      ss1.filterUni = obj.filterUni;
       
       if any(diag(ss1.H) < 0)
         keybaord;

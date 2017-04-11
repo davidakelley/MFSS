@@ -1,9 +1,7 @@
 %% Tests for StateSpace.gradient
 %
 % Run with
-%{
-  testOut = runtests('test/gradient_test.m');
-%}
+% runtests('test/gradient_test.m');
 
 % David Kelley, 2016
 
@@ -21,13 +19,9 @@ classdef gradient_test < matlab.unittest.TestCase
         struct('type', '{}', 'subs', {{1}})) 'MFSS'];
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
-      
-      %{
+    
       ss = generateARmodel(2, 2, false);
-      y = generateData(ss, 500);
-      %}
-      ss = generateARmodel(2, 2, false);
-      y = generateData(ss, 5);
+      y = generateData(ss, 50);
       testCase.ar2obs2 = ss;
       testCase.ar2obs2data = y;
     end
@@ -207,8 +201,6 @@ classdef gradient_test < matlab.unittest.TestCase
     
     %% Loglikelihood gradients for single parameters
     function testGradZ(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -222,8 +214,6 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradd(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -235,10 +225,8 @@ classdef gradient_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
-
+    
     function testGradH(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -252,8 +240,6 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradT(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -267,8 +253,6 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradc(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -282,8 +266,6 @@ classdef gradient_test < matlab.unittest.TestCase
     end
     
     function testGradR(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -295,10 +277,8 @@ classdef gradient_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
-
+    
     function testGradQ(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
@@ -310,16 +290,15 @@ classdef gradient_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
-
+    
     %% Likelihood gradients for parameters at estimated optima
     function testGraddEstim(testCase)
-      assumeFail(testCase); % Filter by assumption
-      
       ss = testCase.ar2obs2;
       y = testCase.ar2obs2data;
       
       ssE = StateSpaceEstimation(ss.Z, nan(size(ss.d)), ss.H, ss.T, ss.c, ss.R, ss.Q);
       tm = ssE.ThetaMapping;
+      ssE.diagnosticPlot = false;
       
       ss1 = ssE.estimate(y, ss);
       
