@@ -79,7 +79,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
   alpha = zeros(m, n);
   eta = zeros(g, n);
   r = zeros(m, n);
-  N = zeros(m, m, n+1);
+  N = zeros(m, m, n);
 
   rti = zeros(m, 1);
   Nti = zeros(m, m);

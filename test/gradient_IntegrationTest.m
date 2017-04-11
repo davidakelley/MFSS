@@ -144,7 +144,6 @@ classdef gradient_IntegrationTest < matlab.unittest.TestCase
       ss.H(2, 1) = covVal;
       ss.H(1, 2) = covVal;
       ss.H = ss.H * 1000;
-      ss.filterUni = 0;
       
       ss.T = [1 1 0; 0 0.5 0.3; 0 1 0];
       ss.R = [0 1 0]';
@@ -181,7 +180,6 @@ classdef gradient_IntegrationTest < matlab.unittest.TestCase
       ss.H(2, 1) = covVal;
       ss.H(1, 2) = covVal;
       ss.H = ss.H * 1000;
-      ss.filterUni = 0;
       
       ss.T = [1 1 0; 0 0.5 0.3; 0 1 0];
       ss.R = [0 1 0]';

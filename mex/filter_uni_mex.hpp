@@ -202,16 +202,16 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       F(jj, ii-1) = as_scalar(Zjj * Pti * trans(Zjj) + H(jj, jj, (uword) tauH(ii-1)-1));
 
         // M(:,jj,ii) = Pti * Zjj'
-      K.slice(ii-1).col(jj) = Pti * trans(Zjj);
+      K.slice(ii-1).col(jj) = Pti * trans(Zjj) / F(jj,ii-1);
 
         // LogL(jj,ii) = (log(F(jj,ii)) + (v(jj,ii)^2) / F(jj,ii))
       LogL(jj, ii-1) = (log(F(jj, ii-1)) + (pow(v(jj, ii-1), 2)) / F(jj, ii-1));
 
-        // ati = ati + M(:,jj,ii) / F(jj,ii) * v(jj,ii)
-      ati = ati + K.slice(ii-1).col(jj) / F(jj, ii-1) * v(jj, ii-1);
+        // ati = ati + M(:,jj,ii) * v(jj,ii)
+      ati = ati + K.slice(ii-1).col(jj) * v(jj, ii-1);
 
-        // Pti = Pti - M(:,jj,ii) / F(jj,ii) * M(:,jj,ii)'
-      Pti = Pti - K.slice(ii-1).col(jj) / F(jj, ii-1) * trans(K.slice(ii-1).col(jj));
+        // Pti = Pti - M(:,jj,ii) * F(jj,ii) * M(:,jj,ii)'
+      Pti = Pti - K.slice(ii-1).col(jj) * F(jj, ii-1) * trans(K.slice(ii-1).col(jj));
     }
 
       // Tii = T(:,:,tauT(ii))
