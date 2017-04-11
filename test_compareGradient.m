@@ -1,5 +1,5 @@
 function test_compareGradient(ss)
-timePers = 200;
+timePers = 5;
 
 rng(0);
 [y, alpha] = generateData(ss, timePers);
@@ -10,7 +10,7 @@ tm = ThetaMap.ThetaMapAll(ss);
 % plot(alpha');
 
 tic;
-[numeric, numericG] = numericGradient(ss, tm, y, 1e-8);
+numeric = numericGradient(ss, tm, y, 1e-8);
 tocN = toc;
 
 theta = tm.system2theta(ss);
@@ -19,8 +19,9 @@ tic;
 tocA = toc;
 
 fprintf('Analytic took %3.2f%% of the numeric time.\n', tocA./tocN*100);
-diffTab = array2table([numeric grad (grad - numeric) (grad - numeric)./numeric], ...
-  'VariableNames', {'Numeric', 'Analytic', 'Diff', 'RelativeDiff'});
+
+diffTab = array2table([numeric grad (grad - numeric) (grad - numeric)./numeric ], ...
+  'VariableNames', {'Numeric', 'Univariate', 'Numeric_Diff', 'RelativeDiff'});
 diffTab.Variable = tm2matList(tm);
 diffTab = diffTab(:,[5 1:4]);
 disp(diffTab);
