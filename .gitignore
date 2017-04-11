@@ -13,3 +13,6 @@
 *.synctex.gz
 *.bbl
 *.blg
+
+# The temp folder isn't worth tracking
+temp/
