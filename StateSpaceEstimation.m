@@ -254,7 +254,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       diagnostic = AbstractSystem.compileStruct(thetaHist, likelihoodHist, solverIter);
       
       % Nested function for getting diagnostic output
-      function stop = outfun(x,optimValues,state)
+      function stop = outfun(x, optimValues, state)
         thetaIter = thetaIter + 1;
         thetaHist(thetaIter, :) = x';
         likelihoodHist(thetaIter) = optimValues.fval;
@@ -280,57 +280,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
           StateSpaceEstimation.sseplotfiltered([], [], state);
           drawnow;
         end
-      end
-    end
-    
-    function ss0 = em_estimate(obj, y, ss0, varargin)
-      % Estimate parameters through pseudo-maximum likelihood EM algoritm
-      
-      % See Greene's Econometric Analysis for the general setup here. 
-      % The approach is limited in that it cannot enforce bound conditions or
-      % nonlinear restrictions on parameter elements. 
-      %
-      % We generate a matrix F and a vector G such that F * beta = G where beta
-      % will be either the parameter matrix Z or T. 
-      %
-      % For states with a fixed (or zeros) error variance... what do we do?
-      
-      % TODO: Write EM algorithm
-      assert(obj.timeInvariant, ...
-        'EM Algorithm only developed for time-invariant cases.');
-      
-      [obj, ss0] = obj.checkConformingSystem(y, ss0, varargin{:});
-      
-      % Generate F and G matricies for state and observation equations
-      % Does it work to run the restricted OLS for the betas we know while
-      % letting the variances be free in the regression but only keeping
-      % the ones we're estimating afterward? I think so.
-      Fobs = [];
-      Gobs = [];
-      Fstate = [];
-      Gstate = [];
-      
-      % Iterate over EM algorithm
-      iter = 0; logli0 = nan; gap = nan;
-      while iter < 2 || gap > obj.tol
-        iter = iter + 1;
-        
-        % E step: Estiamte complete log-likelihood
-        [alpha, sOut, fOut] = ss0.smooth(y);
-        [V, J] = ss0.getVariances(y, alpha, sOut, fOut);
-        
-        % M step: Get parameters that maximize the likelihood
-        % Measurement equation
-        [ss0.Z, ss0.d, ss0.H] = obj.restrictedOLS(y', alpha', V, J, Fobs, Gobs);
-        % State equation
-        [ss0.T, ss0.c, RQR] = obj.restrictedOLS(...
-          alpha(:, 2:end)', alpha(:, 1:end-1)', V, J, Fstate, Gstate);
-        
-        % Report
-        if obj.verbose
-          gap = abs((sOut.logli - logli0)/mean([sOut.logli; logli0]));
-        end
-        logli0 = sOut.logli;
       end
     end
     
@@ -363,14 +312,23 @@ classdef StateSpaceEstimation < AbstractStateSpace
         return
       end
       
+      % Avoid bad parameters
+      if any(~isfinite(ss1.vectorizedParameters))
+        negLogli = nan;
+        gradient = nan;
+        return
+      end
+      
       try
         if obj.useGrad
-          [rawLogli, rawGradient] = ss1.gradient(y, obj.ThetaMapping);
-          a = [];
+          [rawLogli, rawGradient, fOut] = ss1.gradient(y, obj.ThetaMapping);
+          a = fOut.a;
         else
-          [a, rawLogli] = ss1.filter(y);
+          [a, rawLogli, fOut] = ss1.filter(y);
           rawGradient = [];
         end
+        % Don't plot the diffuse parts of the state because they look odd
+        a(:,1:fOut.dt) = nan;
         
         % Put filtered state in figure for plotting
         if ~isempty(obj.progressWin)
@@ -384,6 +342,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       catch
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
+        fprintf('.');
       end
       
       negLogli = -rawLogli;
@@ -652,28 +611,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
       if plotfiltered.Parent.YLim(1) > min(plotY)
         plotfiltered.Parent.YLim(1) = min(plotY);
       end
-    end
-  end
-  
-  methods (Hidden = true)
-    %% EM Algorithm Helper functions
-    function [beta, sigma] = restrictedOLS(y, X, V, J, F, G)
-      % Restricted OLS regression
-      % See Econometric Analysis (Greene) for details.
-      T_dim = size(y, 1);
-      
-      % Simple OLS
-      xxT = sum(V, 3) + X * X';
-      yxT = sum(J, 3) + y * X';
-      yyT = sum(V, 3) + y * y';
-      
-      betaOLS = yxT/xxT;
-      sigmaOLS = (yyT-OLS*yxT');
-      
-      % Restricted OLS estimator
-      beta = betaOLS - (betaOLS * F - G) / (F' / xxT * F) * (F' / xxT);
-      sigma = (sigmaOLS + (betaOLS * F - G) / ...
-        (F' / xxT * F) * (betaOLS * F - G)') / T_dim;
     end
   end
 end

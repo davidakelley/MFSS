@@ -160,20 +160,20 @@ classdef estimate_test < matlab.unittest.TestCase
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ssE = StateSpaceEstimation(Z, d, H, T, c, R, Q);
       
       % Initialization
       pcaWeight = pca(y');
-      Z0 = ss.Z;
+      Z0 = ssE.Z;
       Z0(:,1) = pcaWeight(:, 1);
       res = pcares(y', 1);      
       H0 = cov(res);
-      T0 = ss.T;
+      T0 = ssE.T;
       T0(isnan(T0)) = 0.5./m;
       Q0 = 1;
       ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0);
 
-      [ssE, ~, grad] = ss.estimate(y, ss0);
+      [~, ~, grad] = ssE.estimate(y, ss0);
       testCase.verifyLessThanOrEqual(abs(grad), 5e-4);
     end
     

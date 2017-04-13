@@ -202,7 +202,7 @@ classdef ThetaMap < AbstractSystem
       % Handle inputs
       assert(all(size(theta) == [obj.nTheta 1]), ...
         'Size of theta does not match ThetaMap.');
-      assert(all(isfinite(theta)), 'Theta must be non-nan');
+      assert(~any(isnan(theta)), 'Theta must be non-nan');
       
       % Dimensions and preallocation
       nParameterMats = length(obj.fixed.systemParam);
@@ -262,11 +262,11 @@ classdef ThetaMap < AbstractSystem
       obj.index.checkConformingSystem(ss);
       ssParamValues = ss.vectorizedParameters();
       assert(all(obj.LowerBound.vectorizedParameters < ssParamValues | ...
-        isnan(ssParamValues) | ...
+        ~isfinite(ssParamValues) | ...
         obj.index.vectorizedParameters == 0), ...
         'system2theta:LBound', 'System violates lower bound of ThetaMap.');
       assert(all(obj.UpperBound.vectorizedParameters > ssParamValues | ...
-        isnan(ssParamValues) | ...
+        ~isfinite(ssParamValues) | ...
         obj.index.vectorizedParameters == 0), ...
         'system2theta:UBound', 'System violates upper bound of ThetaMap.');
       
@@ -286,7 +286,7 @@ classdef ThetaMap < AbstractSystem
         % Get the optimal theta value for each parameter, make sure they match
         iInverses = obj.inverses(iTransformIndexes);
         thetaVals = arrayfun(@(x) iInverses{x}(iParamValues(x)), 1:nParam);        
-        assert(all(thetaVals - thetaVals(1) < 1e4 * eps | isnan(thetaVals)), ...
+        assert(all(thetaVals - thetaVals(1) < 1e4 * eps | ~isfinite(thetaVals)), ...
           'Transformation inverses result in differing values of theta.');
         theta(iTheta) = thetaVals(1);
       end
@@ -358,9 +358,9 @@ classdef ThetaMap < AbstractSystem
       
       % Determine which case we have
       if obj.usingDefaulta0 || obj.usingDefaultP0
-        T1 = ss.T(:,:,1);
-        R1 = ss.R(:,:,1);
-        Q1 = ss.Q(:,:,1);
+        T1 = ss.T(:,:,ss.tau.T(1));
+        R1 = ss.R(:,:,ss.tau.R(1));
+        Q1 = ss.Q(:,:,ss.tau.Q(1));
         stationaryStateFlag = all(eig(T1) < 1);
       else
         stationaryStateFlag = false;
@@ -377,9 +377,9 @@ classdef ThetaMap < AbstractSystem
         % See documentation for calculation of the initial conditions gradients
         IminusTinv = inv(eye(obj.m) - T1);
         IminusTPrimeInv = inv((eye(obj.m) - T1)');
-        Ga0 = G.T * kron(IminusTinv, IminusTPrimeInv) * ...
-          kron(ss.c(:,:,1), eye(obj.m)) + ...
-          G.c / (eye(obj.m) - T1)';
+        Ga0 = G.T(:,:,ss.tau.T(1)) * kron(IminusTinv, IminusTPrimeInv) * ...
+          kron(ss.c(:,ss.tau.c(1)), eye(obj.m)) + ...
+          G.c(:,:,ss.tau.c(1)) / (eye(obj.m) - T1)';
       end
       
       % GP0
@@ -398,15 +398,15 @@ classdef ThetaMap < AbstractSystem
         
         rawGTkronT = ThetaMap.GAkronA(T1);
         GTkronT = zeros(obj.nTheta, obj.m^4);
-        usedT = logical(obj.index.T);
+        usedT = logical(obj.index.T(:,:,ss.tau.T(1)));
         GTkronT(obj.index.T(usedT), :) = rawGTkronT(vec(usedT), :);
         
         IminusTkronTInv = inv(eye(obj.m^2) - kron(T1, T1));
 
         GP0 = GTkronT * kron(IminusTkronTInv, IminusTkronTInv') * ...
           kron(vec(R1 * Q1 * R1'), eye(obj.m^2)) + ...
-          (G.R * (kron(Q1 * R1', eye(obj.m))) * Nm + ...
-          G.Q * kron(R1', R1')) * IminusTkronTInv';
+          (G.R(:,:,ss.tau.R(1)) * (kron(Q1 * R1', eye(obj.m))) * Nm + ...
+          G.Q(:,:,ss.tau.Q(1)) * kron(R1', R1')) * IminusTkronTInv';
       end
     end
 

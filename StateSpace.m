@@ -62,11 +62,8 @@ classdef StateSpace < AbstractStateSpace
       if isempty(useMex_persistent)
         % Check mex files exist
         mexMissing = any([...
-          isempty(which('mfss_mex.kfilter_uni'));
-          isempty(which('mfss_mex.kfilter_multi'));
-          isempty(which('mfss_mex.ksmoother_uni'));
-          isempty(which('mfss_mex.ksmoother_multi'));
-          isempty(which('mfss_mex.gradient_multi'))]);
+          isempty(which('mfss_mex.filter_uni'));
+          isempty(which('mfss_mex.smoother_uni'))]);
         if mexMissing
           useMex_persistent = false;
           warning('MEX files not found. See .\mex\make.m');
@@ -142,7 +139,7 @@ classdef StateSpace < AbstractStateSpace
       smootherOut.logli = logli;
     end
     
-    function [logli, gradient] = gradient(obj, y, tm, theta)
+    function [logli, gradient, fOut] = gradient(obj, y, tm, theta)
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
 
@@ -156,18 +153,18 @@ classdef StateSpace < AbstractStateSpace
 
       % Transform parameters to allow for univariate treatment
       ssMulti = obj;
-      [obj, yUni, factorC] = obj.prepareFilter(y);
+      [obj, yUni, factorC, oldTau] = obj.prepareFilter(y);
       
       % Generate parameter gradient structure
       GMulti = tm.parameterGradients(theta);
       [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(theta, GMulti);
 
       % Transform to univariate filter gradients
-      [GUni, GY] = obj.factorGradient(y, GMulti, ssMulti, factorC);
+      [GUni, GY] = obj.factorGradient(y, GMulti, ssMulti, factorC, oldTau);
       
       % Run filter with extra outputs, comput gradient
       [~, logli, fOut, ftiOut] = obj.filter_detail_m(yUni);      
-      gradient = obj.gradient_filter_m(GUni, GY, fOut, ftiOut);
+      gradient = obj.gradient_filter_m(y, GUni, GY, fOut, ftiOut);
     end
     
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
@@ -289,7 +286,7 @@ classdef StateSpace < AbstractStateSpace
   
   methods (Hidden)
     %% Filter/smoother Helper Methods
-    function [obj, y, factorC] = prepareFilter(obj, y)
+    function [obj, y, factorC, oldTau] = prepareFilter(obj, y)
       % Make sure data matches observation dimensions
       obj.validateKFilter();
       obj = obj.checkSample(y);
@@ -298,7 +295,7 @@ classdef StateSpace < AbstractStateSpace
       obj = setDefaultInitial(obj);
 
       % Handle multivariate series
-      [obj, y, factorC] = obj.factorMultivariate(y);
+      [obj, y, factorC, oldTau] = obj.factorMultivariate(y);
     end
     
     function obj = checkSample(obj, y)
@@ -349,34 +346,44 @@ classdef StateSpace < AbstractStateSpace
         'parameters, see StateSpaceEstimation']);
     end
     
-    function [ssUni, yUni, factorC] = factorMultivariate(obj, y)
+    function [ssUni, yUni, factorC, oldTau] = factorMultivariate(obj, y)
       % Compute new Z and H matricies so the univariate treatment can be applied
       
+      % TODO: What happens when H and Z don't match periods? 
+      
+      %{
       % If H is already diagonal, do nothing
-      if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj,3))
+      if arrayfun(@(x) isdiag(obj.H(:,:,x)), 1:size(obj.H,3))
         ssUni = obj;
         yUni = y;
         factorC = eye(obj.p);
+        
+        oldTau = struct('H', 1:max(obj.tau.H), 'Z', 1:max(obj.tau.Z), ...
+          'd', 1:max(obj.tau.d), ...
+          'correspondingNewHOldZ', correspondingNewHOldZ, ...
+          'correspondingNewHOldd', correspondingNewHOldd, ...        
+          'obsPattern', obsPatternH);
         return
       end
+      %}
       
       [uniqueOut, ~, newTauH] = unique([obj.tau.H ~isnan(y')], 'rows');
       oldTauH = uniqueOut(:,1);
-      obsPattern = uniqueOut(:,2:end);
+      obsPatternH = uniqueOut(:,2:end);
       
       % Create factorizations
       maxTauH = max(newTauH);
       factorC = zeros(size(obj.H, 1), size(obj.H, 2), maxTauH);
       newHmat = zeros(size(obj.H, 1), size(obj.H, 2), maxTauH);
       for iH = 1:maxTauH
-        ind = logical(obsPattern(iH, :));
+        ind = logical(obsPatternH(iH, :));
         [factorC(ind,ind,iH), newHmat(ind,ind,iH)] = ldl(obj.H(ind,ind,oldTauH(iH)), 'lower');
         assert(isdiag(newHmat(ind,ind,iH)), 'ldl returned non-diagonal d matrix.');
       end
       newH = struct('Ht', abs(newHmat), 'tauH', newTauH);      
       
       yUni = nan(size(y));
-      inds = logical(obsPattern(newTauH, :));
+      inds = logical(obsPatternH(newTauH, :));
       for iT = 1:size(y,2)
         % Transform observations
         yUni(inds(iT,:),iT) = factorC(inds(iT,:),inds(iT,:),newTauH(iT)) \ y(inds(iT,:),iT);
@@ -418,52 +425,117 @@ classdef StateSpace < AbstractStateSpace
       P0 = obj.R0 * obj.Q0 * obj.R0';
       P0(obj.A0 * obj.A0' == 1) = Inf;
       ssUni = ssUni.setInitial(obj.a0, P0);
+      
+      oldTau = struct('H', oldTauH, 'Z', oldTauZ, 'd', oldTaud, ...
+        'correspondingNewHOldZ', correspondingNewHOldZ, ...
+        'correspondingNewHOldd', correspondingNewHOldd, ...        
+        'obsPattern', obsPatternH);
     end
     
-    function [Guni, GY] = factorGradient(obj, y, GMulti, ssMulti, factorC)
+    function [Guni, GY] = factorGradient(obj, y, GMulti, ssMulti, factorC, oldTau)
       % factorGradient transforms the gradient of the multivariate model to the
       % univarite model given the univariate parameters and the factorzation
       % matrix. 
       
-      % TODO: Allow for time-varrying parameters
-      assert(size(GMulti.H, 3) == 1, 'TVP not yet developed.');
-      
+      if size(GMulti.H, 3) ~= 1
+        warning('TVP gradient not yet tested.');
+      end
+
       Guni = GMulti;
       
-      % Get the indexes we'll need to separate out GC and GHstar
-      indexMat = reshape(1:obj.p^2, [obj.p obj.p]);
-      diagCols = diag(indexMat);
-      lowerTril = tril(indexMat, -1);
-      lowerDiagCols = lowerTril(lowerTril ~= 0);
-      
-      % Find GC and GHstar 
-      Kp = AbstractSystem.genCommutation(obj.p);
-      Np = eye(obj.p^2) + Kp;
-      Cmult = kron(obj.H * factorC', eye(obj.p)) * Np;
-      Hstarmult = kron(factorC', factorC');
-      
-      Wtilde = [Cmult(lowerDiagCols,:); Hstarmult(diagCols,:)];
-      Gtilde = GMulti.H * pinv(Wtilde);
-      
-      GC = zeros(size(GMulti.H));
-      GC(:, lowerDiagCols) = Gtilde(:,1:length(lowerDiagCols));
-      GHstar = zeros(size(GMulti.H));
-      GHstar(:, diagCols) = Gtilde(:,length(lowerDiagCols)+1:end);
-      
-      Guni.H = GHstar;
+      nHslices = size(obj.H, 3);
+      factorCinv = zeros(obj.p, obj.p, nHslices);
+      kronCinv = zeros(obj.p^2, obj.p^2, nHslices);
+      Guni.H = zeros([size(GMulti.H, 1), size(GMulti.H, 2), nHslices]);
+      GC = zeros([size(GMulti.H) nHslices]);
+      for iH = 1:nHslices
+        ind = logical(oldTau.obsPattern(iH,:));
+        kronInd = logical(kron(ind,ind));
+        
+        % Get the indexes of the observed GC and GHstar
+        indexMatObsH = reshape(1:sum(ind)^2, [sum(ind), sum(ind)]);
+        diagObsCols = diag(indexMatObsH);
+        lowerObsTril = tril(indexMatObsH, -1);
+        lowerDiagObsCols = lowerObsTril(lowerObsTril ~= 0);
+                
+        if ~any(ind)
+          continue
+        end
 
-      % Check
-      error = GC * Cmult + GHstar * Hstarmult - GMulti.H;
-      assert(max(max(abs(error))) < 1e-10, 'Development error');
+        % Find GC and GHstar
+        Kp = AbstractSystem.genCommutation(sum(ind));
+        Np = eye(sum(ind)^2) + Kp;
+        Cmult = kron(obj.H(ind,ind,iH) * factorC(ind,ind,iH)', eye(sum(ind))) * Np;
+        Hstarmult = kron(factorC(ind,ind,iH)', factorC(ind,ind,iH)');
+
+        % Get the indexes corresponding to the full GC and GHstar
+        indexMatH = reshape(1:obj.p^2, [obj.p obj.p]);
+        indexMatH(~ind, :) = 0; indexMatH(:, ~ind) = 0;
+        diagCols = diag(indexMatH);
+        diagCols(diagCols == 0) = [];
+
+        lowerTril = tril(indexMatH, -1);
+        lowerDiagCols = lowerTril(lowerTril ~= 0);
+
+        Wtilde = [Cmult(lowerDiagObsCols,:); Hstarmult(diagObsCols,:)];
+        Gtilde = GMulti.H(:,indexMatH(indexMatH ~= 0),oldTau.H(iH)) * pinv(Wtilde);
+
+        GC(:, lowerDiagCols, iH) = Gtilde(:,1:length(lowerDiagCols));
+        Guni.H(:,diagCols,iH) = Gtilde(:,length(lowerDiagCols)+1:end);
+
+        % Check
+        reconstructed = GC(:,kronInd,iH) * Cmult + Guni.H(:,kronInd,iH) * Hstarmult;
+        indH = indexMatH(indexMatH ~= 0);
+        original = GMulti.H(:,indH,oldTau.H(iH));
+        assert(max(max(abs(reconstructed - original))) < 1e-10, 'Development error');
+
+        % Get objects needed for Z, d and Y.
+        factorCinv(ind,ind,iH) = inv(factorC(ind,ind,iH));
+        kronCinv(kronInd,kronInd,iH) = kron(factorCinv(ind,ind,iH), factorCinv(ind,ind,iH)');
+      end
       
-      factorCinv = inv(factorC);
-      kronCinv = kron(factorCinv, factorCinv');
-      Guni.Z = -GC * kronCinv * kron(ssMulti.Z, eye(obj.p)) + GMulti.Z * kron(eye(obj.m), factorCinv');
-      Guni.d = -GC * kronCinv * kron(ssMulti.d, eye(obj.p)) + GMulti.d / factorC';
+      nZslices = size(obj.Z, 3);
+      Guni.Z = zeros([size(GMulti.Z, 1) size(GMulti.Z, 2) nZslices]);
+      for iZ = 1:nZslices
+        indexMatZ = reshape(1:obj.p*obj.m, [obj.p, obj.m]);
+        indexMatH = reshape(1:obj.p^2, [obj.p, obj.p]);
+        iH = oldTau.correspondingNewHOldZ(iZ);
+        iOldZ = oldTau.Z(iZ);
+        ind = logical(oldTau.obsPattern(iH,:));
+        indexMatZ(~ind, :) = 0;
+        indexMatH(~ind, :) = 0; indexMatH(:, ~ind) = 0;
+        indZ = indexMatZ(indexMatZ ~= 0);
+        indH = indexMatH(indexMatH ~= 0);
+        
+        Guni.Z(:,indZ,iZ) = -GC(:,indH,iH) * kronCinv(indH,indH,iH) ...
+          * kron(ssMulti.Z(ind,:,iOldZ), eye(sum(ind))) ...
+          + GMulti.Z(:,indZ,iOldZ) * kron(eye(obj.m), factorCinv(ind,ind,iH)');
+      end
+      
+      ndslices = size(obj.d, 2);
+      Guni.d = zeros([size(GMulti.d, 1) size(GMulti.d, 2) ndslices]);
+      for id = 1:ndslices
+        indexMatd = (1:obj.p)';
+        indexMatH = reshape(1:obj.p^2, [obj.p, obj.p]);
+        iH = oldTau.correspondingNewHOldZ(iZ);
+        iOldd = oldTau.d(id);
+        ind = logical(oldTau.obsPattern(iH,:));
+        indexMatd(~ind) = 0;
+        indexMatH(~ind, :) = 0; indexMatH(:, ~ind) = 0;
+        indd = indexMatd(indexMatd ~= 0);
+        indH = indexMatH(indexMatH ~= 0);
+        
+        Guni.d(:,indd,id) = -GC(:,indH,iH) * kronCinv(indH,indH,iH) ...
+          * kron(ssMulti.d(ind,iOldd), eye(sum(ind))) ...
+          + GMulti.d(:,indd,iOldd) / factorC(ind,ind,iH)';
+      end
       
       GY = zeros(size(GMulti.H, 1), obj.n, obj.p);
       for iT = 1:obj.n
-        GY(:,iT,:) = -GC * kronCinv * kron(y(:,iT), eye(obj.p)); 
+        iH = obj.tau.H(iT);
+        ind = ~isnan(y(:,iT));
+        kronInd = logical(kron(ind,ind));
+        GY(:,iT,ind) = -GC(:,kronInd,iH) * kronCinv(kronInd,kronInd,iH) * kron(y(ind,iT), eye(sum(ind))); 
       end
     end
     
@@ -570,99 +642,99 @@ classdef StateSpace < AbstractStateSpace
       LogL = zeros(obj.p, obj.n);
       
       % Initialize - Using the FRBC timing 
-      ii = 0;
-      Tii = obj.T(:,:,obj.tau.T(ii+1));
-      a(:,ii+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(ii+1));
+      iT = 0;
+      Tii = obj.T(:,:,obj.tau.T(iT+1));
+      a(:,iT+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(iT+1));
       
       Pd0 = obj.A0 * obj.A0';
       Pstar0 = obj.R0 * obj.Q0 * obj.R0';
-      Pd(:,:,ii+1)  = Tii * Pd0 * Tii';
-      Pstar(:,:,ii+1) = Tii * Pstar0 * Tii' + ...
-        obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
+      Pd(:,:,iT+1)  = Tii * Pd0 * Tii';
+      Pstar(:,:,iT+1) = Tii * Pstar0 * Tii' + ...
+        obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
 
       % Initial recursion
-      while ~all(all(Pd(:,:,ii+1) == 0))
-        if ii >= obj.n
+      while ~all(all(Pd(:,:,iT+1) == 0))
+        if iT >= obj.n
           error(['Degenerate model. ' ...
           'Exact initial filter unable to transition to standard filter.']);
         end
         
-        ii = ii + 1;
-        ind = find(~isnan(y(:,ii)));
+        iT = iT + 1;
+        ind = find(~isnan(y(:,iT)));
         
-        ati = a(:,ii);
-        Pstarti = Pstar(:,:,ii);
-        Pdti = Pd(:,:,ii);
-        for jj = ind'
-          Zjj = obj.Z(jj,:,obj.tau.Z(ii));
-          v(jj,ii) = y(jj, ii) - Zjj * ati - obj.d(jj,obj.tau.d(ii));
+        ati = a(:,iT);
+        Pstarti = Pstar(:,:,iT);
+        Pdti = Pd(:,:,iT);
+        for iP = ind'
+          Zjj = obj.Z(iP,:,obj.tau.Z(iT));
+          v(iP,iT) = y(iP, iT) - Zjj * ati - obj.d(iP,obj.tau.d(iT));
           
-          Fd(jj,ii) = Zjj * Pdti * Zjj';
-          Fstar(jj,ii) = Zjj * Pstarti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
+          Fd(iP,iT) = Zjj * Pdti * Zjj';
+          Fstar(iP,iT) = Zjj * Pstarti * Zjj' + obj.H(iP,iP,obj.tau.H(iT));
           
-          Kd(:,jj,ii) = Pdti * Zjj';
-          Kstar(:,jj,ii) = Pstarti * Zjj';
+          Kd(:,iP,iT) = Pdti * Zjj';
+          Kstar(:,iP,iT) = Pstarti * Zjj';
           
-          if Fd(jj,ii) ~= 0
+          if Fd(iP,iT) ~= 0
             % F diffuse nonsingular
-            ati = ati + Kd(:,jj,ii) ./ Fd(jj,ii) * v(jj,ii);
+            ati = ati + Kd(:,iP,iT) ./ Fd(iP,iT) * v(iP,iT);
             
-            Pstarti = Pstarti + Kd(:,jj,ii) * Kd(:,jj,ii)' * Fstar(jj,ii) * (Fd(jj,ii).^-2) - ...
-              (Kstar(:,jj,ii) * Kd(:,jj,ii)' + Kd(:,jj,ii) * Kstar(:,jj,ii)') ./ Fd(jj,ii);
+            Pstarti = Pstarti + Kd(:,iP,iT) * Kd(:,iP,iT)' * Fstar(iP,iT) * (Fd(iP,iT).^-2) - ...
+              (Kstar(:,iP,iT) * Kd(:,iP,iT)' + Kd(:,iP,iT) * Kstar(:,iP,iT)') ./ Fd(iP,iT);
             
-            Pdti = Pdti - Kd(:,jj,ii) .* Kd(:,jj,ii)' ./ Fd(jj,ii);
+            Pdti = Pdti - Kd(:,iP,iT) .* Kd(:,iP,iT)' ./ Fd(iP,iT);
             
-            LogL(jj,ii) = log(Fd(jj,ii));
+            LogL(iP,iT) = log(Fd(iP,iT));
           else
             % F diffuse = 0
-            ati = ati + Kstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii);
+            ati = ati + Kstar(:,iP,iT) ./ Fstar(iP,iT) * v(iP,iT);
             
-            Pstarti = Pstarti - Kstar(:,jj,ii) ./ Fstar(jj,ii) * Kstar(:,jj,ii)';
+            Pstarti = Pstarti - Kstar(:,iP,iT) ./ Fstar(iP,iT) * Kstar(:,iP,iT)';
             
             % Pdti = Pdti;
               
-            LogL(jj,ii) = (log(Fstar(jj,ii)) + (v(jj,ii)^2) ./ Fstar(jj,ii));
+            LogL(iP,iT) = (log(Fstar(iP,iT)) + (v(iP,iT)^2) ./ Fstar(iP,iT));
           end
         end
         
-        Tii = obj.T(:,:,obj.tau.T(ii+1));
-        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii+1));
+        Tii = obj.T(:,:,obj.tau.T(iT+1));
+        a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1));
         
-        Pd(:,:,ii+1)  = Tii * Pdti * Tii';
-        Pstar(:,:,ii+1) = Tii * Pstarti * Tii' + ...
-          obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
+        Pd(:,:,iT+1)  = Tii * Pdti * Tii';
+        Pstar(:,:,iT+1) = Tii * Pstarti * Tii' + ...
+          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
       end
       
-      dt = ii;
+      dt = iT;
       
       F = Fstar;
       K = Kstar;
       P = Pstar;
       
       % Standard Kalman filter recursion
-      for ii = dt+1:obj.n
-        ind = find(~isnan(y(:,ii)));
-        ati    = a(:,ii);
-        Pti    = P(:,:,ii);
-        for jj = ind'
-          Zjj = obj.Z(jj,:,obj.tau.Z(ii));
+      for iT = dt+1:obj.n
+        ind = find(~isnan(y(:,iT)));
+        ati    = a(:,iT);
+        Pti    = P(:,:,iT);
+        for iP = ind'
+          Zjj = obj.Z(iP,:,obj.tau.Z(iT));
           
-          v(jj,ii) = y(jj,ii) - Zjj * ati - obj.d(jj,obj.tau.d(ii));
+          v(iP,iT) = y(iP,iT) - Zjj * ati - obj.d(iP,obj.tau.d(iT));
           
-          F(jj,ii) = Zjj * Pti * Zjj' + obj.H(jj,jj,obj.tau.H(ii));
-          K(:,jj,ii) = Pti * Zjj' / F(jj,ii);
+          F(iP,iT) = Zjj * Pti * Zjj' + obj.H(iP,iP,obj.tau.H(iT));
+          K(:,iP,iT) = Pti * Zjj' / F(iP,iT);
           
-          LogL(jj,ii) = (log(F(jj,ii)) + (v(jj,ii)^2) / F(jj,ii));
+          LogL(iP,iT) = (log(F(iP,iT)) + (v(iP,iT)^2) / F(iP,iT));
           
-          ati = ati + K(:,jj,ii) * v(jj,ii);
-          Pti = Pti - K(:,jj,ii) * F(jj,ii) * K(:,jj,ii)';
+          ati = ati + K(:,iP,iT) * v(iP,iT);
+          Pti = Pti - K(:,iP,iT) * F(iP,iT) * K(:,iP,iT)';
         end
         
-        Tii = obj.T(:,:,obj.tau.T(ii+1));
+        Tii = obj.T(:,:,obj.tau.T(iT+1));
         
-        a(:,ii+1) = Tii * ati + obj.c(:,obj.tau.c(ii+1));
-        P(:,:,ii+1) = Tii * Pti * Tii' + ...
-          obj.R(:,:,obj.tau.R(ii+1)) * obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))';
+        a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1));
+        P(:,:,iT+1) = Tii * Pti * Tii' + ...
+          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
       end
       
       % Consider changing to 
@@ -851,27 +923,27 @@ classdef StateSpace < AbstractStateSpace
       
       rti = zeros(obj.m,1);
       Nti = zeros(obj.m,obj.m);
-      for ii = obj.n:-1:fOut.dt+1
-        ind = flipud(find(~isnan(y(:,ii))));
+      for iT = obj.n:-1:fOut.dt+1
+        ind = flipud(find(~isnan(y(:,iT))));
         
-        for jj = ind'
-          Lti = eye(obj.m) - fOut.K(:,jj,ii) * ...
-            obj.Z(jj,:,obj.tau.Z(ii)) / fOut.F(jj,ii);
-          rti = obj.Z(jj,:,obj.tau.Z(ii))' / ...
-            fOut.F(jj,ii) * fOut.v(jj,ii) + Lti' * rti;
-          Nti = obj.Z(jj,:,obj.tau.Z(ii))' / ...
-            fOut.F(jj,ii) * obj.Z(jj,:,obj.tau.Z(ii)) ...
+        for iP = ind'
+          Lti = eye(obj.m) - fOut.K(:,iP,iT) * ...
+            obj.Z(iP,:,obj.tau.Z(iT));
+          rti = obj.Z(iP,:,obj.tau.Z(iT))' / ...
+            fOut.F(iP,iT) * fOut.v(iP,iT) + Lti' * rti;
+          Nti = obj.Z(iP,:,obj.tau.Z(iT))' / ...
+            fOut.F(iP,iT) * obj.Z(iP,:,obj.tau.Z(iT)) ...
             + Lti' * Nti * Lti;
         end
-        r(:,ii) = rti;
-        N(:,:,ii) = Nti;
+        r(:,iT) = rti;
+        N(:,:,iT) = Nti;
         
-        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii);
-        V(:,:,ii) = fOut.P(:,:,ii) - fOut.P(:,:,ii) * N(:,:,ii) * fOut.P(:,:,ii);
-        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii+1)) * obj.R(:,:,obj.tau.R(ii+1))' * r(:,ii); 
+        alpha(:,iT) = fOut.a(:,iT) + fOut.P(:,:,iT) * r(:,iT);
+        V(:,:,iT) = fOut.P(:,:,iT) - fOut.P(:,:,iT) * N(:,:,iT) * fOut.P(:,:,iT);
+        eta(:,iT) = obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))' * r(:,iT); 
         
-        rti = obj.T(:,:,obj.tau.T(ii))' * rti;
-        Nti = obj.T(:,:,obj.tau.T(ii))' * Nti * obj.T(:,:,obj.tau.T(ii));
+        rti = obj.T(:,:,obj.tau.T(iT))' * rti;
+        Nti = obj.T(:,:,obj.tau.T(iT))' * Nti * obj.T(:,:,obj.tau.T(iT));
       end
       
       r1 = zeros(obj.m, fOut.dt+1);
@@ -886,59 +958,58 @@ classdef StateSpace < AbstractStateSpace
       N2ti = N2(:,:,fOut.dt+1);
       
       % Exact initial smoother
-      for ii = fOut.dt:-1:1
-        ind = flipud(find(~isnan(y(:,ii))));
-        for jj = ind'
-          Zjj = obj.Z(jj,:,obj.tau.Z(ii));
+      for iT = fOut.dt:-1:1
+        ind = flipud(find(~isnan(y(:,iT))));
+        for iP = ind'
+          Zjj = obj.Z(iP,:,obj.tau.Z(iT));
           
-          if fOut.Fd(jj,ii) ~= 0
+          if fOut.Fd(iP,iT) ~= 0
             % Diffuse case
-            Ldti = eye(obj.m) - fOut.Kd(:,jj,ii) * Zjj / fOut.Fd(jj,ii);
+            Ldti = eye(obj.m) - fOut.Kd(:,iP,iT) * Zjj;
             % NOTE: minus sign!
-            L0ti = (fOut.Kd(:,jj,ii) * fOut.F(jj,ii) / fOut.Fd(jj,ii) - ... 
-              fOut.K(:,jj,ii)) * Zjj / fOut.Fd(jj,ii);
+            L0ti = (fOut.Kd(:,iP,iT) - fOut.K(:,iP,iT)) * Zjj * fOut.F(iP,iT) / fOut.Fd(iP,iT);
             
             r0ti = Ldti' * r0ti;
             % NOTE: plus sign!
-            r1ti = Zjj' / fOut.Fd(jj,ii) * fOut.v(jj,ii) + L0ti' * r0ti + Ldti' * r1ti; 
+            r1ti = Zjj' / fOut.Fd(iP,iT) * fOut.v(iP,iT) + L0ti' * r0ti + Ldti' * r1ti; 
             
             N0ti = Ldti' * N0ti * Ldti;
-            N1ti = Zjj' / fOut.Fd(jj,ii) * Zjj + Ldti' * N0ti * L0ti + Ldti' * N1ti * Ldti;
-            N2ti = Zjj' * fOut.Fd(jj,ii)^(-2) * Zjj * fOut.F(jj,ii) + ...
+            N1ti = Zjj' / fOut.Fd(iP,iT) * Zjj + Ldti' * N0ti * L0ti + Ldti' * N1ti * Ldti;
+            N2ti = Zjj' * fOut.Fd(iP,iT)^(-2) * Zjj * fOut.F(iP,iT) + ...
               L0ti' * N1ti * L0ti + Ldti' * N1ti * L0ti + ...
               L0ti' * N1ti * Ldti + Ldti' * N2ti * Ldti;
           else
             % Known
-            Lstarti = eye(obj.m) - fOut.K(:,jj,ii) * Zjj / fOut.F(jj,ii);
-            r0ti = Zjj' / fOut.F(jj,ii) * fOut.v(jj,ii) + Lstarti' * r0ti;
+            Lstarti = eye(obj.m) - fOut.K(:,iP,iT) * Zjj;
+            r0ti = Zjj' / fOut.F(iP,iT) * fOut.v(iP,iT) + Lstarti' * r0ti;
             
-            N0ti = Zjj' / fOut.F(jj,ii) * Zjj + Lstarti' * N0ti * Lstarti;
+            N0ti = Zjj' / fOut.F(iP,iT) * Zjj + Lstarti' * N0ti * Lstarti;
           end
         end
         
-        r(:,ii) = r0ti;
-        r1(:,ii) = r1ti;
-        N(:,:,ii) = N0ti;
-        N1(:,:,ii) = N1ti;
-        N2(:,:,ii) = N2ti;        
+        r(:,iT) = r0ti;
+        r1(:,iT) = r1ti;
+        N(:,:,iT) = N0ti;
+        N1(:,:,iT) = N1ti;
+        N2(:,:,iT) = N2ti;        
         
-        % What here needs tau_{ii+1}?
-        alpha(:,ii) = fOut.a(:,ii) + fOut.P(:,:,ii) * r(:,ii) + ...
-          fOut.Pd(:,:,ii) * r1(:,ii);
-        V(:,:,ii) = fOut.P(:,:,ii) - ...
-          fOut.P(:,:,ii) * N(:,:,ii) * fOut.P(:,:,ii) - ...
-          (fOut.Pd(:,:,ii) * N1(:,:,ii) * fOut.P(:,:,ii))' - ...
-          fOut.P(:,:,ii) * N1(:,:,ii) * fOut.Pd(:,:,ii) - ...
-          fOut.Pd(:,:,ii) * N2(:,:,ii) * fOut.Pd(:,:,ii);
+        % What here needs tau_{iT+1}?
+        alpha(:,iT) = fOut.a(:,iT) + fOut.P(:,:,iT) * r(:,iT) + ...
+          fOut.Pd(:,:,iT) * r1(:,iT);
+        V(:,:,iT) = fOut.P(:,:,iT) - ...
+          fOut.P(:,:,iT) * N(:,:,iT) * fOut.P(:,:,iT) - ...
+          (fOut.Pd(:,:,iT) * N1(:,:,iT) * fOut.P(:,:,iT))' - ...
+          fOut.P(:,:,iT) * N1(:,:,iT) * fOut.Pd(:,:,iT) - ...
+          fOut.Pd(:,:,iT) * N2(:,:,iT) * fOut.Pd(:,:,iT);
 
-        eta(:,ii) = obj.Q(:,:,obj.tau.Q(ii)) * obj.R(:,:,obj.tau.R(ii))' * r(:,ii);
+        eta(:,iT) = obj.Q(:,:,obj.tau.Q(iT)) * obj.R(:,:,obj.tau.R(iT))' * r(:,iT);
         
-        r0ti = obj.T(:,:,obj.tau.T(ii))' * r0ti;
-        r1ti = obj.T(:,:,obj.tau.T(ii))' * r1ti;
+        r0ti = obj.T(:,:,obj.tau.T(iT))' * r0ti;
+        r1ti = obj.T(:,:,obj.tau.T(iT))' * r1ti;
         
-        N0ti = obj.T(:,:,obj.tau.T(ii))' * N0ti * obj.T(:,:,obj.tau.T(ii));
-        N1ti = obj.T(:,:,obj.tau.T(ii))' * N1ti * obj.T(:,:,obj.tau.T(ii));
-        N2ti = obj.T(:,:,obj.tau.T(ii))' * N2ti * obj.T(:,:,obj.tau.T(ii));
+        N0ti = obj.T(:,:,obj.tau.T(iT))' * N0ti * obj.T(:,:,obj.tau.T(iT));
+        N1ti = obj.T(:,:,obj.tau.T(iT))' * N1ti * obj.T(:,:,obj.tau.T(iT));
+        N2ti = obj.T(:,:,obj.tau.T(iT))' * N2ti * obj.T(:,:,obj.tau.T(iT));
       end
       
       Pstar0 = obj.R0 * obj.Q0 * obj.R0';
@@ -969,19 +1040,96 @@ classdef StateSpace < AbstractStateSpace
       smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
     end
     
-    function gradient = gradient_filter_m(obj, G, GY, fOut, ftiOut)
+    function gradient = gradient_filter_m(obj, y, G, GY, fOut, ftiOut)
       nTheta = size(G.T, 1);
       
       Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
       
       Gati = G.a1;
-      GPti = G.P1;
-            
+      GPstarti = G.P1;
+      GPdti = zeros(size(G.P1, 1), obj.m^2);
+      
       grad = zeros(nTheta, obj.n, obj.p);
+      
+      % Exact inial recursion
+      for iT = 1:fOut.dt
+        warning('Exact initial gradient probably doesn''t work yet.');
+        for iP = 1:obj.p
+          % Fetch commonly used quantities
+          Zti = obj.Z(iP,:,obj.tau.Z(iT));
+          GZti = G.Z(:, iP:obj.p:(obj.p*obj.m), obj.tau.Z(iT));
+          GHind = 1 + (obj.p+1)*(iP-1); 
+          GHti = G.H(:, GHind, obj.tau.H(iT)); % iP-th diagonal element of H
+          
+          % Non-recursive quantities we'll need in every iteration
+          Gvti = GY(:,iT,iP) - GZti * ftiOut.ati(:,iT,iP) ...
+            - Gati * Zti' - G.d(:,iP,obj.tau.d(iT));
+          GFstarti = 2 * GZti * ftiOut.Pti(:,:,iT,iP) * Zti' ...
+            + GPstarti * kron(Zti', Zti') + GHti;
+          GKstarti = GPstarti * kron(Zti' ./ fOut.F(iP,iT), eye(obj.m)) ...
+            + GZti * ftiOut.Pti(:,:,iT,iP) ./ fOut.F(iP,iT) ...
+            - (GFstarti .* fOut.F(iP,iT)^(-2) * Zti * ftiOut.Pti(:,:,iT,iP));
+          
+          if fOut.Fd(iP,iT) == 0
+            % No diffuse to worry about, looks like standard recursion
+            grad(:,iT,iP) = 0.5 * GFstarti ...
+              * (1./fOut.F(iP,iT) - (fOut.v(iP,iT)^2 ./ fOut.F(iP,iT)^2)) ...
+              + Gvti * fOut.v(iP,iT) ./ fOut.F(iP,iT);
+            
+            % Transition from i to i+1
+            Gati = Gati + GKstarti * fOut.v(iP,iT) + Gvti * fOut.K(:,iP,iT)';
+            GPstarti = GPstarti ...
+              - GKstarti * kron(fOut.F(iP,iT) * fOut.K(:,iP,iT)', eye(obj.m)) * Nm ...
+              - GFstarti * kron(fOut.K(:,iP,iT)', fOut.K(:,iP,iT)');
+            % Note that GPdt(i+1) = GPdti
+          else
+            % Have to think about diffuse states
+            GFdti = 2 * GZti * ftiOut.Pdti(:,:,iT,iP) * Zti' ...
+              + GPdti * kron(Zti', Zti');
+            GKdti = GPdti * kron(Zti' ./ fOut.Fd(iP,iT), eye(obj.m)) ...
+              + GZti * ftiOut.Pdti(:,:,iT,iP) ./ fOut.Fd(iP,iT) ...
+              - (GFdti .* fOut.Fd(iP,iT)^(-2) * Zti * ftiOut.Pdti(:,:,iT,iP));
+            
+            grad(:,iT,iP) = 0.5 * GFdti ./ fOut.Fd(iP,iT);
+            
+            % Transition from i to i+1
+            Gati = Gati + GKdti * fOut.v(iP,iT) + Gvti * fOut.Kd(:,iP,iT)';
+            Kchain = (fOut.K(:,iP,iT) * fOut.Kd(:,iP,iT)' ...
+              + fOut.Kd(:,iP,iT) * fOut.K(:,iP,iT)' ...
+              - fOut.Kd(:,iP,iT) * fOut.Kd(:,iP,iT)');
+            GPstarti = GPstarti ...
+              - GFdti * reshape(Kchain, [], 1)' ...
+              - GKstarti * kron(fOut.Kd(:,iP,iT)', eye(obj.m)) * Nm * fOut.F(iP,iT) ...
+              - GKstarti * kron(fOut.K(:,iP,iT)' - fOut.Kd(:,iP,iT)', eye(obj.m)) * Nm * fOut.F(iP,iT);
+            GPdti = GPdti ...
+              - GKdti * kron(fOut.Fd(iP,iT) * fOut.Kd(:,iP,iT)', eye(obj.m)) * Nm ...
+              - GFdti * kron(fOut.Kd(:,iP,iT)', fOut.Kd(:,iP,iT)');
+          end
+        end
+        
+        % Transition from time t to t+1
+        Tt = obj.T(:,:,obj.tau.T(iT+1));
+        Rt = obj.R(:,:,obj.tau.R(iT+1));
+        Qt = obj.Q(:,:,obj.tau.Q(iT+1));
+                
+        Gati = G.T(:,:,obj.tau.T(iT+1)) * kron(ftiOut.ati(:,iT,obj.p+1), eye(obj.m)) ...
+          + Gati * Tt' + G.c(:,:,obj.tau.c(iT+1));
+        GTPstarT = G.T(:,:,obj.tau.T(iT+1)) ...
+          * kron(ftiOut.Pti(:,:,iT,obj.p+1) * Tt', eye(obj.m)) * Nm ...
+          + GPstarti * kron(Tt', Tt');
+        GRQR = G.R(:,:,obj.tau.R(iT+1)) * kron(Qt * Rt', eye(obj.m)) * Nm ...
+          + G.Q(:,:,obj.tau.Q(iT+1)) * kron(Rt', Rt');
+        GPstarti = GTPstarT + GRQR;
+      end
+      
+      GPti = GPstarti;
+      
+      % Standard recursion
       for iT = fOut.dt+1:obj.n
         for iP = 1:obj.p
           % There's probably a simplification we can make if the y_t,i is
           % missing but I think its safer for now to not have anything about it.
+          if isnan(y(iP,iT)); continue; end
 
           % Fetch commonly used quantities
           Zti = obj.Z(iP,:,obj.tau.Z(iT));

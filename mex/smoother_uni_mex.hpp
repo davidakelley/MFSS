@@ -93,7 +93,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
       jj = ind(iInd-1) - 1;       // Corrected to be 0-based
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 
-      Lti = eyeM - K.slice(ii-1).col(jj) * Zjj / F(jj,ii-1);
+      Lti = eyeM - K.slice(ii-1).col(jj) * Zjj;
       
       rti = trans(Zjj) / F(jj,ii-1) * v(jj,ii-1) + trans(Lti) * rti;
 
@@ -127,7 +127,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
       if (Fd(jj,ii-1) != 0) {
         // Diffuse case
         Ldti = eyeM - Kd.slice(ii-1).col(jj) * Zjj / Fd(jj,ii-1);
-        L0ti = (Kd.slice(ii-1).col(jj) * F(jj,ii-1) / Fd(jj, ii-1) + K.slice(ii-1).col(jj)) * Zjj / Fd(jj,ii-1);
+        L0ti = (Kd.slice(ii-1).col(jj) - K.slice(ii-1).col(jj)) * Zjj * F(jj,ii-1) / Fd(jj,ii-1);
 
         r1ti = trans(Zjj) / Fd(jj,ii-1) * v(jj,ii-1) - trans(L0ti) * r0ti + trans(Ldti) * r1ti;
 
@@ -135,7 +135,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
       }
       else {
         // Known forecast variance
-        Lstarti = eyeM - K.slice(ii-1).col(jj) * Zjj / F(jj,ii-1);
+        Lstarti = eyeM - K.slice(ii-1).col(jj) * Zjj;
         r0ti = trans(Zjj) / F(jj,ii-1) * v(jj,ii-1) + trans(Lstarti) * r0ti;
       }
     }
