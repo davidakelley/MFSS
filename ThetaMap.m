@@ -796,6 +796,25 @@ classdef ThetaMap < AbstractSystem
       newDeriv(cellfun(@isempty, newDeriv)) = [];
       newInver(cellfun(@isempty, newInver)) = [];
     end
+    
+    function outStr = getMatList(obj)
+      % Utility: create a cell vector of parameters each theta element affects
+      
+      outStr  = cell(obj.nTheta, 1);
+      
+      params = obj.fixed.systemParam;
+      matParam = repmat({''}, [obj.nTheta, length(params)]);
+      for iP = 1:length(params)
+        indexes = objindex.(params{iP});
+        matParam(indexes(indexes~=0), iP) = repmat(params(iP), [sum(indexes(:)~=0), 1]);
+      end
+      
+      for iT = 1:obj.nTheta
+        goodStrs = matParam(iT,:);
+        goodStrs(cellfun(@isempty, goodStrs)) = [];
+        outStr{iT} = strjoin(goodStrs, ', ');
+      end
+    end
   end
   
   methods (Static, Hidden)
