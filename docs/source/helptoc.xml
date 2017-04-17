@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding="utf-8"?>
+
+<toc version="2.0">
+  <!-- First tocitem specifies top level in Help browser Contents pane -->
+  <!-- Roadmap/contents page -->
+  <tocitem target="index.html"> Mixed-Frequency State Space Modeling Toolbox
+    <!-- Introduction and purpose -->
+    <!-- <tocitem target="getting_started.html">
+      Getting Started
+    </tocitem> -->
+    
+    <!-- User Guide -->
+    <!-- Overview of accumulators and how they work in the state. Don't go into
+    state space modeling in general but point to the other Matlab documentation 
+    and provide an overview of notation. --> 
+    <tocitem target="userguide.html" image="HelpIcon.USER_GUIDE">
+      Mixed-Frequency Modeling User Guide
+      <tocitem target="ug_setup.html"> Setting up a state space model </tocitem>
+      <tocitem target="ug_estimation.html"> Estimating parameters </tocitem>
+      <tocitem target="ug_mfdata.html"> 
+        Using mixed-frequency data
+        <tocitem target="ug_mfdata.html"> Defining Accumulators </tocitem>
+        <tocitem target="ug_mfdata.html"> Augmenting a state space model </tocitem>
+      </tocitem>
+    </tocitem>
+    
+    <!-- Reference Guide -->
+    <!-- First item is page describing classes. Each class gets a landing page
+    with an overview. All public function gets reference pages too. -->
+    <tocitem target="reference.html">Reference Guide
+      <tocitem target="ref_accumulator.html">Accumulator </tocitem>
+      <tocitem target="ref_statespace.html"> StateSpace </tocitem>
+      <tocitem target="ref_statespaceestimation.html"> StateSpaceEstimation </tocitem>
+      <tocitem target="ref_thetamap.html"> ThetaMap </tocitem>
+      <tocitem target="ref_abstractsystem.html"> AbstractSystem </tocitem>
+      <tocitem target="ref_abstractstatesapce.html"> AbstractStateSpace </tocitem>
+    </tocitem>
+    
+    <!-- List of Examples, with hyperlinks to examples in other files -->
+    <tocitem target="examples.html" 
+             image="HelpIcon.HelpIcon.EXAMPLES">Mixed-Frequency Modeling Examples
+    </tocitem>
+  </tocitem>
+</toc>

@@ -3,9 +3,15 @@ function make_toolbox(major, minor)
 
 buildDir = fileparts(mfilename('fullpath'));
 
+%% Compile HTML documentation
+docs_status = compile_docs;
+if docs_status == 0
+  fprintf('Successfully compiled documentation.\n');
+else
+  error('Error in compiling documentation. Run ''make html'' in the docs folder.');
+end
+
 %% Iterate version number
-
-
 % Edit .prj file to update version numbers
 prjFile = fullfile(buildDir, '..', 'toolbox.prj');
 prjText = fileread(prjFile);
@@ -55,9 +61,7 @@ fid = fopen(prjFile, 'w');
 fwrite(fid, prjTextNew);
 fclose(fid);
 
-
 %% Create toolbox file
-
 matlab.addons.toolbox.packageToolbox(...
   fullfile(buildDir, '..', 'toolbox.prj'), ...
   fullfile(buildDir, '..', 'MFSS.mltbx'))

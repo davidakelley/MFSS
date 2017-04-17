@@ -16,3 +16,6 @@
 
 # The temp folder isn't worth tracking
 temp/
+
+# Don't save the built documentation
+docs/build
