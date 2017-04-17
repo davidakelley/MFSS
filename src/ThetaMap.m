@@ -818,9 +818,8 @@ classdef ThetaMap < AbstractSystem
   end
   
   methods (Static, Hidden)
-    %% Constructor helper functions
-    function validateInputs(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses)
+    %% Constructor helpers
+    function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses)
       % Validate inputs
       assert(isa(fixed, 'StateSpace'));
       assert(isa(index, 'StateSpace'));
@@ -845,7 +844,6 @@ classdef ThetaMap < AbstractSystem
       % Non-zero elements of fixed are zero in index and vice-versa.
       assert(all(~(vecFixed ~= 0 & vecIndex ~= 0)), ...
         'Parameters determined by theta must be set to 0 in fixed.');
-      
     end
     
     function [indexSS, missingInx] = eliminateUnusedIndexes(indexSS)

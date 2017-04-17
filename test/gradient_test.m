@@ -10,7 +10,9 @@ classdef gradient_test < matlab.unittest.TestCase
   properties
     ar2obs2
     ar2obs2data
-    ar2obs2tm
+    
+    ssNonstationary
+    ssNonstationaryData
   end
   
   methods(TestClassSetup)
@@ -20,10 +22,21 @@ classdef gradient_test < matlab.unittest.TestCase
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
     
+      % Generate the stationary AR(2) model and save the data
       ss = generateARmodel(2, 2, false);
       y = generateData(ss, 50);
       testCase.ar2obs2 = ss;
       testCase.ar2obs2data = y;
+      
+      % Generate the nonstationary AR(2) model 
+      ss = generateARmodel(2, 2, false);
+      ss.T(1,:) = [1 0.001 0.001];
+      testCase.ssNonstationary = ss;
+      
+      % ... then give it non-zero starting values and save the data
+      ss = ss.setInitial([10; 0; 0]);
+      y = generateData(ss, 500);
+      testCase.ssNonstationaryData = y;
     end
   end
   
@@ -132,7 +145,8 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ThetaMap.ThetaMapAll(ss);
       theta = tm.system2theta(ss);
       G = tm.parameterGradients(theta);
-      
+
+      ss = ss.setDefaultInitial();
       Ga0analytic = tm.initialValuesGradients(ss, G);
       
       % Compute numeric gradient by adding a small number to theta and remaking
@@ -163,6 +177,7 @@ classdef gradient_test < matlab.unittest.TestCase
       theta = tm.system2theta(ss);
       G = tm.parameterGradients(theta);
       
+      ss = ss.setDefaultInitial();
       [~, GP0analytic] = tm.initialValuesGradients(ss, G);
       
       % Compute numeric gradient by adding a small number to theta and remaking
@@ -193,6 +208,7 @@ classdef gradient_test < matlab.unittest.TestCase
       theta = tm.system2theta(ss);
       G = tm.parameterGradients(theta);
       
+      ss = ss.setDefaultInitial();
       [Ga0, GP0] = tm.initialValuesGradients(ss, G);
       
       testCase.verifyEqual(Ga0, zeros(size(Ga0)));

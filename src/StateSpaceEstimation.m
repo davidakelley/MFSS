@@ -14,10 +14,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
   % Initial work on implementing a general EM algorithm.
   
   % David Kelley, 2016-2017
-  %
-  % TODO (1/17/17)
-  % ---------------
-  %   - EM algorithm
   
   properties
     % Screen output during ML estimation
@@ -455,7 +451,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
     end
     
-    function stop = sseplotpoint(x, ~, state, varargin)
+    function stop = sseplotpoint(x, unused2, state, varargin)
       stop = false;
       
       if strcmpi(state, 'setup')
@@ -486,7 +482,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       set(plotx,'Ydata',x);
     end
     
-    function stop = sseplotvalue(~, optimValues, state, varargin)
+    function stop = sseplotvalue(unused1, optimValues, state, varargin)
       % We're plotting the likelihood, not the function value
       % (AKA, reverse the sign on everything).
       
@@ -547,7 +543,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end      
     end
     
-    function stop = sseplotfiltered(~, ~, state, varargin)
+    function stop = sseplotfiltered(unused1, unused2, state, varargin)
       % Plot the filtered state, with a dropdown box for which state
       
       stop = false;

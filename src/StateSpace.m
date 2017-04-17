@@ -183,8 +183,8 @@ classdef StateSpace < AbstractStateSpace
       
       % Generate parameter gradient structure
       GMulti = tm.parameterGradients(theta);
-      [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(theta, GMulti);  % FIXME: How are we handling tau?
-
+      [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(obj, GMulti); 
+      
       % Transform to univariate filter gradients
       [GUni, GY] = obj.factorGradient(y, GMulti, ssMulti, factorC, oldTau);
       
