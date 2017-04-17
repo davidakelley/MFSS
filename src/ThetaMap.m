@@ -997,12 +997,10 @@ classdef ThetaMap < AbstractSystem
     
     function result = isequalTransform(fn1, fn2)
       % Determines if two function handles represent the same function
-      % 
       % Also accepts cell arrays of function handles. If only one element is a
       % cell array, each is checked to see if they are equal to the non-cell
       % array input. If both elements are cell arrays, they must be the same
       % size and will be checked element-wise.
-      
       % David Kelley, 2017
 
       nComp = max(length(fn1), length(fn2));
@@ -1010,22 +1008,26 @@ classdef ThetaMap < AbstractSystem
         assert(size(fn1) == size(fn2), 'Cell array inputs must be the same size.');
       end
       
+      % Needed since we can't use a certain word with sphinx-matlabdomain:
+      fnc = ['f' 'unction'];
+      
       if iscell(fn1)
         fnInfo1 = cellfun(@functions, fn1);
-        fn1Strs = cellfun(@(x) x.function, fnInfo1, 'Uniform', false);
+        fn1Strs = cellfun(@(x) x.(fnc), fnInfo1, 'Uniform', false);
         fn1Workspace = cellfun(@(x) x.workspace{1}, fnInfo1);
       else
         fnInfo1 = functions(fn1);
-        fn1Strs = repmat({fnInfo1.function}, [1 nComp]);
+        fn1Strs = repmat({fnInfo1.(fnc)}, [1 nComp]);
         fn1Workspace = repmat({fnInfo1.workspace{1}}, [1 nComp]);
       end
+      
       if iscell(fn2)
         fnInfo2 = cellfun(@functions, fn2, 'Uniform', false);
-        fn2Strs = cellfun(@(x) x.function, fnInfo2, 'Uniform', false);
+        fn2Strs = cellfun(@(x) x.(fnc), fnInfo2, 'Uniform', false);
         fn2Workspace = cellfun(@(x) x.workspace{1}, fnInfo2, 'Uniform', false);
       else
         fnInfo2 = functions(fn2);
-        fn2Strs = repmat({fnInfo2.function}, [1 nComp]);
+        fn2Strs = repmat({fnInfo2.(fnc)}, [1 nComp]);
         fn2Workspace = repmat({fnInfo2.workspace{1}}, [1 nComp]);
       end
       

@@ -1,6 +1,15 @@
 classdef StateSpace < AbstractStateSpace
   % State estimation of models with known parameters 
+  % 
+  % :param r:
+  %     If ``r`` is an instance of class :mat:func:`Kinetics`, a copy of the instance
+  %     is returned. In this case, ``r`` should be the only argument. Otherwise, ``r``
+  %     must be an instance of class :mat:func:`XML_Node`.
+  % :param ph:
+  %     If ``r`` is an instance of :mat:func:`XML_Node`, ``ph`` is an instance of class
+  %     :mat:func:`ThermoPhase`. Otherwise, optional.
   %
+  
   % Includes filtering/smoothing algorithms and maximum likelihood
   % estimation of parameters with restrictions.
   %
@@ -81,6 +90,14 @@ classdef StateSpace < AbstractStateSpace
     %% Constructor
     function obj = StateSpace(Z, d, H, T, c, R, Q)
       % StateSpace constructor
+      % 
+      %
+      %   Z: Observation loading matrix
+      %
+      %   d: Observation equation constant
+      %
+      %   H: Observation error covariance matrix
+      
       if nargin == 0
         superArgs = {};
       else
@@ -97,6 +114,15 @@ classdef StateSpace < AbstractStateSpace
     function [a, logli, filterOut] = filter(obj, y)
       % FILTER Estimate the filtered state
       % 
+      
+      % Args:
+      %   y (double): observed data
+      %
+      % Returns: 
+      %   a (double) : filtered state
+      %   logli : log-likelihood
+      %   filterOut: structure of additional intermeidate quantites
+      
       % a = StateSpace.FILTER(y) returns the filtered state given the data y. 
       % [a, logli] = StateSpace.FILTER(...) also returns the log-likelihood of
       % the data. 
@@ -157,7 +183,7 @@ classdef StateSpace < AbstractStateSpace
       
       % Generate parameter gradient structure
       GMulti = tm.parameterGradients(theta);
-      [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(theta, GMulti);
+      [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(theta, GMulti);  % FIXME: How are we handling tau?
 
       % Transform to univariate filter gradients
       [GUni, GY] = obj.factorGradient(y, GMulti, ssMulti, factorC, oldTau);
@@ -299,6 +325,8 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function obj = checkSample(obj, y)
+      % Check the data timing against the time-varrying parameters
+      
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
       % TODO: check that we're not observing accumulated series before the end
@@ -338,6 +366,8 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function validateKFilter(obj)
+      % Validate parameters
+      
       obj.validateStateSpace();
       
       % Make sure all of the parameters are known (non-nan)
@@ -896,6 +926,7 @@ classdef StateSpace < AbstractStateSpace
     
     function [a, logli, filterOut] = filter_mex(obj, y)
       % Call mex function filter_uni
+      
       ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
         'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
         'a0', obj.a0, 'A0', obj.A0, 'R0', obj.R0, 'Q0', obj.Q0, ...
@@ -1024,6 +1055,8 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
+      % Smoother mex mathematical function
+      
       ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
         'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
         'a0', obj.a0, 'A0', obj.A0, 'R0', obj.R0, 'Q0', obj.Q0, ...
@@ -1041,6 +1074,8 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function gradient = gradient_filter_m(obj, y, G, GY, fOut, ftiOut)
+      % Gradient mathematical function
+      
       nTheta = size(G.T, 1);
       
       Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
@@ -1261,6 +1296,7 @@ classdef StateSpace < AbstractStateSpace
     %% General utilities
     function [stationary, nonstationary] = findStationaryStates(obj)
       % Find which states have stationary distributions given the T matrix.
+      
       [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
       bigEigs = abs(diag(D)) >= 1;
       

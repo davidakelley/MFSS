@@ -9,8 +9,15 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   % David Kelley, 2016-2017
 
   properties
-    Z, d, H           % Observation equation parameters
-    T, c, R, Q        % State equation parameters
+    % Observation equation parameters
+    Z
+    d
+    H
+    % State equation parameters
+    T
+    c
+    R
+    Q
     tau               % Structure of time-varrying parameter indexes
   end
   
@@ -21,7 +28,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   end
   
   properties (SetAccess = protected, Hidden)
-    A0, R0            % Initial value selection matricies
+    % Initial value selection matricies
+    A0
+    R0
     
     % Indicators for if initial values have been specified 
     % 2/3: Why do I need these? Analytic gradient?

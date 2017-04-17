@@ -71,17 +71,7 @@ classdef (Abstract) AbstractSystem
       Finv = PSVD * (DSDV\eye(length(DSDV))) * PSVDinv';
       logDetF = sum(log(diag(DSDV)));
     end
-    
-    function cbDet = cauchyBinet(AG)
-      % Calculate the Cauchy-Binet determinant of a lower diagonal matrix AG
-      % with it's own transpose, det(AG * AG').
-      
-      cbDet = 0;
-      for iS = combnk(1:size(AG, 2), size(AG, 1))'
-        cbDet = cbDet + det(AG(:,iS)) * det(AG(:,iS)');
-      end
-    end
-    
+
     function K = genCommutation(m, n)
       % Generate commutation matrix
       % 
