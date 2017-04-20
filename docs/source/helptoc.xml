@@ -19,8 +19,8 @@
       <tocitem target="ug_estimation.html"> Estimating parameters </tocitem>
       <tocitem target="ug_mfdata.html"> 
         Using mixed-frequency data
-        <tocitem target="ug_mfdata.html"> Defining Accumulators </tocitem>
-        <tocitem target="ug_mfdata.html"> Augmenting a state space model </tocitem>
+        <tocitem target="ug_mfdata.html#defining-accumulators"> Defining Accumulators </tocitem>
+        <tocitem target="ug_mfdata.html#augmenting-a-state-space-model"> Augmenting a state space model </tocitem>
       </tocitem>
     </tocitem>
     

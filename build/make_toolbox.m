@@ -3,15 +3,7 @@ function make_toolbox(major, minor)
 
 buildDir = fileparts(mfilename('fullpath'));
 
-%% Compile HTML documentation
-docs_status = compile_docs;
-if docs_status == 0
-  fprintf('Successfully compiled documentation.\n');
-else
-  error('Error in compiling documentation. Run ''make html'' in the docs folder.');
-end
-
-%% Iterate version number
+%% Get version number from prj file
 % Edit .prj file to update version numbers
 prjFile = fullfile(buildDir, '..', 'toolbox.prj');
 prjText = fileread(prjFile);
@@ -52,7 +44,28 @@ if newMajorVersion || newMinorVersion
 else
   build = oldBuild + 1;
 end
-    
+
+%% Compile HTML documentation
+confFile = fullfile(buildDir, '..', 'docs', 'source', 'conf.py');
+confText = fileread(confFile);
+
+confTextTemp = regexprep(confText, 'version = u''([\d*]*)\.([\d*]*)''', ...
+  sprintf('version = u''%d.%d''', major, minor));
+confTextNew = regexprep(confTextTemp, 'release = u''([\d*]*)\.([\d*]*)''', ...
+  sprintf('version = u''%d.%d.%d''', major, minor, build));
+if major ~= oldMajor || minor ~= oldMinor
+  assert(~isequal(confTextNew, confText), ...
+    'No change in documentation version.');
+end
+
+docs_status = compile_docs;
+if docs_status == 0
+  fprintf('Successfully compiled documentation.\n');
+else
+  error('Error in compiling documentation. Run ''make html'' in the docs folder.');
+end
+
+%% Iterate version number in prj file
 % Save new .prj file with updated version numbers
 prjTextNew = regexprep(prjText, '<param.version>.*<\/param.version>', ...
   sprintf('<param.version>%d.%d.%d</param.version>', major, minor, build));

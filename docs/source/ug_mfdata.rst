@@ -1,12 +1,14 @@
 .. User guide documentation
 
-Estimating parameters
+
+.. toctree::
+   :maxdepth: 2
+   
+Using Mixed-frequency data
 ==============================
 
 Using mixed-frequency data
 
-.. toctree::
-   :maxdepth: 2
 
 Defining Accumulators 
 ---------------------
