@@ -1,5 +1,6 @@
 classdef (Abstract) AbstractStateSpace < AbstractSystem
   % Abstract state space for accumulators and utilities 
+  %
   % Provides the structural parts of the parameter manipulation and some
   % utility functions.
   %
@@ -13,12 +14,22 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     Z
     d
     H
+    
     % State equation parameters
     T
     c
     R
     Q
-    tau               % Structure of time-varrying parameter indexes
+    
+    % Structure of time-varrying parameter indexes
+    tau
+    
+    % Indicator for use of analytic gradient
+    useAnalyticGrad = true;
+    % Numeric gradient precision order (either 1 or 2)
+    numericGradPrec = 1;
+    % Numeric gradient step size
+    delta = 1e-8;
   end
   
   properties (SetAccess = protected)
@@ -59,9 +70,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       end
       
       obj = obj.setSystemParameters(parameters);
-      
-      % Check if we can use the univariate filter
-      slicesH = num2cell(obj.H, [1 2]);
     end
     
     %% Initialization
@@ -107,6 +115,22 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.R0 = select(:, nondiffuse);
         obj.Q0 = P0(nondiffuse, nondiffuse);
       end
+    end
+    
+    function obj = unsetInitial(obj)
+      % Set initial values to unknown
+      % 
+      % Args: none
+      % 
+      % Returns: StateSpace
+
+      obj.usingDefaulta0 = true;
+      obj.usingDefaultP0 = true;
+      
+      obj.a0 = [];
+      obj.A0 = [];
+      obj.R0 = [];
+      obj.Q0 = [];
     end
     
     %% Utility methods
@@ -157,6 +181,51 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         varPos = find(criteriaFn(varPos));
         positions = [positions; varPos]; %#ok<AGROW>
       end
+    end
+    
+    function obj = checkSample(obj, y)
+      % Check the data timing against the time-varrying parameters
+      % 
+      % Args: 
+      %     y (double) : observed data
+      % 
+      % TODO: 
+      %     - check that we're pnly observing accumulated series when we should
+      
+      assert(size(y, 1) == obj.p, ...
+        'Number of series does not match observation equation.');
+      
+      if ~obj.timeInvariant
+        % System with TVP, make sure length of taus matches data.
+        assert(size(y, 2) == obj.n);
+      else
+        % No TVP, set n then set tau as ones vectors of that length.
+        obj.n = size(y, 2);
+        obj = obj.setInvariantTau();
+      end
+    end    
+    
+    function validateStateSpace(obj)
+      % Check dimensions of inputs to Kalman filter.
+      if obj.timeInvariant
+        maxTaus = ones([7 1]);
+      else
+        maxTaus = structfun(@max, obj.tau);  % Untested?
+      end
+      
+      validate = @(x, sz, name) validateattributes(x, {'numeric'}, ...
+        {'size', sz}, 'StateSpace', name);
+      
+      % Measurement equation
+      validate(obj.Z, [obj.p obj.m maxTaus(1)], 'Z');
+      validate(obj.d, [obj.p maxTaus(2)], 'd');
+      validate(obj.H, [obj.p obj.p maxTaus(3)], 'H');
+      
+      % State equation
+      validate(obj.T, [obj.m obj.m maxTaus(4)], 'T');
+      validate(obj.c, [obj.m maxTaus(5)], 'c');
+      validate(obj.R, [obj.m obj.g maxTaus(6)], 'R');
+      validate(obj.Q, [obj.g obj.g maxTaus(7)], 'Q');
     end
     
   end

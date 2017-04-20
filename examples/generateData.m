@@ -7,6 +7,12 @@ if isempty(ss.tau)
   ss = ss.setInvariantTau();
 end
 
+if isempty(ss.n) && ~isempty(ss.tau)
+  % Preset initial values, invariant tau
+  ss.n = timeDim;
+  ss = ss.setInvariantTau();
+end
+
 if isempty(ss.a0) || isempty(ss.Q0)
   ss = ss.setDefaultInitial();
 end

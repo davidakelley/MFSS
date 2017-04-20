@@ -30,7 +30,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % ML Estimation parameters
     ThetaMapping      % Mapping from theta vector to parameters
-    useGrad = true;   % Indicator for use of analytic gradient
     
     fminsearchMaxIter = 500;
   end
@@ -117,7 +116,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       optFMinCon = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
-        'SpecifyObjectiveGradient', obj.useGrad, ...
+        'SpecifyObjectiveGradient', obj.useAnalyticGrad, ...
         'UseParallel', false, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
@@ -130,7 +129,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
-        'SpecifyObjectiveGradient', obj.useGrad, ...
+        'SpecifyObjectiveGradient', obj.useAnalyticGrad, ...
         'UseParallel', false, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
@@ -191,13 +190,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
             [thetaHat, logli, ~, ~, ~, gradient] = fmincon(... 
               minfunc, theta0, [], [], [], [], [], [], nonlconFn, optFMinCon);
           case 'fminsearch'
-            tempGrad = obj.useGrad;
-            obj.useGrad = false;
+            tempGrad = obj.useAnalyticGrad;
+            obj.useAnalyticGrad = false;
             minfunc = @(theta) obj.minimizeFun(theta, y);
 
             [thetaHat, logli, ~] = fminsearch(...
               minfunc, theta0, optFMinSearch);
-            obj.useGrad = tempGrad;
+            obj.useAnalyticGrad = tempGrad;
             minfunc = @(theta) obj.minimizeFun(theta, y);
             
             gradient = [];
@@ -274,6 +273,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
           StateSpaceEstimation.sseplotpoint(x, optimValues, state);
           StateSpaceEstimation.sseplotvalue(x, optimValues, state, iter);
           StateSpaceEstimation.sseplotfiltered([], [], state);
+          StateSpaceEstimation.sseplotinfo([], [], state, getappdata(gcf, 'nanIterations'));
+          
           drawnow;
         end
       end
@@ -315,16 +316,21 @@ classdef StateSpaceEstimation < AbstractStateSpace
         return
       end
       
+      if max(abs(ss1.vectorizedParameters)) > 1e15
+        % keyboard;
+      end
+      
       try
-        if obj.useGrad
-          [rawLogli, rawGradient, fOut] = ss1.gradient(y, obj.ThetaMapping);
-          a = fOut.a;
-        else
-          [a, rawLogli, fOut] = ss1.filter(y);
-          rawGradient = [];
-        end
+        % Calculate likelihood and gradient
+        [rawLogli, rawGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
+
         % Don't plot the diffuse parts of the state because they look odd
+        a = fOut.a;
         a(:,1:fOut.dt) = nan;
+        
+        if ~isnan(rawLogli) && imag(rawLogli) ~= 0
+          keyboard;
+        end
         
         % Put filtered state in figure for plotting
         if ~isempty(obj.progressWin)
@@ -338,7 +344,12 @@ classdef StateSpaceEstimation < AbstractStateSpace
       catch
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
-        fprintf('.');
+        
+        if ~isempty(obj.progressWin)
+          oldBadIters = getappdata(obj.progressWin, 'nanIterations');
+          if isempty(oldBadIters), oldBadIters = 0; end
+          setappdata(obj.progressWin, 'nanIterations', oldBadIters+1);
+        end
       end
       
       negLogli = -rawLogli;
@@ -402,7 +413,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         delete(findobj('Tag', 'sseplotfiltered_dropdown'));
         setappdata(diagnosticF, 'a', []);
         setappdata(diagnosticF, 'logli', []);
-        setappdata(diagnosticF, 'stop_condition', '');
+        setappdata(diagnosticF, 'nanIterations', 0);
+        setappdata(diagnosticF, 'stop_condition', '');        
       else
         diagnosticF = figure('Color', ones(1,3), ...
           'Tag', 'StateSpaceEstimationWindow', ...
@@ -421,6 +433,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       StateSpaceEstimation.sseplotpoint(theta0, [], 'setup', 0, axPt);
       StateSpaceEstimation.sseplotvalue(theta0, [], 'setup', 0, axVal);
       StateSpaceEstimation.sseplotfiltered([], [], 'setup', m, axA);
+      StateSpaceEstimation.sseplotinfo([], [], 'setup', diagnosticF);
       
       % Create a stop button for the solver
       stopBtnXYLoc = [2 5];
@@ -451,7 +464,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
     end
     
-    function stop = sseplotpoint(x, unused2, state, varargin)
+    function stop = sseplotpoint(x, unused2, state, varargin) %#ok<INUSL>
       stop = false;
       
       if strcmpi(state, 'setup')
@@ -482,7 +495,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       set(plotx,'Ydata',x);
     end
     
-    function stop = sseplotvalue(unused1, optimValues, state, varargin)
+    function stop = sseplotvalue(unused1, optimValues, state, varargin) %#ok<INUSL>
       % We're plotting the likelihood, not the function value
       % (AKA, reverse the sign on everything).
       
@@ -543,7 +556,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end      
     end
     
-    function stop = sseplotfiltered(unused1, unused2, state, varargin)
+    function stop = sseplotfiltered(unused1, unused2, state, varargin) %#ok<INUSL>
       % Plot the filtered state, with a dropdown box for which state
       
       stop = false;
@@ -566,6 +579,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         dropdownY = plotfiltered.Parent.Position(1) + titleText.Extent(2) - titleText.Extent(4);       
         uicontrol('Style', 'popupmenu', ...
           'String', arrayfun(@(x) num2str(x), 1:m, 'Uniform', false), ...
+          'Parent', axH.Parent, ...  
           'Position', [dropdownX dropdownY 50 20], ...
           'Callback', @StateSpaceEstimation.plotFilteredCallback, ...
           'Tag', 'sseplotfiltered_dropdown');
@@ -583,6 +597,29 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Iter and done states
       dropdown = findobj('Tag', 'sseplotfiltered_dropdown');
       StateSpaceEstimation.plotFilteredCallback(dropdown, []);
+    end
+    
+    function stop = sseplotinfo(unused1, unused2, state, varargin) %#ok<INUSL>
+      stop = false;
+      if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
+        error('Unsuported plot command.');
+      end
+      getstring = @(x) sprintf('Bad likelihood evaulations: %d', x);
+      
+      if strcmpi(state, 'setup')
+        figH = varargin{1};
+        textbox = uicontrol('Style', 'text', ...
+          'String', getstring(0), ...
+          'Position', [figH.Position(3)-200 0 200 20], ...
+          'BackgroundColor', ones(1,3));
+        
+        set(textbox, 'Tag', 'sseplotinfo');
+        return
+      end
+      
+      textbox = findobj('Tag', 'sseplotinfo');
+      badIterations = varargin{1};
+      textbox.String = getstring(badIterations);      
     end
     
     function plotFilteredCallback(dropdown, ~)

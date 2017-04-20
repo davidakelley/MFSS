@@ -63,14 +63,15 @@ classdef ThetaMap < AbstractSystem
   end
   
   properties (SetAccess = protected)
-    nTheta                          % Number of elements in theta vector
-  end
-  
-  properties (SetAccess = protected, Hidden)
     % Parameter bounds - set in addRestrictions
     LowerBound
     UpperBound
     
+    % Number of elements in theta vector
+    nTheta
+  end
+  
+  properties (SetAccess = protected, Hidden)
     % Initial state conditions
     usingDefaulta0
     usingDefaultP0
