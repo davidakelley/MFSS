@@ -9,6 +9,30 @@ classdef StateSpace < AbstractStateSpace
   %     - Add filter/smoother weight decompositions
   %     - Add IRF/historical decompositions
   
+  properties (Dependent)
+    a0
+    P0
+  end
+  
+  methods
+    %% Setter/getter methods for initial values
+    function a0 = get.a0(obj)
+      a0 = obj.a0Private;
+    end
+    
+    function obj = set.a0(obj, newa0)
+      obj.a0Private = newa0;
+    end
+    
+    function P0 = get.P0(obj)
+      P0 = obj.P0Private;
+    end
+    
+    function obj = set.P0(obj, newP0)
+      obj.P0Private = newP0;
+    end
+  end
+  
   methods
     %% Constructor
     function obj = StateSpace(Z, d, H, T, c, R, Q)
@@ -39,38 +63,7 @@ classdef StateSpace < AbstractStateSpace
     end
   end
   
-  methods (Static)
-    %% Method to mimic static property
-    function returnVal = useMex(newVal)
-      % Static function to mimic a static class property of whether the mex
-      % functions should be used (avoids overhead of checking for them every time)
-      persistent useMex_persistent;
-      
-      % Setter
-      if nargin > 0 && ~isempty(newVal)
-        useMex_persistent = newVal;
-      end
-      
-      % Default setter
-      if isempty(useMex_persistent)
-        % Check mex files exist
-        mexMissing = any([...
-          isempty(which('mfss_mex.filter_uni'));
-          isempty(which('mfss_mex.smoother_uni'))]);
-        if mexMissing
-          useMex_persistent = false;
-          warning('MEX files not found. See .\mex\make.m');
-        else
-          useMex_persistent = true;
-        end
-      end
-      
-      % Getter
-      returnVal = useMex_persistent;
-    end
-  end
-  
-  methods   
+  methods
     %% State estimation methods 
     function [a, logli, filterOut] = filter(obj, y)
       % Estimate the filtered state
@@ -141,7 +134,7 @@ classdef StateSpace < AbstractStateSpace
 
         % Generate parameter gradient structure
         GMulti = tm.parameterGradients(theta);
-        [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(obj, GMulti); 
+        [GMulti.a1, GMulti.P1] = tm.initialValuesGradients(obj, GMulti, theta); 
 
         % Transform to univariate filter gradients
         [GUni, GY] = obj.factorGradient(y, GMulti, ssMulti, factorC, oldTau);
@@ -205,7 +198,7 @@ classdef StateSpace < AbstractStateSpace
       % Set default a0 and P0.
       % Run before filter/smoother after a0 & P0 inputs have been processed
       
-      if ~obj.usingDefaulta0 && ~obj.usingDefaultP0
+      if ~isempty(obj.a0) && ~isempty(obj.P0)
         % User provided a0 and P0.
         return
       end
@@ -225,28 +218,28 @@ classdef StateSpace < AbstractStateSpace
       select = eye(obj.m);
       mStationary = length(stationary);
 
-      if obj.usingDefaulta0
+      if isempty(obj.a0)
         obj.a0 = zeros(obj.m, 1);
         
         a0temp = (eye(mStationary) - tempT) \ obj.c(stationary, obj.tau.c(1));
         obj.a0(stationary) = a0temp;
       end
       
-      if obj.usingDefaultP0
-        obj.A0 = select(:, nonstationary);
-        obj.R0 = select(:, stationary);
+      if isempty(obj.P0)
+        newA0 = select(:, nonstationary);
+        newR0 = select(:, stationary);
         
         tempR = obj.R(stationary, :, obj.tau.R(1));
         tempQ = obj.Q(:, :, obj.tau.Q(1));
         try
-          obj.Q0 = reshape((eye(mStationary^2) - kron(tempT, tempT)) \ ...
+          newQ0 = reshape((eye(mStationary^2) - kron(tempT, tempT)) \ ...
             reshape(tempR * tempQ * tempR', [], 1), ...
             mStationary, mStationary);
         catch ex
           % If the state is large, try making it sparse
           if strcmpi(ex.identifier, 'MATLAB:array:SizeLimitExceeded')
             tempT = sparse(tempT);
-            obj.Q0 = full(reshape((speye(mStationary^2) - kron(tempT, tempT)) \ ...
+            newQ0 = full(reshape((speye(mStationary^2) - kron(tempT, tempT)) \ ...
               reshape(tempR * tempQ * tempR', [], 1), ...
               mStationary, mStationary));
           else
@@ -254,6 +247,10 @@ classdef StateSpace < AbstractStateSpace
           end
         end
         
+        diffuseP0 = newA0 * newA0';
+        diffuseP0(diffuseP0 ~= 0) = Inf;
+        newP0 = diffuseP0 + newR0 * newQ0 * newR0';
+        obj.P0 = newP0;
       end
     end
   end
@@ -368,9 +365,8 @@ classdef StateSpace < AbstractStateSpace
       ssUni = StateSpace(newZ, newd, newH, T, c, R, Q);
       
       % Set initial values
-      P0 = obj.R0 * obj.Q0 * obj.R0';
-      P0(obj.A0 * obj.A0' == 1) = Inf;
-      ssUni = ssUni.setInitial(obj.a0, P0);
+      ssUni.a0 = obj.a0;
+      ssUni.P0 = obj.P0;
       
       oldTau = struct('H', oldTauH, 'Z', oldTauZ, 'd', oldTaud, ...
         'correspondingNewHOldZ', correspondingNewHOldZ, ...
@@ -568,29 +564,39 @@ classdef StateSpace < AbstractStateSpace
       
       stepSize = 0.5 * obj.delta;
       for iTheta = 1:nTheta
-        thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
-        ssDown = tm.theta2system(thetaDown);
-        [~, llDown] = ssDown.filter(y);
-        
-        thetaUp = theta + [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
-        ssUp = tm.theta2system(thetaUp);
-        [~, llUp] = ssUp.filter(y);
-        
-        if obj.numericGradPrec == 1
-          grad(iTheta) = (llUp - llDown) ./ (2 * stepSize);
-        else
-          thetaDown2 = theta - [zeros(iTheta-1,1); 2 * stepSize; zeros(nTheta-iTheta,1)];
-          ssDown2 = tm.theta2system(thetaDown2);
-          [~, llDown2] = ssDown2.filter(y);
+        try
+          thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
+          ssDown = tm.theta2system(thetaDown);
+          [~, llDown] = ssDown.filter(y);
           
-          thetaUp2 = theta + [zeros(iTheta-1,1); 2 * stepSize; zeros(nTheta-iTheta,1)];
-          ssUp2 = tm.theta2system(thetaUp2);
-          [~, llUp2] = ssUp2.filter(y);           
+          thetaUp = theta + [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
+          ssUp = tm.theta2system(thetaUp);
+          [~, llUp] = ssUp.filter(y);
           
-          grad(iTheta) = (llDown2 - 8 * llDown + 8 * llUp - llUp2) ./ (12 * stepSize);
+          if obj.numericGradPrec == 1
+            grad(iTheta) = (llUp - llDown) ./ (2 * stepSize);
+          else
+            thetaDown2 = theta - [zeros(iTheta-1,1); 2 * stepSize; zeros(nTheta-iTheta,1)];
+            ssDown2 = tm.theta2system(thetaDown2);
+            [~, llDown2] = ssDown2.filter(y);
+            
+            thetaUp2 = theta + [zeros(iTheta-1,1); 2 * stepSize; zeros(nTheta-iTheta,1)];
+            ssUp2 = tm.theta2system(thetaUp2);
+            [~, llUp2] = ssUp2.filter(y);
+            
+            grad(iTheta) = (llDown2 - 8 * llDown + 8 * llUp - llUp2) ./ (12 * stepSize);
+          end
+        catch ex
+          % We might get a bad model. If we do, ignore it and move on - it'll
+          % get a -Inf gradient. Other errors may be of concern though.
+          if ~strcmp(ex.identifier, 'StateSpace:filter:degenerate')
+            rethrow(ex);
+          end
         end
       end
       
+      % Handle bad evaluations
+      grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
     end
     
     %% General utilities
@@ -678,9 +684,9 @@ classdef StateSpace < AbstractStateSpace
         obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
 
       % Initial recursion
-      while ~all(all(Pd(:,:,iT+1) == 0))
+      while ~all(all(Pd(:,:,iT+1) < eps))
         if iT >= obj.n
-          error(['Degenerate model. ' ...
+          error('StateSpace:filter:degenerate', ['Degenerate model. ' ...
           'Exact initial filter unable to transition to standard filter.']);
         end
         
@@ -724,7 +730,7 @@ classdef StateSpace < AbstractStateSpace
             % Pdti = Pdti;
               
             LogL(iP,iT) = (log(Fstar(iP,iT)) + (v(iP,iT)^2) ./ Fstar(iP,iT));
-          end        
+          end 
         end
         
         Tii = obj.T(:,:,obj.tau.T(iT+1));
@@ -1320,15 +1326,22 @@ classdef StateSpace < AbstractStateSpace
       else
         a0value = [];
       end
-      setSS = setSS.setInitial(a0value);
+      setSS.a0 = a0value;
       
       % Do I want to account for diffuse states? 
-      if ~isempty(ss.Q0)
-        setSS.A0 = ss.A0;
-        setSS.R0 = ss.R0;
-        
-        Q0value = repmat(value, size(ss.Q0));  
-        setSS = setSS.setQ0(Q0value);
+      % A: No, we're assuming A0 and R0 don't count here.
+      if ~isempty(ss.P0)
+        if value == Inf || value == -Inf
+          % We don't allow the size of A0 and R0 to change so put value in Q0 
+          setSS.P0 = ss.P0;
+          setSS.Q0 = repmat(value, size(ss.Q0));
+        else
+          diffuseP0 = ss.A0 * ss.A0';
+          diffuseP0(diffuseP0 ~= 0) = Inf;
+
+          P0value = ss.R0 * repmat(value, size(ss.Q0)) * ss.R0' + diffuseP0;  
+          setSS.P0 = P0value;
+        end
       end
     end    
   end

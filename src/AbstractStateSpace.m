@@ -26,31 +26,130 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
+  end
+  
+  properties (Hidden)
     % Numeric gradient precision order (either 1 or 2)
     numericGradPrec = 1;
     % Numeric gradient step size
-    delta = 1e-8;
+    delta = 1e-8;    
   end
   
-  properties (SetAccess = protected)
-    % Initial values parameter protected. Use setInitial. 
-    a0                % Initial state parameter
-    Q0                % Exact initial value parameters
+  properties (Abstract, Dependent)
+    % Initial state variance
+    a0
+    P0
+  end
+  
+  properties (Dependent, SetAccess = protected, Hidden)
+    P0Private
+  end
+  
+  properties (Dependent, Hidden)
+    Q0
   end
   
   properties (SetAccess = protected, Hidden)
     % Initial value selection matricies
+    a0Private
     A0
     R0
+    Q0Private
     
-    % Indicators for if initial values have been specified 
-    % 2/3: Why do I need these? Analytic gradient?
-    usingDefaulta0 = true;
-    usingDefaultP0 = true;
-
     % Lists of variables used across methods
     systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q'};
     symmetricParams = {'H', 'Q', 'Q0', 'P'};    % Include P0? P?
+  end
+  
+  methods
+    %% Property getters & setters
+    function a0Private = get.a0Private(obj)
+      a0Private = obj.a0Private;
+    end
+    
+    function obj = set.a0Private(obj, newa0)
+      assert(isempty(newa0) | size(newa0, 1) == obj.m, 'a0 should be a m X 1 vector');
+      obj.a0Private = newa0;
+    end
+    
+    function P0Private = get.P0Private(obj)
+      P0Private = Inf * obj.A0 * obj.A0' + obj.R0 * obj.Q0 * obj.R0';
+    end
+    
+    function obj = set.P0Private(obj, newP0)
+      
+      if isempty(newP0)
+        % Unset initial value
+        obj.A0 = [];
+        obj.R0 = [];
+        obj.Q0Private = [];
+        return
+      end
+      
+     % Handle input options for P0
+      if size(newP0, 1) == 1
+        % Scalar value passed for kappa
+        % (Note that this is ok evn if m == 1)
+        newP0 = eye(obj.m) * newP0;
+      elseif size(newP0, 2) == 1
+        % Vector value passed for kappa
+        assert(size(newP0, 1) == obj.m, 'kappa vector must be length m');
+        newP0 = diag(newP0);
+      else
+        % Regular P0 value passed
+        assert(all(size(newP0) == [obj.m obj.m]), 'P0 should be a m X m matrix');
+      end
+      
+      % Find diffuse elements
+      diffuse = any(isinf(newP0), 2);
+      nondiffuse = all(~isinf(newP0), 2);
+      
+      % Set up exact initial parameters
+      select = eye(obj.m);
+      obj.A0 = select(:, diffuse);
+      obj.R0 = select(:, nondiffuse);
+      obj.Q0Private = newP0(nondiffuse, nondiffuse);
+    end
+    
+    function Q0 = get.Q0(obj)
+      Q0 = obj.Q0Private;
+    end
+    
+    function obj = set.Q0(obj, newQ0)
+      assert(~isempty(obj.P0), 'Cannot set Q0 without first setting P0.');      
+      obj.Q0Private = newQ0;
+    end
+  end
+  
+  methods (Static)
+    %% Method to mimic static property
+    function returnVal = useMex(newVal)
+      % Static function to mimic a static class property of whether the mex
+      % functions should be used (avoids overhead of checking for them every time)
+      persistent useMex_persistent;
+      
+      % Setter
+      if nargin > 0 && ~isempty(newVal)
+        useMex_persistent = newVal;
+      end
+      
+      % Default setter
+      if isempty(useMex_persistent)
+        % Check mex files exist
+        mexMissing = any([...
+          isempty(which('mfss_mex.filter_uni'));
+          isempty(which('mfss_mex.smoother_uni'))]);
+        if mexMissing
+          useMex_persistent = false;
+          warning('MEX files not found. See .\mex\make.m');
+        else
+          useMex_persistent = true;
+        end
+      end
+      
+      % Getter
+      returnVal = useMex_persistent;
+    end
   end
   
   methods
@@ -71,68 +170,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       
       obj = obj.setSystemParameters(parameters);
     end
-    
-    %% Initialization
-    function obj = setInitial(obj, a0, P0)
-      % Setter for a0 and P0 (or kappa)
-      % Takes user input for a0 and P0. Constructs A0 and R0 matricies based on
-      % if elements of P0 are finite or not (nan or Inf both work to denote an
-      % initialization as diffuse). 
-      
-      % Set a0 - still put diffuse elements in a0 since they'll be ignored in 
-      % the exact initial filter and are needed in the approximate filter. 
-      if ~isempty(a0)
-        obj.usingDefaulta0 = false;
 
-        assert(size(a0, 1) == obj.m, 'a0 should be a m X 1 vector');
-        obj.a0 = a0;
-      end
-      
-      % Set A0, R0 and Q0.
-      if nargin > 2 && ~isempty(P0)
-        obj.usingDefaultP0 = false;
-        % Handle input options for P0
-        if size(P0, 1) == 1 
-          % Scalar value passed for kappa
-          % (Note that this is ok evn if m == 1)
-          P0 = eye(obj.m) * P0;
-        elseif size(P0, 2) == 1
-          % Vector value passed for kappa
-          assert(size(P0, 1) == obj.m, 'kappa vector must be length m');
-          P0 = diag(P0);
-        else
-          % Regular P0 value passed
-          assert(all(size(P0) == [obj.m obj.m]), 'P0 should be a m X m matrix');
-        end
-        
-        % Find diffuse elements
-        diffuse = any(isinf(P0), 2);
-        nondiffuse = all(~isinf(P0), 2);
-        
-        % Set up exact initial parameters
-        select = eye(obj.m);
-        obj.A0 = select(:, diffuse);
-        obj.R0 = select(:, nondiffuse);
-        obj.Q0 = P0(nondiffuse, nondiffuse);
-      end
-    end
-    
-    function obj = unsetInitial(obj)
-      % Set initial values to unknown
-      % 
-      % Args: none
-      % 
-      % Returns: StateSpace
-
-      obj.usingDefaulta0 = true;
-      obj.usingDefaultP0 = true;
-      
-      obj.a0 = [];
-      obj.A0 = [];
-      obj.R0 = [];
-      obj.Q0 = [];
-    end
-    
     %% Utility methods
     function param = parameters(obj, index)
       % Getter for cell array of parameters
@@ -143,16 +181,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     end
     
     function vec = vectorizedParameters(obj)
-      param = obj.parameters;
-      if obj.usingDefaulta0
-        param{8} = [];
-      end
-      if obj.usingDefaultP0
-        param{9} = [];
-      end
-      
-      vectors = cellfun(@(x) x(:), param, 'Uniform', false);
-      vec = vertcat(vectors{:});
+      error('Depricated');
     end
 
     function [nLags, positions] = LagsInState(obj, varPos)
@@ -190,7 +219,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       %     y (double) : observed data
       % 
       % TODO: 
-      %     - check that we're pnly observing accumulated series when we should
+      %     - check that we're only observing accumulated series when we should
       
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
@@ -233,6 +262,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   methods (Hidden = true)
     %% Internal helpers    
     function obj = setQ0(obj, Q0)
+      error('Depricated');
       % Utility function for setting Q0 without altering A0, R0.
       % Useful for setting bounds matricies of ThetaMap
       obj.Q0 = Q0;

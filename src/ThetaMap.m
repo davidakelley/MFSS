@@ -71,20 +71,20 @@ classdef ThetaMap < AbstractSystem
     nTheta
   end
   
-  properties (SetAccess = protected, Hidden)
+  properties (SetAccess = protected)
     % Initial state conditions
-    usingDefaulta0
-    usingDefaultP0
+    usingDefaulta0 = true;
+    usingDefaultP0 = true;
   end
   
   methods
     %% Constructor
     function obj = ThetaMap(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses)
+        transformations, derivatives, inverses, explicita0, explicitP0)
       % Generate map from elements of theta to StateSpace parameters
       
       ThetaMap.validateInputs(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses);
+        transformations, derivatives, inverses, explicita0, explicitP0);
       
       % Set properties
       obj.fixed = fixed;
@@ -95,11 +95,11 @@ classdef ThetaMap < AbstractSystem
       obj.derivatives = derivatives;
       obj.inverses = inverses;
       
-      obj.usingDefaulta0 = fixed.usingDefaulta0;
-      obj.usingDefaultP0 = fixed.usingDefaultP0;
+      obj.usingDefaulta0 = ~explicita0;
+      obj.usingDefaultP0 = ~explicitP0;
       
       % Set dimensions
-      obj.nTheta = max(index.vectorizedParameters);
+      obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, explicita0, explicitP0));
       
       obj.p = fixed.p;
       obj.m = fixed.m;
@@ -119,7 +119,7 @@ classdef ThetaMap < AbstractSystem
       if ~obj.usingDefaultP0
         P0LB = -Inf(obj.m);
         P0LB(1:obj.m+1:end) = eps * 10;
-        ssLB = ssLB.setInitial([], P0LB);
+        ssLB.P0 = P0LB;
         ssLB.P0(1:obj.m+1:end) = eps * 10;
       end
       obj = obj.addRestrictions(ssLB, ssUB);
@@ -141,7 +141,7 @@ classdef ThetaMap < AbstractSystem
       %   tm: ThetaMap
 
       assert(isa(ss, 'AbstractStateSpace'));
-      % ss needs to be a StateSpace now with the setAllParameters rewrite
+      
       % Generate default index and transformation systems
       index = ThetaMap.IndexStateSpace(ss);
       transformationIndex = ThetaMap.TransformationIndexStateSpace(ss);
@@ -150,12 +150,8 @@ classdef ThetaMap < AbstractSystem
       derivatives = {@(x) 1};
       inverses = {@(x) x};
       
-      if ss.usingDefaulta0 && ~isempty(ss.a0)
-        warning('usingDefaulta0 but a0 already set!');
-      end
-      if ss.usingDefaultP0 && ~isempty(ss.Q0)
-        warning('usingDefaultP0 but Q0 already set!');
-      end
+      explicita0 = ~isempty(ss.a0);
+      explicitP0 = ~isempty(ss.P0);
       
       % Get fixed elements as a StateSpace
       % Create a StateSpace with zeros (value doesn't matter) replacing nans.
@@ -165,11 +161,16 @@ classdef ThetaMap < AbstractSystem
       
       fixed = StateSpace(ss.Z, ss.d, ss.H, ss.T, ss.c, ss.R, ss.Q);
       fixed.tau = ss.tau;
-      fixed = fixed.setInitial(ss.a0, ss.R0 * ss.Q0 * ss.R0');
+      a0Fixed = ss.a0;
+      a0Fixed(isnan(a0Fixed)) = 0;
+      fixed.a0 = a0Fixed;
+      P0Fixed = ss.P0;
+      P0Fixed(isnan(P0Fixed)) = 0;
+      fixed.P0 = P0Fixed;
       
       % Create object
       tm = ThetaMap(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses);
+        transformations, derivatives, inverses, explicita0, explicitP0);
     end
     
     function tm = ThetaMapAll(ss)
@@ -248,7 +249,8 @@ classdef ThetaMap < AbstractSystem
         P0(A0 * A0' == 1) = Inf;
       end
       
-      ss = ss.setInitial(a0, P0);      
+      ss.a0 = a0;
+      ss.P0 = P0;      
     end
     
     function theta = system2theta(obj, ss)
@@ -261,24 +263,27 @@ classdef ThetaMap < AbstractSystem
             
       % Handle inputs
       obj.index.checkConformingSystem(ss);
-      ssParamValues = ss.vectorizedParameters();
-      assert(all(obj.LowerBound.vectorizedParameters < ssParamValues | ...
-        ~isfinite(ssParamValues) | ...
-        obj.index.vectorizedParameters == 0), ...
-        'system2theta:LBound', 'System violates lower bound of ThetaMap.');
-      assert(all(obj.UpperBound.vectorizedParameters > ssParamValues | ...
-        ~isfinite(ssParamValues) | ...
-        obj.index.vectorizedParameters == 0), ...
-        'system2theta:UBound', 'System violates upper bound of ThetaMap.');
       
-      vecIndex = obj.index.vectorizedParameters();
-      vecTransIndexes = obj.transformationIndex.vectorizedParameters();
-      
+      vectorize = @(ssObj) ThetaMap.vectorizeStateSpace(ssObj, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0);
+      ssParamValues = vectorize(ss);
+      lbValues = vectorize(obj.LowerBound);
+      ubValues = vectorize(obj.UpperBound);
+      indexValues = vectorize(obj.index);
+      vecTransIndexes = vectorize(obj.transformationIndex);
+
+      assert(all(lbValues < ssParamValues | ~isfinite(ssParamValues) | ...
+        indexValues == 0), 'system2theta:LBound', ...
+        'System violates lower bound of ThetaMap.');
+      assert(all(ubValues > ssParamValues | ~isfinite(ssParamValues) | ...
+        indexValues == 0), 'system2theta:UBound', ...
+        'System violates upper bound of ThetaMap.');
+            
       % Loop over theta, identify elements determined by each theta element and
       % compute the inverse of the transformation to get the theta value
       theta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
-        iIndexes = vecIndex == iTheta;
+        iIndexes = indexValues == iTheta;
         nParam = sum(iIndexes);
 
         iParamValues = ssParamValues(iIndexes);
@@ -334,7 +339,7 @@ classdef ThetaMap < AbstractSystem
       end  
     end
     
-    function [Ga0, GP0] = initialValuesGradients(obj, ss, G)
+    function [Ga0, GP0] = initialValuesGradients(obj, ss, G, theta)
       % Get the gradients of the initial values.
       % 
       % Inputs
@@ -352,9 +357,9 @@ classdef ThetaMap < AbstractSystem
       assert(isnumeric(ss) || isa(ss, 'StateSpace'), ...
         ['Invalid input: pass either a theta vector of length %d ' ...
         'or a conforming StateSpace object.'], obj.nTheta);
-      if isnumeric(ss)
-        theta = ss;
-        ss = obj.theta2system(theta);
+     
+      if isempty(ss.tau)
+        ss = ss.setInvariantTau();
       end
       
       % Determine which case we have
@@ -491,8 +496,8 @@ classdef ThetaMap < AbstractSystem
       if ~obj.usingDefaulta0
         if isempty(obj.LowerBound.a0)
           % Setting a0 for the first time
-          obj.LowerBound = obj.LowerBound.setInitial(-Inf(size(a0)));
-          obj.UpperBound = obj.LowerBound.setInitial(Inf(size(a0)));          
+          obj.LowerBound.a0 = -Inf(size(a0));
+          obj.UpperBound.a0 = Inf(size(a0)); 
         end
         [trans, deriv, inver, transInx, lbMat, ubMat] = ...
           obj.restrictParamMat(ssLB, ssUB, 'a0');
@@ -502,26 +507,24 @@ classdef ThetaMap < AbstractSystem
         obj.derivatives = [obj.derivatives deriv];
         obj.inverses = [obj.inverses inver];
         
-        obj.transformationIndex = obj.transformationIndex.setInitial(transInx);
+        obj.transformationIndex.a0 = transInx;
         
         % Save new lower and upper bounds
-        obj.LowerBound = obj.LowerBound.setInitial(lbMat);
-        obj.UpperBound = obj.UpperBound.setInitial(ubMat);
+        obj.LowerBound.a0 = lbMat;
+        obj.UpperBound.a0 = ubMat;
       end
       
-      if ~obj.usingDefaultP0
-        if isempty(obj.LowerBound.Q0)
+      if ~obj.usingDefaultP0 && ~isempty(obj.fixed.R0)
+        if isempty(obj.LowerBound.P0)
           % Setting A0/R0/Q0 for the first time
+          % (4/21) I don't think we can actually get here anymore?
           finiteQ0 = ssLB.Q0;
           finiteQ0(~isfinite(finiteQ0)) = 1; % Value doesn't matter.
           P0 = ssLB.R0 * finiteQ0 * ssLB.R0';
           P0(obj.LowerBound.A0 * obj.LowerBound.A0' == 1) = Inf;
           
-          obj.LowerBound = obj.LowerBound.setInitial([], P0);
-          obj.LowerBound = obj.LowerBound.setQ0(ssLB.Q0);
-
-          obj.UpperBound = obj.UpperBound.setInitial([], P0);
-          obj.UpperBound = obj.UpperBound.setQ0(ssUB.Q0);          
+          obj.LowerBound.P0 = P0;
+          obj.UpperBound.P0 = P0;      
         end
         
         [trans, deriv, inver, transInx, lbMat, ubMat] = ...
@@ -532,11 +535,11 @@ classdef ThetaMap < AbstractSystem
         obj.derivatives = [obj.derivatives deriv];
         obj.inverses = [obj.inverses inver];
         
-        obj.transformationIndex = obj.transformationIndex.setQ0(transInx);
+        obj.transformationIndex.Q0 = transInx;
         
         % Save new lower and upper bounds
-        obj.LowerBound = obj.LowerBound.setQ0(lbMat);
-        obj.UpperBound = obj.UpperBound.setQ0(ubMat);
+        obj.LowerBound.Q0 = lbMat;
+        obj.UpperBound.Q0 = ubMat;
       end
     end
     
@@ -547,18 +550,22 @@ classdef ThetaMap < AbstractSystem
       % If the user changes an element to be a function of a different theta
       % value, remove the old theta value - effectively shift all indexes down 
       % by 1.
-      obj.index = ThetaMap.eliminateUnusedIndexes(obj.index);
+      obj.index = ThetaMap.eliminateUnusedIndexes(obj.index, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0);
 
       % Reset nTheta if we've added/removed elements
-      obj.nTheta = max(obj.index.vectorizedParameters());
+      obj.nTheta = max(ThetaMap.vectorizeStateSpace(obj.index, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0));
             
       % Remove duplicate and unused transformations
       obj = obj.compressTransformations();      
 
       % Make sure the lower bound is actually below the upper bound and
       % other error checking?
-      assert(all(obj.LowerBound.vectorizedParameters() <= ...
-        obj.UpperBound.vectorizedParameters()), ...
+      assert(all(ThetaMap.vectorizeStateSpace(obj.LowerBound, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0) <= ...
+        ThetaMap.vectorizeStateSpace(obj.UpperBound, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0)), ...
         'Elements of LowerBound are greater than UpperBound.');
     end
     
@@ -571,7 +578,8 @@ classdef ThetaMap < AbstractSystem
       % this should be very similar to removing missing index elements but
       % we also need to delete the transformations
       [obj.transformationIndex, unusedTransforms] = ...
-        ThetaMap.eliminateUnusedIndexes(obj.transformationIndex);
+        ThetaMap.eliminateUnusedIndexes(obj.transformationIndex, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0);
       obj.transformations(unusedTransforms) = [];
       obj.derivatives(unusedTransforms) = [];
       obj.inverses(unusedTransforms) = [];
@@ -593,7 +601,9 @@ classdef ThetaMap < AbstractSystem
         end
         
         % Reset the indexes of any transformations found to be duplicate
-        paramNames = obj.transformationIndex.systemParam;
+        possibleParamNames = [obj.transformationIndex.systemParam, {'a0', 'Q0'}];
+        paramNames = possibleParamNames(...
+          [true(1,7) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
         for iP = 1:length(paramNames)
           dupInds = arrayfun(@(x) any(x == duplicatesForRemoval), ...
             obj.transformationIndex.(paramNames{iP}));
@@ -602,7 +612,8 @@ classdef ThetaMap < AbstractSystem
         
         % Compress indexes
         [obj.transformationIndex, unusedTransforms] = ...
-          ThetaMap.eliminateUnusedIndexes(obj.transformationIndex);
+          ThetaMap.eliminateUnusedIndexes(obj.transformationIndex, ...
+        ~obj.usingDefaulta0, ~obj.usingDefaultP0);
         assert(isempty(unusedTransforms) || ...
           all(unusedTransforms == duplicatesForRemoval));
         
@@ -631,19 +642,19 @@ classdef ThetaMap < AbstractSystem
         % Set the fixed elements
         a0fixed = a0;
         a0fixed(isnan(a0)) = 0;
-        obj.fixed = obj.fixed.setInitial(a0fixed);
+        obj.fixed.a0 = a0fixed;
         
         % Add to the indexes for the *potentially* new elements of a0
         a0index = zeros(size(a0));
         a0index(isnan(a0)) = obj.nTheta + (1:sum(isnan(a0)));
-        obj.index = obj.index.setInitial(a0index);
+        obj.index.a0 = a0index;
         obj.nTheta = obj.nTheta + sum(isnan(a0));
         
         % Add an identity transformation for all of the elements just added
         a0transIndex = zeros(size(a0, 1), 1);
         nTransform = length(obj.transformations);
         a0transIndex(isnan(a0)) = nTransform + 1;
-        obj.transformationIndex = obj.transformationIndex.setInitial(a0transIndex);
+        obj.transformationIndex.a0 = a0transIndex;
         
         obj.transformations = [obj.transformations {trans}];
         obj.derivatives = [obj.derivatives {deriv}];
@@ -651,11 +662,11 @@ classdef ThetaMap < AbstractSystem
         
         a0LB = -Inf * ones(size(a0));
         a0LB(isfinite(a0)) = a0(isfinite(a0));
-        obj.LowerBound = obj.LowerBound.setInitial(a0LB);
+        obj.LowerBound.a0 = a0LB;
         
         a0UB = Inf * ones(size(a0));
         a0UB(isfinite(a0)) = a0(isfinite(a0));
-        obj.UpperBound = obj.UpperBound.setInitial(a0UB);
+        obj.UpperBound.a0 = a0UB;
         
         % Make sure we're using a0
       else
@@ -670,21 +681,21 @@ classdef ThetaMap < AbstractSystem
         % Set the fixed elements
         P0fixed = P0;
         P0fixed(isnan(P0)) = 0;
-        obj.fixed = obj.fixed.setInitial([], P0fixed);
+        obj.fixed.P0 = P0fixed;
         
         % Add to the indexes for the *potentially* new elements of P0
         P0index = zeros(size(P0));
         nRequiredTheta = sum(sum(sum(isnan(tril(P0)))));
         P0index(isnan(tril(P0))) = obj.nTheta + (1:nRequiredTheta);
         P0index = P0index + P0index' - diag(diag(P0index));
-        obj.index = obj.index.setInitial([], P0index);
+        obj.index.P0 = P0index;
         
         % Add identity and exp transformation for all of the elements just added
         P0transIndex = zeros(size(P0));
         nTransform = length(obj.transformations);
         P0transIndex(isnan(P0)) = nTransform + 1;
         P0transIndex(isnan(diag(diag(P0)))) = nTransform + 2;
-        obj.transformationIndex = obj.transformationIndex.setInitial([], P0transIndex);
+        obj.transformationIndex.P0 = P0transIndex;
 
         obj.transformations = [obj.transformations {trans, transB}];
         obj.derivatives = [obj.derivatives {deriv, derivB}];
@@ -699,7 +710,7 @@ classdef ThetaMap < AbstractSystem
         % obj.fixed already has A0/R0 set. Just update Q0.
         Q0LB = -Inf(size(ssLB.Q0));
         Q0LB(1:size(Q0LB,1)+1:end) = eps * 10;
-        ssLB = ssLB.setQ0(Q0LB);
+        ssLB.Q0 = Q0LB;
         
         obj = obj.addRestrictions(ssLB, ssUB);
       else
@@ -806,7 +817,7 @@ classdef ThetaMap < AbstractSystem
       params = obj.fixed.systemParam;
       matParam = repmat({''}, [obj.nTheta, length(params)]);
       for iP = 1:length(params)
-        indexes = objindex.(params{iP});
+        indexes = obj.index.(params{iP});
         matParam(indexes(indexes~=0), iP) = repmat(params(iP), [sum(indexes(:)~=0), 1]);
       end
       
@@ -820,7 +831,7 @@ classdef ThetaMap < AbstractSystem
   
   methods (Static, Hidden)
     %% Constructor helpers
-    function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses)
+    function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses, explicita0, explicitP0)
       % Validate inputs
       assert(isa(fixed, 'StateSpace'));
       assert(isa(index, 'StateSpace'));
@@ -828,7 +839,12 @@ classdef ThetaMap < AbstractSystem
       
       % Dimensions
       index.checkConformingSystem(transformationIndex);
-      nTransform = max(transformationIndex.vectorizedParameters());
+      
+      vectorize = @(ssObj) ThetaMap.vectorizeStateSpace(ssObj, ...
+        explicita0, explicitP0);
+      
+      vecParam = vectorize(transformationIndex);     
+      nTransform = max(vecParam);
       
       assert(length(transformations) >= nTransform, ...
         'Insufficient transformations provided for indexes given.');
@@ -837,30 +853,39 @@ classdef ThetaMap < AbstractSystem
       assert(length(inverses) == length(derivatives), ...
         'Inverses must be provided for every transformation.');
 
-      vecFixed = fixed.vectorizedParameters();
+      index.checkConformingSystem(transformationIndex);
+      
+      vecFixed = vectorize(fixed);
       assert(~any(isnan(vecFixed)), 'Nan not allowed in fixed.');
-      vecIndex = index.vectorizedParameters();
+      vecIndex = vectorize(index);
       assert(~any(isnan(vecIndex)), 'Nan not allowed in index.'); 
+      vecTransInx = vectorize(transformationIndex);
       
       % Non-zero elements of fixed are zero in index and vice-versa.
       assert(all(~(vecFixed ~= 0 & vecIndex ~= 0)), ...
         'Parameters determined by theta must be set to 0 in fixed.');
+      
+      % Make sure all of the state spaces have similarly sized parameters
+      assert(length(vecFixed) == length(vecIndex));
+      assert(length(vecFixed) == length(vecTransInx));      
     end
     
-    function [indexSS, missingInx] = eliminateUnusedIndexes(indexSS)
+    function [indexSS, missingInx] = eliminateUnusedIndexes(indexSS, explicita0, explicitP0)
       % Decrement index values of a StateSpace so that therer are no unused
       % integer values from 1 to the maximum value in the system.
       
       assert(isa(indexSS, 'StateSpace'));
-      vecIndex = indexSS.vectorizedParameters();
+      vecIndex = ThetaMap.vectorizeStateSpace(indexSS, explicita0, explicitP0);
       maxVal = max(vecIndex);
       missingInx = setdiff(1:maxVal, vecIndex);
       if isempty(missingInx)
         return
       end
       
-      paramNames = indexSS.systemParam;
-
+      possibleParamNames = [indexSS.systemParam, {'a0', 'Q0'}];
+      paramNames = possibleParamNames(...
+        [true(1,7) explicita0 explicitP0]);
+ 
       if ~isempty(missingInx)
         for iP = 1:length(paramNames)
           % We need to collapse down through every element that's missing. To do
@@ -874,7 +899,7 @@ classdef ThetaMap < AbstractSystem
       % The new maximum value will be the current maximum value minus the number
       % of missing integers from 1:maxInx;
       newMax = maxVal - length(missingInx);
-      newVecIndex = indexSS.vectorizedParameters();
+      newVecIndex = ThetaMap.vectorizeStateSpace(indexSS, explicita0, explicitP0);
       
       assert(newMax == max(newVecIndex));
       assert(isempty(setdiff(1:newMax, newVecIndex)), ...
@@ -920,11 +945,22 @@ classdef ThetaMap < AbstractSystem
       
       index = StateSpace(paramEstimIndexes{:});
       if ~isempty(ss.a0)
-        error('Not developed.');
+        a0 = zeros(size(ss.a0));
+        nRequiredTheta = sum(isnan(ss.a0));
+        a0(isnan(ss.a0)) = indexCounter:indexCounter + (nRequiredTheta-1);
+        indexCounter = indexCounter + nRequiredTheta;
+        index.a0 = a0;
       end
       
-      if ~isempty(ss.Q0)
-        error('Not developed.');
+      if ~isempty(ss.P0) 
+        index.P0 = ss.P0;
+        
+        Q0inx = zeros(size(ss.Q0));
+        nRequiredTheta = sum(sum(sum(isnan(tril(ss.Q0)))));
+
+        Q0inx(isnan(tril(ss.P0))) = indexCounter:indexCounter + nRequiredTheta - 1;
+        Q0inx = Q0inx + Q0inx' - diag(diag(Q0inx));
+        index.Q0 = Q0inx;
       end
     end
     
@@ -954,6 +990,19 @@ classdef ThetaMap < AbstractSystem
       
       % Create StateSpace with system parameters
       transIndex = ThetaMap.cellParams2ss(transIndParams);
+      
+      if ~isempty(ss.a0)
+        a0 = zeros(size(ss.a0));
+        a0(isnan(ss.a0)) = 1;
+        transIndex.a0 = a0;
+      end
+      
+      if ~isempty(ss.P0) 
+        P0inx = ss.P0;
+        P0inx(isnan(P0inx)) = 1;
+        transIndex.P0 = P0inx;
+      end
+      
     end  
   end
   
@@ -1044,6 +1093,31 @@ classdef ThetaMap < AbstractSystem
       %   ssNew:      StateSpace constructed with new parameters
       
       ssNew = StateSpace(cellParams{:});
+    end
+    
+    function vecParam = vectorizeStateSpace(ss, explicita0, explicitP0)
+      % Vectorize all parameters of the state space
+      % 
+      % Arguements: 
+      %     ss : StateSpace
+      %     explicita0 (boolean) : indicates if a0 is explicit or a function of
+      %     the state parameters
+      %     explicitP0 (boolean) : indicates if P0 is explicit or a function of
+      %     the state parameters
+      %
+      % Returns: 
+      %     vecParam : the vectorized parameters
+      
+      param = ss.parameters;
+      if ~explicita0
+        param{8} = [];
+      end
+      if ~explicitP0
+        param{9} = [];
+      end
+      
+      vectors = cellfun(@(x) x(:), param, 'Uniform', false);
+      vecParam = vertcat(vectors{:});
     end
     
     function Gkron = GAkronA(A)

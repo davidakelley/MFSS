@@ -78,13 +78,9 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       testCase.verifyEqual(ss.c, ssNew.c, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.R, ssNew.R, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 5e-16);
-      testCase.verifyEqual(ss.usingDefaulta0, ssNew.usingDefaulta0);
-      testCase.verifyEqual(ss.usingDefaultP0, ssNew.usingDefaultP0);
     end
     
     function thetaSystemTheta_a0P0(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       % Theta -> StateSpace -> Theta with explicit initial values
       Z = 1;
       d = 0;
@@ -97,7 +93,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       % Set up StateSpace with initial values
       ss = StateSpace(Z, d, H, T, c, R, Q);
       ss = ss.setInvariantTau;
-      ss = ss.setInitial(0, 10);
+      ss.a0 = 0;
+      ss.P0 = 10;
       
       % Create ThetaMap
       tm = ThetaMap.ThetaMapAll(ss);
@@ -111,8 +108,6 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     end
     
     function systemThetaSystem_a0P0(testCase)
-      assumeFail(testCase); % Filter by assumption
-
       % StateSpace -> Theta -> StateSpace with explicit initial values
       Z = 1;
       d = 0;
@@ -126,9 +121,7 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       ss = StateSpace(Z, d, H, T, c, R, Q);
       ss = ss.setInvariantTau;
       ss = ss.setDefaultInitial;
-      ss.usingDefaulta0 = false;
-      ss.usingDefaultP0 = false;
-
+      
       % Create ThetaMap
       tm = ThetaMap.ThetaMapAll(ss);
       
@@ -138,13 +131,13 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(ss.Z, ssNew.Z, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.d, ssNew.d, 'AbsTol', 1e-16);
-      testCase.verifyEqual(ss.H, ssNew.H, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.H, ssNew.H, 'AbsTol', 5e-16);
       testCase.verifyEqual(ss.T, ssNew.T, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.c, ssNew.c, 'AbsTol', 1e-16);
       testCase.verifyEqual(ss.R, ssNew.R, 'AbsTol', 1e-16);
-      testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 1e-16);
+      testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 5e-16);
       testCase.verifyEqual(ss.a0, ssNew.a0, 'AbsTol', 1e-16);
-      testCase.verifyEqual(ss.P0, ssNew.P0, 'AbsTol', 1e-9);
+      testCase.verifyEqual(ss.P0, ssNew.P0, 'AbsTol', 5e-9);
     end
     
     %% Test that the map obeys bounds

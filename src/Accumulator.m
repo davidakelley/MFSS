@@ -99,7 +99,7 @@ classdef Accumulator < AbstractSystem
       
       % Construct the new ThetaMap
       tmNew = ThetaMap(fixedNew, indexNew, transIndexNew, ...
-        transNew, derivNew, invNew);
+        transNew, derivNew, invNew, ~tm.usingDefaulta0, ~tm.usingDefaultP0);
     end
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)
@@ -396,7 +396,8 @@ classdef Accumulator < AbstractSystem
       % augmentation after the existing transformations are made. 
       
       transIndex = obj.augmentIndex(tm.transformationIndex, aug);
-      nTrans = max(tm.transformationIndex.vectorizedParameters());
+      nTrans = max(ThetaMap.vectorizeStateSpace(tm.transformationIndex, ...
+        ~tm.usingDefaulta0, ~tm.usingDefaultP0));
       augStates = aug.m.withLag + (1:aug.nAccumulatorStates);
 
       % Modify T transformations

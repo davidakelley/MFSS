@@ -123,25 +123,24 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       Fstar(jj, ii-1) = as_scalar(Zjj * Pstarti * trans(Zjj) + H(jj, jj, (uword) tauH(ii-1)-1));
 
       // Kd(:,jj,ii) = Pdti * Zjj'
-      Kd.slice(ii-1).col(jj) = Pdti * trans(Zjj);
+      Kd.slice(ii-1).col(jj) = Pdti * trans(Zjj) / Fd(jj,ii-1);
       // Kstar(:,jj,ii) = Pstarti * Zjj'
-      Kstar.slice(ii-1).col(jj) = Pstarti * trans(Zjj);
+      Kstar.slice(ii-1).col(jj) = Pstarti * trans(Zjj) / Fstar(jj,ii-1); 
       
       if (Fd(jj, ii-1) != 0) {
         // F diffuse nonsingular
         // ati = ati + Kd(:,jj,ii) ./ Fd(jj,ii) * v(jj,ii)
-        ati = ati + Kd.slice(ii-1).col(jj) / Fd(jj,ii-1) * v(jj,ii-1);
+        ati = ati + Kd.slice(ii-1).col(jj) * v(jj,ii-1);
 
         // Pstarti = Pstarti + Kd(:,jj,ii) * Kd(:,jj,ii)' * Fstar(jj,ii) * (Fd(jj,ii).^-2) - 
         //          (Kstar(:,jj,ii) * Kd(:,jj,ii)' + Kd(:,jj,ii) * Kstar(:,jj,ii)') ./ Fd(jj,ii)
-        Pstarti = Pstarti + Kd.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) * 
-        Fstar(jj, ii-1) * pow(Fd(jj, ii-1), -2) - 
-        (Kstar.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) + 
-          Kd.slice(ii-1).col(jj) * trans(Kstar.slice(ii-1).col(jj)) ) / 
-        Fd(jj, ii-1);
+        Pstarti = Pstarti - 
+          (Kstar.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) + 
+            Kd.slice(ii-1).col(jj) * trans(Kstar.slice(ii-1).col(jj))
+            - Kd.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj))) * Fstar(jj, ii-1);
 
         // Pdti = Pdti - Kd(:,jj,ii) .* Kd(:,jj,ii)' ./ Fd(jj,ii)
-        Pdti = Pdti - Kd.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) / Fd(jj, ii-1);
+        Pdti = Pdti - Kd.slice(ii-1).col(jj) * trans(Kd.slice(ii-1).col(jj)) * Fd(jj, ii-1);
         
         // LogL(jj,ii) = log(Fd(jj,ii))
         LogL(jj, ii-1) = log(Fd(jj, ii-1));
@@ -149,11 +148,10 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       else {
         // F diffuse = 0
         // ati = ati + Kstar(:,jj,ii) ./ Fstar(jj,ii) * v(jj,ii)
-        ati = ati + Kstar.slice(ii-1).col(jj) / Fstar(jj, ii-1) * v(jj, ii-1);
+        ati = ati + Kstar.slice(ii-1).col(jj) * v(jj, ii-1);
 
         // Pstarti = Pstarti - Kstar(:,jj,ii) ./ Fstar(jj,ii) * Kstar(:,jj,ii)'
-        Pstarti = Pstarti - Kstar.slice(ii-1).col(jj) / Fstar(jj, ii-1) * 
-        trans(Kstar.slice(ii-1).col(jj));
+        Pstarti = Pstarti - Kstar.slice(ii-1).col(jj) * Fstar(jj, ii-1) * trans(Kstar.slice(ii-1).col(jj));
 
         // LogL(jj,ii) = (log(Fstar(jj,ii)) + (v(jj,ii)^2) ./ Fstar(jj,ii))
         LogL(jj, ii-1) = (log(Fstar(jj, ii-1)) + (pow(v(jj, ii-1), 2)) / Fstar(jj, ii-1));

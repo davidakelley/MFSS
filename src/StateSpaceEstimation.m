@@ -34,8 +34,34 @@ classdef StateSpaceEstimation < AbstractStateSpace
     fminsearchMaxIter = 500;
   end
   
+  properties (Dependent)
+    a0 
+    P0
+  end
+  
   properties (Hidden=true, Transient=true)
     progressWin
+  end
+  
+  methods
+    %% Setter/getter methods for initial values
+    function a0 = get.a0(obj)
+      a0 = obj.a0Private;
+    end
+    
+    function obj = set.a0(obj, newa0)
+      obj.a0Private = newa0;
+      obj.ThetaMapping = obj.ThetaMapping.updateInitial(newa0, []);
+    end
+    
+    function P0 = get.P0(obj)
+      P0 = obj.P0Private;
+    end
+    
+    function obj = set.P0(obj, newP0)
+      obj.P0Private = newP0;
+      obj.ThetaMapping = obj.ThetaMapping.updateInitial([], newP0);      
+    end
   end
   
   methods
@@ -63,9 +89,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % the default values at each iteration of the estimation, effectively 
       % making them a function of other parameters. 
       if ~isempty(inOpts.a0) && ~isempty(inOpts.P0)
-        obj = obj.setInitial(inOpts.a0, inOpts.P0);
-      elseif ~isempty(inOpts.a0) 
-        obj = obj.setInitial(inOpts.a0);
+        obj.a0 = inOpts.a0;
+      end
+      if ~isempty(inOpts.P0)
+        obj.P0 = inOpts.P0;
       end
       
       obj.ThetaMapping = obj.ThetaMapping.addRestrictions(inOpts.LowerBound, inOpts.UpperBound);
@@ -279,16 +306,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
         end
       end
     end
-    
-    function obj = setInitial(obj, a0, P0)
-      % Set a0 and P0 for the system
-      
-      % Set the avaliable values
-      obj = setInitial@AbstractStateSpace(obj, a0, P0);
-      
-      % Make sure the ThetaMap gets updated
-      obj.ThetaMapping = obj.ThetaMapping.updateInitial(a0, P0);      
-    end
   end
   
   methods (Hidden = true)
@@ -310,13 +327,16 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
       
       % Avoid bad parameters
-      if any(~isfinite(ss1.vectorizedParameters))
+      ss1Vectorized = obj.ThetaMapping.vectorizeStateSpace(ss1, ...
+          ~obj.ThetaMapping.usingDefaulta0, ~obj.ThetaMapping.usingDefaultP0);
+        
+      if any(~isfinite(ss1Vectorized))
         negLogli = nan;
         gradient = nan;
         return
       end
       
-      if max(abs(ss1.vectorizedParameters)) > 1e15
+      if max(abs(ss1Vectorized)) > 1e15
         % keyboard;
       end
       
@@ -341,7 +361,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           end
         end
         
-      catch
+      catch ex
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
         
@@ -365,7 +385,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       ss1 = obj.ThetaMapping.theta2system(theta);
       % cx = scale * -[det(ss1.H) det(ss1.Q)]';
       cx = []; % Removed H, Q dets on 1/25
-      if ~obj.usingDefaultP0
+      if ~obj.ThetaMapping.usingDefaultP0
         cx = [cx; scale * -det(ss1.Q0)];
       end         
       ceqx = 0;
@@ -376,8 +396,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       G = obj.ThetaMapping.parameterGradients(theta);
     	deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
                  det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
-      if ~obj.usingDefaultP0
-        [~, G.P0] = obj.ThetaMapping.initialValuesGradients(theta);
+      if ~obj.ThetaMapping.usingDefaultP0
+        [~, G.P0] = obj.ThetaMapping.initialValuesGradients(ss1, G, theta);
         % This is suspect. Need to rewrite G.P0 first.
         deltaCX = [deltaCX det(ss1.Q0) * G.P0 * vec(ss1.R0 / ss1.Q0 * ss1.R0')];
       end

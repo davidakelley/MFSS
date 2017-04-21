@@ -126,7 +126,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
 
       if (Fd(jj,ii-1) != 0) {
         // Diffuse case
-        Ldti = eyeM - Kd.slice(ii-1).col(jj) * Zjj / Fd(jj,ii-1);
+        Ldti = eyeM - Kd.slice(ii-1).col(jj) * Zjj;
         L0ti = (Kd.slice(ii-1).col(jj) - K.slice(ii-1).col(jj)) * Zjj * F(jj,ii-1) / Fd(jj,ii-1);
 
         r1ti = trans(Zjj) / Fd(jj,ii-1) * v(jj,ii-1) - trans(L0ti) * r0ti + trans(Ldti) * r1ti;

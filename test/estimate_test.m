@@ -47,7 +47,7 @@ classdef estimate_test < matlab.unittest.TestCase
       P0 = 1000;
       ss0 = StateSpace(Z, d, H0, T, c, R, P0);
       
-      ss.useGrad = false;
+      ss.useAnalyticGrad = false;
       ssE = ss.estimate(nile, ss0);
       
       % Using values from Dubrin & Koopman (2012), p. 37
@@ -70,12 +70,14 @@ classdef estimate_test < matlab.unittest.TestCase
       Q = nan;
       
       ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
-      ss = ss.setInitial(0, 1e6);
+      ss.a0 = 0;
+      ss.P0 = 1e6;
       
       H0 = 1000;
       P0 = 1000;
       ss0 = StateSpace(Z, d, H0, T, c, R, P0);
-      ss0 = ss0.setInitial(0, 1e6);
+      ss0.a0 = 0;
+      ss0.P0 = 1e6;
       
       ssE = ss.estimate(nile, ss0);
       
@@ -104,10 +106,10 @@ classdef estimate_test < matlab.unittest.TestCase
       Q0 = 1000;
       ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
 
-      ss.useGrad = false;
+      ss.useAnalyticGrad = false;
       ssE_ng = ss.estimate(nile, ss0);
       
-      ss.useGrad = true;
+      ss.useAnalyticGrad = true;
       ssE = ss.estimate(nile, ss0);
 
       testCase.verifyEqual(ssE.H, ssE_ng.H, 'RelTol', 5e-4);
@@ -132,7 +134,7 @@ classdef estimate_test < matlab.unittest.TestCase
       Q0 = 1000;
       ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
       
-      ss.useGrad = false;
+      ss.useAnalyticGrad = false;
       ssE = ss.estimate(nile, ss0);
       
       A = 1; B = nan; C = 1; D = nan;
@@ -143,7 +145,7 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.Q, estmdl.B^2, 'RelTol',  1e-2);
     end
     
-    function testGeneratedSmall(testCase)
+    function testGeneratedSmallGradientZero(testCase)
       assumeFail(testCase); % Filter by assumption
 
       p = 2; m = 1; timeDim = 500;

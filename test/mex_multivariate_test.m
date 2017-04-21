@@ -52,8 +52,8 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
       ss = testCase.model;
       
       ss = ss.setDefaultInitial();
-      P0 = blkdiag(ss.Q0(1:2, 1:2), Inf);
-      ss = ss.setInitial([], P0);
+      P0 = blkdiag(ss.P0(1:end-1, 1:end-1), Inf);
+      ss.P0 = P0;
       
       % Run filter
       ss.useMex(false);

@@ -34,7 +34,7 @@ classdef gradient_test < matlab.unittest.TestCase
       testCase.ssNonstationary = ss;
       
       % ... then give it non-zero starting values and save the data
-      ss = ss.setInitial([10; 0; 0]);
+      ss.a0 = [10; 0; 0];
       y = generateData(ss, 500);
       testCase.ssNonstationaryData = y;
     end
@@ -224,7 +224,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -237,7 +237,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -250,7 +250,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -263,7 +263,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -276,7 +276,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -289,7 +289,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -302,7 +302,7 @@ classdef gradient_test < matlab.unittest.TestCase
       tm = ssE.ThetaMapping;
       
       [~, analytic] = ss.gradient(y, tm);
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
@@ -319,7 +319,7 @@ classdef gradient_test < matlab.unittest.TestCase
       ss1 = ssE.estimate(y, ss);
       
       [~, analytic] = ss1.gradient(y, tm);
-      numeric = numericGradient(ss1, tm, y, 1e-8);
+      numeric = numericGradient(ss1, tm, y);
       
       testCase.verifyEqual(analytic, numeric, 'AbsTol', 1e-4);
     end
