@@ -53,9 +53,6 @@ classdef estimate_test < matlab.unittest.TestCase
       % Using values from Dubrin & Koopman (2012), p. 37
       testCase.verifyEqual(ssE.H, 15099, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
-      
-%       [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
-%       testCase.verifyLessThan(abs(ssE_grad), 5e-4);
     end
     
     function testNileKappa(testCase)
@@ -84,9 +81,6 @@ classdef estimate_test < matlab.unittest.TestCase
       % Using values from Dubrin & Koopman (2012), p. 37
       testCase.verifyEqual(ssE.H, 15099, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
-      
-%       [~, ssE_grad] = ssE.gradient(nile, ss.ThetaMapping);
-%       testCase.verifyLessThan(abs(ssE_grad), 5e-4);
     end
     
     function testNileGradient(testCase)

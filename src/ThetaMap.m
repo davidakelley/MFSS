@@ -60,6 +60,9 @@ classdef ThetaMap < AbstractSystem
     derivatives
     % Inverses of transformations
     inverses
+    
+    % Indicator for use of analytic gradient
+    useAnalyticGrad = true;
   end
   
   properties (SetAccess = protected)
@@ -80,11 +83,13 @@ classdef ThetaMap < AbstractSystem
   methods
     %% Constructor
     function obj = ThetaMap(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses, explicita0, explicitP0)
+        transformations, derivatives, inverses, varargin)
       % Generate map from elements of theta to StateSpace parameters
       
+      opts = ThetaMap.parseInputs(varargin);
+      
       ThetaMap.validateInputs(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses, explicita0, explicitP0);
+        transformations, derivatives, inverses, opts);
       
       % Set properties
       obj.fixed = fixed;
@@ -95,11 +100,12 @@ classdef ThetaMap < AbstractSystem
       obj.derivatives = derivatives;
       obj.inverses = inverses;
       
-      obj.usingDefaulta0 = ~explicita0;
-      obj.usingDefaultP0 = ~explicitP0;
+      obj.usingDefaulta0 = ~opts.explicita0;
+      obj.usingDefaultP0 = ~opts.explicitP0;
+      obj.useAnalyticGrad = opts.useAnalyticGrad;
       
       % Set dimensions
-      obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, explicita0, explicitP0));
+      obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, opts.explicita0, opts.explicitP0));
       
       obj.p = fixed.p;
       obj.m = fixed.m;
@@ -170,7 +176,8 @@ classdef ThetaMap < AbstractSystem
       
       % Create object
       tm = ThetaMap(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses, explicita0, explicitP0);
+        transformations, derivatives, inverses, ...
+        'explicita0', explicita0, 'explicitP0', explicitP0);
     end
     
     function tm = ThetaMapAll(ss)
@@ -250,7 +257,9 @@ classdef ThetaMap < AbstractSystem
       end
       
       ss.a0 = a0;
-      ss.P0 = P0;      
+      ss.P0 = P0;    
+      
+      ss.useAnalyticGrad = obj.useAnalyticGrad;
     end
     
     function theta = system2theta(obj, ss)
@@ -831,7 +840,17 @@ classdef ThetaMap < AbstractSystem
   
   methods (Static, Hidden)
     %% Constructor helpers
-    function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses, explicita0, explicitP0)
+    function opts = parseInputs(argin)
+      inP = inputParser();
+      inP.addParameter('explicita0', false);
+      inP.addParameter('explicitP0', false);
+      inP.addParameter('useAnalyticGrad', true);
+      
+      inP.parse(argin{:});
+      opts = inP.Results;
+    end
+    
+    function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses, opts)
       % Validate inputs
       assert(isa(fixed, 'StateSpace'));
       assert(isa(index, 'StateSpace'));
@@ -841,7 +860,7 @@ classdef ThetaMap < AbstractSystem
       index.checkConformingSystem(transformationIndex);
       
       vectorize = @(ssObj) ThetaMap.vectorizeStateSpace(ssObj, ...
-        explicita0, explicitP0);
+        opts.explicita0, opts.explicitP0);
       
       vecParam = vectorize(transformationIndex);     
       nTransform = max(vecParam);

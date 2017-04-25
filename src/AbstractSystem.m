@@ -17,6 +17,14 @@ classdef (Abstract) AbstractSystem
     stationaryStates  % Logical vector for which states are stationary
   end
 
+  methods
+    function obj = AbstractSystem()
+      if nargin == 0
+        return
+      end
+    end
+  end
+  
   methods (Hidden)
     function returnFlag = checkConformingSystem(obj, sys)
       % Check if the dimensions of a system match the current object

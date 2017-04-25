@@ -99,7 +99,8 @@ classdef Accumulator < AbstractSystem
       
       % Construct the new ThetaMap
       tmNew = ThetaMap(fixedNew, indexNew, transIndexNew, ...
-        transNew, derivNew, invNew, ~tm.usingDefaulta0, ~tm.usingDefaultP0);
+        transNew, derivNew, invNew, ...
+        'explicita0', ~tm.usingDefaulta0, 'explicitP0', ~tm.usingDefaultP0);
     end
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)

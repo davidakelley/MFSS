@@ -32,6 +32,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     ThetaMapping      % Mapping from theta vector to parameters
     
     fminsearchMaxIter = 500;
+    
+    % Indicator for use of analytic gradient
+    useAnalyticGrad = true;
   end
   
   properties (Dependent)
@@ -61,6 +64,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
     function obj = set.P0(obj, newP0)
       obj.P0Private = newP0;
       obj.ThetaMapping = obj.ThetaMapping.updateInitial([], newP0);      
+    end
+    
+    function obj = set.useAnalyticGrad(obj, newGrad)
+      obj.useAnalyticGrad = newGrad;
+      if ~isempty(obj.ThetaMapping) %#ok<MCSUP>
+        obj.ThetaMapping.useAnalyticGrad = newGrad; %#ok<MCSUP>
+      end
     end
   end
   

@@ -23,9 +23,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     
     % Structure of time-varrying parameter indexes
     tau
-    
-    % Indicator for use of analytic gradient
-    useAnalyticGrad = true;
   end
   
   properties (Hidden)
@@ -73,7 +70,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     end
     
     function P0Private = get.P0Private(obj)
-      P0Private = Inf * obj.A0 * obj.A0' + obj.R0 * obj.Q0 * obj.R0';
+      diffuseP0 = obj.A0 * obj.A0';
+      diffuseP0(diffuseP0 ~= 0) = Inf;
+      P0Private = diffuseP0 + obj.R0 * obj.Q0 * obj.R0';
     end
     
     function obj = set.P0Private(obj, newP0)

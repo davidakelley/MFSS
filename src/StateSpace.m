@@ -9,6 +9,11 @@ classdef StateSpace < AbstractStateSpace
   %     - Add filter/smoother weight decompositions
   %     - Add IRF/historical decompositions
   
+  properties
+    % Indicator for use of analytic gradient
+    useAnalyticGrad = true;
+  end
+  
   properties (Dependent)
     a0
     P0
@@ -892,10 +897,14 @@ classdef StateSpace < AbstractStateSpace
       
       % Standard Kalman filter recursion
       for iT = dt+1:obj.n
-        ind = find(~isnan(y(:,iT)));
         ati(:,iT,1) = a(:,iT);
         Pti(:,:,iT,1) = P(:,:,iT);
-        for iP = ind'
+        for iP = 1:obj.p
+          if isnan(y(iP,iT))
+            ati(:,iT,iP+1) = ati(:,iT,iP);
+            Pti(:,:,iT,iP+1) = Pti(:,:,iT,iP);
+            continue
+          end
           Zjj = obj.Z(iP,:,obj.tau.Z(iT));
           
           v(iP,iT) = y(iP,iT) - Zjj * ati(:,iT,iP) - obj.d(iP,obj.tau.d(iT));
