@@ -856,6 +856,12 @@ classdef StateSpace < AbstractStateSpace
           Kd(:,iP,iT) = Pdti(:,:,iT,iP) * Zjj' / Fd(iP,iT);
           Kstar(:,iP,iT) = Pstarti(:,:,iT,iP) * Zjj' / Fstar(iP,iT);
           
+          if Fd(iP,iT) < 0 && abs(Fd(iP,iT)) > 1e-14
+            error('Negative forecast variance.');
+          elseif Fd(iP,iT) < 0 
+            Fd(iP,iT) = 0;
+          end
+          
           if Fd(iP,iT) ~= 0
             % F diffuse nonsingular
             ati(:,iT,iP+1) = ati(:,iT,iP) + Kd(:,iP,iT) * v(iP,iT);
