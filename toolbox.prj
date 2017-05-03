@@ -7,7 +7,7 @@
     <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.4.4</param.version>
+    <param.version>1.4.5</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
     <param.products.name>
       <item>MATLAB</item>
@@ -20,9 +20,9 @@
       <item>19</item>
     </param.products.id>
     <param.products.version>
-      <item>9.1</item>
-      <item>7.5</item>
-      <item>11.0</item>
+      <item>9.2</item>
+      <item>7.6</item>
+      <item>11.1</item>
     </param.products.version>
     <param.platforms />
     <param.guid>f799a48a-807a-452c-9db8-32d58e8bea94</param.guid>
@@ -67,13 +67,16 @@
       <file>${PROJECT_ROOT}\AbstractStateSpace.m</file>
       <file>${PROJECT_ROOT}\AbstractSystem.m</file>
       <file>${PROJECT_ROOT}\Accumulator.m</file>
+      <file>${PROJECT_ROOT}\diffuse_test.m</file>
       <file>${PROJECT_ROOT}\docs</file>
       <file>${PROJECT_ROOT}\examples</file>
       <file>${PROJECT_ROOT}\info.xml</file>
+      <file>${PROJECT_ROOT}\old_docs</file>
       <file>${PROJECT_ROOT}\StateSpace.m</file>
       <file>${PROJECT_ROOT}\StateSpaceEstimation.m</file>
       <file>${PROJECT_ROOT}\test</file>
       <file>${PROJECT_ROOT}\ThetaMap.m</file>
+      <file>${PROJECT_ROOT}\tm2matList.m</file>
     </fileset.rootfiles>
     <fileset.depfun.included />
     <fileset.depfun.excluded />
@@ -83,7 +86,7 @@
     </build-deliverables>
     <workflow />
     <matlab>
-      <root>C:\Program Files\MATLAB\R2016b</root>
+      <root>C:\Program Files\MATLAB\R2017a</root>
       <toolboxes />
     </matlab>
     <platform>

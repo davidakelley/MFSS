@@ -419,8 +419,8 @@ classdef Accumulator < AbstractSystem
         nTrans + length(newTransT)); %#ok<FNDSB>
       
       % Modify R transformations (similar structure to T transformations)
-      addendR = Accumulator.augmentParamc(zeros(aug.m.withLag, tm.g), aug);
-      factorR = Accumulator.augmentParamc(ones(aug.m.withLag, tm.g), aug) - addendR;
+      addendR = Accumulator.augmentParamR(zeros(aug.m.withLag, tm.g), aug);
+      factorR = Accumulator.augmentParamR(ones(aug.m.withLag, tm.g), aug) - addendR;
       isAugElemR = false(size(transIndex.R));
       isAugElemR(augStates, :, :) = true;
       [transIndex.R, newTransR, newDerivR, newInvR] = Accumulator.computeNewTrans(...
