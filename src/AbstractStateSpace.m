@@ -43,11 +43,13 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   end
   
   properties (Dependent, Hidden)
+    % Q0 is a primative but we need a dependent property for initialization 
+    % order purposes 
     Q0
   end
   
   properties (SetAccess = protected, Hidden)
-    % Initial value selection matricies
+    % Initial value selection matricies - these are the primatives
     a0Private
     A0
     R0

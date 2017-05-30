@@ -35,15 +35,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
+    
+    % Allowable flags in estimation
+    flagsAllowed = -1:5;
   end
   
   properties (Dependent)
     a0 
     P0
-  end
-  
-  properties (Hidden=true, Transient=true)
-    progressWin
   end
   
   methods
@@ -125,8 +124,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
                  
       assert(isnumeric(y), 'y must be numeric.');
       assert(isa(ss0, 'StateSpace'));
-      
-      assert(obj.ThetaMapping.nTheta > 0, 'All parameters known. Unable to estimate.');
+      assert(obj.ThetaMapping.nTheta > 0, ...
+        'All parameters known. Unable to estimate.');
       
       % Initialize
       obj.checkConformingSystem(ss0);
@@ -134,23 +133,21 @@ classdef StateSpaceEstimation < AbstractStateSpace
       theta0 = obj.ThetaMapping.system2theta(ss0);
       assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
       
-      if obj.diagnosticPlot
-        % Close all old estimation plots
-        estimWins = findobj('Tag', 'StateSpaceEstimationWindow');
-        close(estimWins(2:end));
-        obj.progressWin = StateSpaceEstimation.initFigure(theta0, obj.m, estimWins);
-      end
+      progress = EstimationProgress(theta0, obj.diagnosticPlot);
+      outputFcn = @(x, oVals, st) progress.update(x, oVals);
       
       % Run fminunc/fmincon
-      minfunc = @(theta) obj.minimizeFun(theta, y);
+      minfunc = @(theta) obj.minimizeFun(theta, y, progress);
       nonlconFn = @obj.nlConstraintFun;
-      
+      solverFun = obj.solver;
+
       if obj.verbose
         displayType = 'iter-detailed';
       else
         displayType = 'none';
       end
       
+      % Optimizer options
       optFMinCon = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
         'SpecifyObjectiveGradient', obj.useAnalyticGrad, ...
@@ -162,7 +159,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
         'TolCon', 0, ...
-        'OutputFcn', @outfun);
+        'OutputFcn', outputFcn);
       
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
@@ -174,44 +171,24 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'FunctionTolerance', obj.tol, ...
         'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
-        'OutputFcn', @outfun);
+        'OutputFcn', outputFcn);
       
       if all(strcmpi(obj.solver, 'fminsearch')) && ...
-          (ischar(obj.fminsearchMaxIter) &&  strcmpi(obj.fminsearchMaxIter, 'default'))
+          (ischar(obj.fminsearchMaxIter) && ...
+          strcmpi(obj.fminsearchMaxIter, 'default'))
         searchMaxIter = 200 * obj.ThetaMapping.nTheta;
       else
         searchMaxIter = obj.fminsearchMaxIter;
-      end
-      
+      end      
       optFMinSearch = optimset('Display', displayType, ...
         'MaxFunEvals', 5000 * obj.ThetaMapping.nTheta, ...
         'MaxIter', searchMaxIter, ...
-        'OutputFcn', @outfun);
+        'OutputFcn', outputFcn);
       
-      warning off MATLAB:nearlySingularMatrix;
-      
-      solverFun = obj.solver;
-      
-      % Save history of theta values
-      nTheta = size(theta0, 1);
-      if iscell(obj.solver)
-        maxPossibleIters = max(optFMinUnc.MaxIterations, optFMinSearch.MaxIter) * obj.solveIterMax;
-      else
-        switch obj.solver
-          case {'fminunc', 'fmincon'}
-            maxPossibleIters = optFMinUnc.MaxIterations * obj.solveIterMax;
-          case 'fminsearch'
-            maxPossibleIters = optFMinSearch.MaxIter * obj.solveIterMax;
-        end
-      end
-      
-      thetaIter = 0;
-      thetaHist = nan(maxPossibleIters, nTheta);
-      likelihoodHist = nan(maxPossibleIters, 1);
-      solverIter = nan(maxPossibleIters, 1);
-      
+      % Loop over optimizers 
       loopContinue = true;
       iter = 0; logli = []; stopestim = false;
+      warning off MATLAB:nearlySingularMatrix;
       while loopContinue
         iter = iter + 1;
         logli0 = logli;
@@ -221,23 +198,29 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
-            [thetaHat, logli, ~, ~, gradient] = fminunc(...
+            [thetaHat, logli, outflag, ~, gradient] = fminunc(...
               minfunc, theta0, optFMinUnc);
           case 'fmincon'
-            [thetaHat, logli, ~, ~, ~, gradient] = fmincon(... 
+            [thetaHat, logli, outflag, ~, ~, gradient] = fmincon(... 
               minfunc, theta0, [], [], [], [], [], [], nonlconFn, optFMinCon);
           case 'fminsearch'
             tempGrad = obj.useAnalyticGrad;
             obj.useAnalyticGrad = false;
             minfunc = @(theta) obj.minimizeFun(theta, y);
 
-            [thetaHat, logli, ~] = fminsearch(...
+            [thetaHat, logli, outflag] = fminsearch(...
               minfunc, theta0, optFMinSearch);
             obj.useAnalyticGrad = tempGrad;
             minfunc = @(theta) obj.minimizeFun(theta, y);
             
             gradient = [];
         end
+        
+        progress.nextSolver();
+        stopestim = strcmpi(progress.stopStatus, 'stopestim');
+        
+        assert(~isempty(intersect(obj.flagsAllowed, outflag)), ...
+          'Optimizer returned disallowed flag %d.', outflag);
         
         loopContinue = ~stopestim && iter < obj.solveIterMax && ...
           (iter <= 2 || abs(logli0 - logli) > obj.solveTol);
@@ -246,7 +229,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
           warning('StateSpaceEstimation:estimate:solverDecrease', ...
             ['Solver decreased likelihood by %g. \n' ...
             'Returning higher likelihood solution.'], logli - logli0);
-          thetaHat = thetaHist(find(likelihoodHist == logli0, 1, 'last'), :)';
+          diagnostic = progress.diagnostics();
+
+          thetaHat = diagnostic.thetaHist(find(-diagnostic.likelihoodHist == logli0, 1, 'last'), :)';
           assert(~isempty(thetaHat));
           logli = logli0;
           gradient = [];
@@ -257,70 +242,25 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         theta0 = thetaHat;
       end
-      
       warning on MATLAB:nearlySingularMatrix;
   
       % Save estimated system to current object
       ss_out = obj.ThetaMapping.theta2system(thetaHat);
       
+      % Run smoother, plot smoothed state
       if obj.diagnosticPlot
-        % Run smoother, plot smoothed state
-        alpha = ss_out.smooth(y);
-        setappdata(obj.progressWin, 'a', alpha);
-        
-        % Retitle plot and move title so it doesn't overlap dropdown
-        filterPlot = findobj('Tag', 'sseplotfiltered');
-        oldTitlePos = filterPlot.Parent.Title.Extent;
-        titleObj = title(filterPlot.Parent, 'Smoothed State:');
-        titleObj.Position(1) = titleObj.Position(1) - ...
-          (titleObj.Extent(3) - oldTitlePos(3));
-        
-        dropdown = findobj('Tag', 'sseplotfiltered_dropdown');
-        StateSpaceEstimation.plotFilteredCallback(dropdown, []);
+        progress.alpha = ss_out.smooth(y);
+        progress.updateFigure();
       end
       
-      % Create diagnostic output
-      thetaHist(thetaIter+1:end,:) = [];
-      likelihoodHist(thetaIter+1:end) = [];
-      solverIter(thetaIter+1:end) = [];
-      diagnostic = AbstractSystem.compileStruct(thetaHist, likelihoodHist, solverIter);
-      
-      % Nested function for getting diagnostic output
-      function stop = outfun(x, optimValues, state)
-        thetaIter = thetaIter + 1;
-        thetaHist(thetaIter, :) = x';
-        likelihoodHist(thetaIter) = optimValues.fval;
-        solverIter(thetaIter) = iter;
-        stop = false;
-        
-        if obj.diagnosticPlot
-          if strcmpi(getappdata(gcf, 'stop_condition'), 'stop')
-            stop = true;
-            setappdata(gcf, 'stop_condition', '');
-            state = 'done';
-          end
-          if strcmpi(getappdata(gcf, 'stop_condition'), 'stopestim')
-            stop = true;
-            stopestim = true;
-            state = 'done';
-          end
-          
-          optimValues.iteration = thetaIter;
-          
-          StateSpaceEstimation.sseplotpoint(x, optimValues, state);
-          StateSpaceEstimation.sseplotvalue(x, optimValues, state, iter);
-          StateSpaceEstimation.sseplotfiltered([], [], state);
-          StateSpaceEstimation.sseplotinfo([], [], state, getappdata(gcf, 'nanIterations'));
-          
-          drawnow;
-        end
-      end
+      % Get diagnostic info on estimation progress
+      diagnostic = progress.diagnostics();
     end
   end
   
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
-    function [negLogli, gradient] = minimizeFun(obj, theta, y)
+    function [negLogli, gradient] = minimizeFun(obj, theta, y, progress)
       % Get the likelihood of
       ss1 = obj.ThetaMapping.theta2system(theta);
       
@@ -359,27 +299,17 @@ classdef StateSpaceEstimation < AbstractStateSpace
         a(:,1:fOut.dt) = nan;
         
         if ~isnan(rawLogli) && imag(rawLogli) ~= 0
+          error();
           keyboard;
         end
         
         % Put filtered state in figure for plotting
-        if ~isempty(obj.progressWin)
-          saveLogli = getappdata(obj.progressWin, 'logli');
-          if isempty(saveLogli) || rawLogli > saveLogli
-            setappdata(obj.progressWin, 'logli', rawLogli);
-            setappdata(obj.progressWin, 'a', a);
-          end
-        end
-        
+        progress.a = a;        
       catch ex
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
         
-        if ~isempty(obj.progressWin)
-          oldBadIters = getappdata(obj.progressWin, 'nanIterations');
-          if isempty(oldBadIters), oldBadIters = 0; end
-          setappdata(obj.progressWin, 'nanIterations', oldBadIters+1);
-        end
+        progress.nanIterations = progress.nanIterations + 1;
       end
       
       negLogli = -rawLogli;
@@ -431,249 +361,4 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
   end
   
-  methods (Static = true, Hidden = true)
-    %% Plot functions for ML estimation
-    function diagnosticF = initFigure(theta0, m, oldFig)
-      % Create diagnostic figure
-      screenSize = get(0, 'ScreenSize');
-      winSize = [725 700];
-      if nargin > 2 && ~isempty(oldFig)
-        diagnosticF = oldFig;
-        delete(diagnosticF.Children);
-        delete(findobj('Tag', 'sseplotfiltered_dropdown'));
-        setappdata(diagnosticF, 'a', []);
-        setappdata(diagnosticF, 'logli', []);
-        setappdata(diagnosticF, 'nanIterations', 0);
-        setappdata(diagnosticF, 'stop_condition', '');        
-      else
-        diagnosticF = figure('Color', ones(1,3), ...
-          'Tag', 'StateSpaceEstimationWindow', ...
-          'Position', ...
-          [screenSize(3)./2-0.5*winSize(1), screenSize(4)./2-0.5*winSize(2), winSize], ...
-          'Name', 'StateSpaceEstimation Progress', ...
-          'NumberTitle', 'off');
-        diagnosticF.Position(3:4) = [725 700];
-      end
-      
-      axH = axes(diagnosticF);
-      axPt = subplot(3, 1, 1, axH);
-      axVal = subplot(3, 1, 2, copyobj(axH, diagnosticF));
-      axA = subplot(3, 1, 3, copyobj(axH, diagnosticF));
-      
-      StateSpaceEstimation.sseplotpoint(theta0, [], 'setup', 0, axPt);
-      StateSpaceEstimation.sseplotvalue(theta0, [], 'setup', 0, axVal);
-      StateSpaceEstimation.sseplotfiltered([], [], 'setup', m, axA);
-      StateSpaceEstimation.sseplotinfo([], [], 'setup', diagnosticF);
-      
-      % Create a stop button for the solver
-      stopBtnXYLoc = [2 5];
-      stopBtn = uicontrol('string', 'Stop Current Solver', ...
-        'Position',[stopBtnXYLoc 50 20],'callback',@buttonStop);
-      % Make sure the full text of the button is shown
-      stopBtnExtent = get(stopBtn,'Extent');
-      stopBtnPos = [stopBtnXYLoc stopBtnExtent(3:4)+[2 2]]; % Read text extent of stop button
-      % Set the position, using the initial hard coded position, if it is long enough
-      set(stopBtn,'Position',max(stopBtnPos,get(stopBtn,'Position')));
-      
-      function buttonStop(~,~)
-        setappdata(gcf,'stop_condition','stop');
-      end
-      
-      % Create a stop button for the estimation
-      stopBtnXYLoc = [2+stopBtnExtent(3)+2 5];
-      stopEstimBtn = uicontrol('string', 'Stop Estimation', ...
-        'Position',[stopBtnXYLoc 50 20],'callback', @buttonStopEstim);
-      % Make sure the full text of the button is shown
-      stopBtnExtent = get(stopEstimBtn,'Extent');
-      stopBtnPos = [stopBtnXYLoc stopBtnExtent(3:4)+[2 2]]; % Read text extent of stop button
-      % Set the position, using the initial hard coded position, if it is long enough
-      set(stopEstimBtn,'Position',max(stopBtnPos,get(stopEstimBtn,'Position')));
-      
-      function buttonStopEstim(~,~)
-        setappdata(gcf,'stop_condition','stopestim');
-      end
-    end
-    
-    function stop = sseplotpoint(x, unused2, state, varargin) %#ok<INUSL>
-      stop = false;
-      
-      if strcmpi(state, 'setup')
-        axPt = varargin{2};
-        
-        plotx = bar(axPt, 1:length(x), x, 0.65);
-        box(axPt, 'off');
-        title(axPt, 'Current Point');
-        xlabel(axPt, sprintf('Varaibles: %d', length(x)));
-        set(plotx,'edgecolor','none')
-        set(plotx.Parent,'xlim',[0,1 + length(x)])
-        
-        set(plotx,'Tag','sseplotx');
-        
-        % Make initial point outline
-        hold(axPt, 'on');
-        outline = bar(axPt, 1:length(x), x, 0.8);
-        outline.EdgeColor = zeros(1,3);
-        outline.FaceColor = 'none';        
-        return
-      end
-      
-      if ~strcmpi(state, 'iter')
-        return
-      end
-      
-      plotx = findobj('Tag', 'sseplotx');
-      set(plotx,'Ydata',x);
-    end
-    
-    function stop = sseplotvalue(unused1, optimValues, state, varargin) %#ok<INUSL>
-      % We're plotting the likelihood, not the function value
-      % (AKA, reverse the sign on everything).
-      
-      stop = false;
-      if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
-        error('Unsuported plot command.');
-      end
-      
-      iter = varargin{1};
-      currentColor = [mod(iter, 2), 0, 1];
-      
-      if strcmpi(state, 'setup')
-        axH = varargin{2};
-        
-        plotfval = plot(axH, 0, 0, 'kd', 'MarkerFaceColor', [1 0 1]);
-        box(axH, 'off');
-        title(axH, sprintf('Current Log-likelihood:'));
-        xlabel(axH, 'Iteration');
-        ylabel(axH, 'Log-likelihood')
-        
-        set(plotfval, 'Tag', 'sseplotfval');
-        
-        plotfval.MarkerFaceColor = currentColor;
-        return
-      end
-      
-      plotfval = findobj('Tag', 'sseplotfval');
-
-      iteration = optimValues.iteration;
-      llval = -optimValues.fval;
-      
-      if strcmpi(state, 'init')
-        set(plotfval,'Xdata', iteration, 'Ydata', llval);
-        
-        plotfval.MarkerFaceColor = currentColor;
-        return
-      end
-      
-      newX = [get(plotfval,'Xdata') iteration];
-      newY = [get(plotfval,'Ydata') llval];
-      set(plotfval,'Xdata',newX, 'Ydata',newY);
-      set(get(plotfval.Parent,'Title'),'String', ...
-        sprintf('Current Function Value: %g', llval));
-      
-      if plotfval.Parent.YLim(2) < llval
-        plotfval.Parent.YLim(2) = llval;
-      end
-      
-      if strcmpi(state, 'done')
-        oldline = copyobj(plotfval, plotfval.Parent);
-        % Set markers off, color line based on solver
-        oldline.Marker = 'none';
-        oldline.LineStyle = '-';
-        oldline.Color = currentColor;
-        oldline.Tag = '';
-        
-        set(plotfval, 'Xdata',[], 'Ydata',[]);
-      end      
-    end
-    
-    function stop = sseplotfiltered(unused1, unused2, state, varargin) %#ok<INUSL>
-      % Plot the filtered state, with a dropdown box for which state
-      
-      stop = false;
-      if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
-        error('Unsuported plot command.');
-      end
-
-      if strcmpi(state, 'setup')
-        m = varargin{1};
-        axH = varargin{2};
-
-        plotfiltered = plot(axH, 0, 0, 'b');
-        box(axH, 'off');
-        titleText = title(axH, sprintf('Filtered State: '));
-        
-        plotfiltered.Parent.Units = 'pixels';
-        titleText.Units = 'pixels';
-        
-        dropdownX = plotfiltered.Parent.Position(1) + titleText.Extent(1) + titleText.Extent(3);
-        dropdownY = plotfiltered.Parent.Position(1) + titleText.Extent(2) - titleText.Extent(4);       
-        uicontrol('Style', 'popupmenu', ...
-          'String', arrayfun(@(x) num2str(x), 1:m, 'Uniform', false), ...
-          'Parent', axH.Parent, ...  
-          'Position', [dropdownX dropdownY 50 20], ...
-          'Callback', @StateSpaceEstimation.plotFilteredCallback, ...
-          'Tag', 'sseplotfiltered_dropdown');
-        
-        xlabel(axH, 't');
-        
-        set(plotfiltered, 'Tag', 'sseplotfiltered');
-        return
-      end
-      
-      if strcmpi(state, 'init')
-        return
-      end
-            
-      % Iter and done states
-      dropdown = findobj('Tag', 'sseplotfiltered_dropdown');
-      StateSpaceEstimation.plotFilteredCallback(dropdown, []);
-    end
-    
-    function stop = sseplotinfo(unused1, unused2, state, varargin) %#ok<INUSL>
-      stop = false;
-      if ~strcmpi(state, {'setup', 'init', 'iter', 'done'})
-        error('Unsuported plot command.');
-      end
-      getstring = @(x) sprintf('Bad likelihood evaulations: %d', x);
-      
-      if strcmpi(state, 'setup')
-        figH = varargin{1};
-        textbox = uicontrol('Style', 'text', ...
-          'String', getstring(0), ...
-          'Position', [figH.Position(3)-200 0 200 20], ...
-          'BackgroundColor', ones(1,3));
-        
-        set(textbox, 'Tag', 'sseplotinfo');
-        return
-      end
-      
-      textbox = findobj('Tag', 'sseplotinfo');
-      badIterations = varargin{1};
-      textbox.String = getstring(badIterations);      
-    end
-    
-    function plotFilteredCallback(dropdown, ~)
-      % Get the filtered state stored in the figure's appdata, plot acording to
-      % current value of the dropdown. 
-      
-      plotState = dropdown.Value;
-      a = getappdata(dropdown.Parent, 'a');
-      if isempty(a)
-        % a not yet set, nothing to plot
-        return
-      end
-      plotY = a(plotState,:);
-            
-      plotfiltered = findobj('Tag', 'sseplotfiltered');
-      set(plotfiltered, 'Xdata', 1:length(plotY), 'Ydata', plotY);
-      
-      % Set axes
-      if plotfiltered.Parent.YLim(2) < max(plotY)
-        plotfiltered.Parent.YLim(2) = max(plotY);
-      end
-      if plotfiltered.Parent.YLim(1) > min(plotY)
-        plotfiltered.Parent.YLim(1) = min(plotY);
-      end
-    end
-  end
 end
