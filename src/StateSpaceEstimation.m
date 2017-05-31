@@ -206,7 +206,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           case 'fminsearch'
             tempGrad = obj.useAnalyticGrad;
             obj.useAnalyticGrad = false;
-            minfunc = @(theta) obj.minimizeFun(theta, y);
+%             minfunc = @(theta) obj.minimizeFun(theta, y, progress);
 
             [thetaHat, logli, outflag] = fminsearch(...
               minfunc, theta0, optFMinSearch);

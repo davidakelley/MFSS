@@ -648,7 +648,7 @@ classdef StateSpace < AbstractStateSpace
     end
   end
   
-  methods (Hidden)      
+  methods (Hidden)
     %% Filter/smoother/gradient/decomposition mathematical methods
     function [a, logli, filterOut] = filter_m(obj, y)
       % Filter using exact initial conditions
@@ -660,7 +660,8 @@ classdef StateSpace < AbstractStateSpace
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
       % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
               
-      assert(all(arrayfun(@(iH) isdiag(obj.H(:,:,iH)), 1:size(obj.H, 3))), 'Univarite only!');
+      assert(all(arrayfun(@(iH) isdiag(obj.H(:,:,iH)), ...
+        1:size(obj.H, 3))), 'Univarite only!');
       
       % Preallocate
       % Note Pd is the "diffuse" P matrix (P_\infty).
@@ -710,10 +711,6 @@ classdef StateSpace < AbstractStateSpace
           
           Kd(:,iP,iT) = Pdti * Zjj' ./ Fd(iP,iT);
           Kstar(:,iP,iT) = Pstarti * Zjj' ./ Fstar(iP,iT);
-          
-          if Fd(iP,iT) < 0
-            % keyboard;
-          end
           
           if Fd(iP,iT) ~= 0
             % F diffuse nonsingular
@@ -998,15 +995,13 @@ classdef StateSpace < AbstractStateSpace
       end
       
       r1 = zeros(obj.m, fOut.dt+1);
-      N1 = zeros(obj.m, obj.m, fOut.dt+1);
-      N2 = zeros(obj.m, obj.m, fOut.dt+1);
-
+     
       % Note: r0 = r and N0 = N
-      r0ti = r(:,fOut.dt+1);
+      r0ti = rti;
       r1ti = r1(:,fOut.dt+1);
-      N0ti = N(:,:,fOut.dt+1);
-      N1ti = N1(:,:,fOut.dt+1);
-      N2ti = N2(:,:,fOut.dt+1);
+      N0ti = Nti;
+      N1ti = zeros(obj.m, obj.m);
+      N2ti = zeros(obj.m, obj.m);
       
       % Exact initial smoother
       for iT = fOut.dt:-1:1
@@ -1041,17 +1036,15 @@ classdef StateSpace < AbstractStateSpace
         r(:,iT) = r0ti;
         r1(:,iT) = r1ti;
         N(:,:,iT) = N0ti;
-        N1(:,:,iT) = N1ti;
-        N2(:,:,iT) = N2ti;        
-        
+       
         % What here needs tau_{iT+1}?
         alpha(:,iT) = fOut.a(:,iT) + fOut.P(:,:,iT) * r(:,iT) + ...
           fOut.Pd(:,:,iT) * r1(:,iT);
         V(:,:,iT) = fOut.P(:,:,iT) - ...
-          fOut.P(:,:,iT) * N(:,:,iT) * fOut.P(:,:,iT) - ...
-          (fOut.Pd(:,:,iT) * N1(:,:,iT) * fOut.P(:,:,iT))' - ...
-          fOut.P(:,:,iT) * N1(:,:,iT) * fOut.Pd(:,:,iT) - ...
-          fOut.Pd(:,:,iT) * N2(:,:,iT) * fOut.Pd(:,:,iT);
+          fOut.P(:,:,iT) * N0ti * fOut.P(:,:,iT) - ...
+          (fOut.Pd(:,:,iT) * N1ti * fOut.P(:,:,iT))' - ...
+          fOut.P(:,:,iT) * N1ti * fOut.Pd(:,:,iT) - ...
+          fOut.Pd(:,:,iT) * N2ti * fOut.Pd(:,:,iT);
 
         eta(:,iT) = obj.Q(:,:,obj.tau.Q(iT)) * obj.R(:,:,obj.tau.R(iT))' * r(:,iT);
         
@@ -1071,7 +1064,7 @@ classdef StateSpace < AbstractStateSpace
         a0tilde = obj.a0 + Pstar0 * rti;
       end
       
-      smootherOut = obj.compileStruct(alpha, V, eta, r, N, N1, N2, a0tilde);
+      smootherOut = obj.compileStruct(alpha, V, eta, r, N, a0tilde);
     end
     
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
@@ -1089,8 +1082,8 @@ classdef StateSpace < AbstractStateSpace
         ssStruct.A0 = zeros(obj.m, 1);
       end
       
-      [alpha, eta, r, N, a0tilde] = mfss_mex.smoother_uni(y, ssStruct, fOut);
-      smootherOut = obj.compileStruct(alpha, eta, r, N, a0tilde);
+      [alpha, eta, r, N, V, a0tilde] = mfss_mex.smoother_uni(y, ssStruct, fOut);
+      smootherOut = obj.compileStruct(alpha, eta, r, N, V, a0tilde);
     end
     
     function gradient = gradient_filter_m(obj, y, G, GY, fOut, ftiOut)

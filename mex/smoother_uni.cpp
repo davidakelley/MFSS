@@ -35,8 +35,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   if (nrhs != 3) {
     mexErrMsgIdAndTxt("smoother_uni:nrhs", "3 inputs required: y, ssStruct, and fOut.");
   }
-  if (nlhs > 5) {
-    mexErrMsgIdAndTxt("smoother_uni:nlhs", "Maximum of 5 outputs allowed.");
+  if (nlhs > 6) {
+    mexErrMsgIdAndTxt("smoother_uni:nlhs", "Maximum of 6 outputs allowed.");
   }
 
   // y data
@@ -116,6 +116,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   plhs[3] = armaCreateMxMatrix(output.N.n_rows, output.N.n_cols, output.N.n_slices);
   armaSetCubeData(plhs[3], output.N);
 
-  plhs[4] = armaCreateMxMatrix(output.a0tilde.n_rows, output.a0tilde.n_cols);
-  armaSetPr(plhs[4], output.a0tilde);
+  plhs[4] = armaCreateMxMatrix(output.V.n_rows, output.V.n_cols, output.V.n_slices);
+  armaSetCubeData(plhs[4], output.V);
+
+  plhs[5] = armaCreateMxMatrix(output.a0tilde.n_rows, output.a0tilde.n_cols);
+  armaSetPr(plhs[5], output.a0tilde);
 }

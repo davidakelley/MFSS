@@ -307,10 +307,16 @@ classdef EstimationProgress < handle
           (titleObj.Extent(3) - oldTitlePos(3));        
       end
       
-      plotY = stateEstimate(stateIndex,:)';
+      if ~isempty(stateEstimate)
+        plotY = stateEstimate(stateIndex,:)';
+      else
+        plotY = [];
+      end
       
       set(obj.plotState, 'Xdata', 1:length(plotY), 'Ydata', plotY);
-      obj.axA.XLim = [1 length(plotY)];
+      if ~isempty(stateEstimate)
+        obj.axA.XLim = [1 length(plotY)];
+      end
       
       % Set axes
       if obj.axA.YLim(2) < max(plotY)

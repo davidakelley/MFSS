@@ -12,14 +12,15 @@ end
 
 baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
   struct('type', '{}', 'subs', {{1}})) 'MFSS'];
-addpath(baseDir);
+srcDir = fullfile(baseDir, 'src');
+addpath(srcDir);
 
 import matlab.unittest.TestSuite
 import matlab.unittest.TestRunner
 import matlab.unittest.plugins.CodeCoveragePlugin
 
 %% Run tests
-testDir = [baseDir '\test'];
+testDir = fullfile(baseDir, 'test');
 
 basicTests = TestSuite.fromFile(fullfile(testDir, 'AbstractSystem_test.m'));
 mexTests = [TestSuite.fromFile(fullfile(testDir, 'mex_univariate_test.m')), ...
@@ -35,7 +36,7 @@ selectedTests = alltests(ismember(defaultTests, tests));
 suite = [selectedTests{:}];
 
 runner = TestRunner.withTextOutput;
-runner.addPlugin(CodeCoveragePlugin.forFolder(baseDir));
+runner.addPlugin(CodeCoveragePlugin.forFolder(srcDir));
 result = runner.run(suite);
 
 display(result);

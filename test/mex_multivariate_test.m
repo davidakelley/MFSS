@@ -92,6 +92,38 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
       testCase.verifyEqual(sOut.logli, sOut_m.logli, 'AbsTol', 1e-9);
     end
     
+    function testSmootherDiffuse(testCase)
+
+      ss = generateARmodel(2, 1, false);
+      ss.Z = eye(2);
+      ss.T = [1 0.01; 0 0.95];
+       
+      y = generateData(ss, 500);
+      y(1,1:100) = nan;
+      
+      % Run smoother
+      ss.useMex(false);
+      [alpha_m, sOut_m, fOut_m] = ss.smooth(y);
+      ss.useMex(true);
+      [alpha, sOut, fOut] = ss.smooth(y);
+      
+      % Assertions
+      testCase.verifyEqual(fOut_m.dt, fOut.dt);
+      testCase.verifyEqual(fOut_m.a, fOut.a);
+      testCase.verifyEqual(fOut_m.P, fOut.P);
+      testCase.verifyEqual(fOut_m.v, fOut.v);
+      testCase.verifyEqual(fOut_m.K, fOut.K);
+      testCase.verifyEqual(fOut_m.Kd, fOut.Kd);
+      
+      testCase.verifyEqual(alpha, alpha_m, 'AbsTol', 1e-11);
+      testCase.verifyEqual(sOut.eta, sOut_m.eta, 'AbsTol', 1e-11);
+      testCase.verifyEqual(sOut.r, sOut_m.r, 'AbsTol', 1e-11);
+      testCase.verifyEqual(sOut.N, sOut_m.N, 'AbsTol', 1e-11);
+      testCase.verifyEqual(sOut.V, sOut_m.V, 'AbsTol', 1e-11);
+      testCase.verifyEqual(sOut.a0tilde, sOut_m.a0tilde, 'AbsTol', 1e-11);
+      testCase.verifyEqual(sOut.logli, sOut_m.logli, 'AbsTol', 1e-9);
+    end
+    
     function testTiming(testCase)
       data = testCase.Y;
       ss = testCase.model;

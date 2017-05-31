@@ -10,8 +10,8 @@ fprintf('\nBuilding .mex files for MFSS.\n');
 clear mex; %#ok<CLMEX>
 
 % Get folders
-baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
-  struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+thisFile = mfilename('fullpath');
+baseDir = thisFile(1:strfind(upper(thisFile), 'MFSS')+4);
 outputFolder = fullfile(baseDir, '+mfss_mex');
 if ~exist(outputFolder, 'dir')
   mkdir(outputFolder);
@@ -24,7 +24,7 @@ lapacklib = fullfile(matlabroot, 'extern',  'lib', ...
   computer('arch'), 'microsoft', 'libmwlapack.lib');
 
 % Compile
-flags = {'-O', '-largeArrayDims', '-outdir', outputFolder};
+flags = {'-O', '-outdir', outputFolder};
 mex(flags{:}, fullfile(srcFolder, 'filter_uni.cpp'), blaslib, lapacklib);
 mex(flags{:}, fullfile(srcFolder, 'smoother_uni.cpp'), blaslib, lapacklib);
 fprintf('\n');
