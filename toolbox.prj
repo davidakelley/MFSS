@@ -7,7 +7,7 @@
     <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.5.0</param.version>
+    <param.version>1.5.1</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
     <param.products.name>
       <item>MATLAB</item>
@@ -34,12 +34,10 @@
 
       build/
       mex/
-      temp/
       docs/source
       docs/make.bat
       docs/Makefile
       docs/build/doctrees
-      old_docs/
 
       *.asv</param.exclude.filters>
     <param.examples />
@@ -95,7 +93,7 @@
       <vista>false</vista>
       <linux>false</linux>
       <solaris>false</solaris>
-      <osver>6.1</osver>
+      <osver>6.2</osver>
       <os32>false</os32>
       <os64>true</os64>
       <arch>win64</arch>
