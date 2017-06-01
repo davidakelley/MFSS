@@ -15,16 +15,7 @@ classdef AbstractSystem_test < matlab.unittest.TestCase
     end
   end
   
-  methods (Test)
-    function testCompileStruct(testCase)
-      a = 1; 
-      b = [];
-      c = {};
-      
-      s1 = AbstractSystem.compileStruct(a, b, c);
-      testCase.verifyEqual(fieldnames(s1), {'a', 'b', 'c'}');
-    end
-    
+  methods (Test)  
 %     function testPseudoinv(testCase)
 %       
 %     end

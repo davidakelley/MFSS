@@ -237,7 +237,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if obj.timeInvariant
         maxTaus = ones([7 1]);
       else
-        maxTaus = structfun(@max, obj.tau);  % Untested?
+        maxTaus = structfun(@max, obj.tau);
       end
       
       validate = @(x, sz, name) validateattributes(x, {'numeric'}, ...
@@ -258,15 +258,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   end
   
   methods (Hidden = true)
-    %% Internal helpers    
-    function obj = setQ0(obj, Q0)
-      error('Depricated');
-      % Utility function for setting Q0 without altering A0, R0.
-      % Useful for setting bounds matricies of ThetaMap
-      obj.Q0 = Q0;
-      obj.usingDefaultP0 = false;
-    end
-    
     %% Constructor helper methods
     function obj = setSystemParameters(obj, parameters)
       % Obtain system matrices from structure

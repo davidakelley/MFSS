@@ -938,8 +938,9 @@ classdef StateSpace < AbstractStateSpace
       %   sum(sum(F(:,d+1:end)~=0)) + sum(sum(Fstar(:,1:d)~=0))
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
-      filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
-      detailOut = obj.compileStruct(ati, Pti, Pdti);
+      filterOut = struct('a', a, 'P', P, 'Pd', Pd, 'v', v, 'F', F, 'Fd', Fd, ...
+        'K', K, 'Kd', Kd, 'dt', dt);
+      detailOut = struct('ati', ati, 'Pti', Pti, 'Pdti', Pdti);
     end
     
     function [a, logli, filterOut] = filter_mex(obj, y)
