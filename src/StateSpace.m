@@ -779,7 +779,8 @@ classdef StateSpace < AbstractStateSpace
       %   sum(sum(F(:,d+1:end)~=0)) + sum(sum(Fstar(:,1:d)~=0))
       logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
       
-      filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
+      filterOut = struct('a', a, 'P', P, 'Pd', Pd, 'v', v, 'F', F, 'Fd', Fd, ...
+        'K', K, 'Kd', Kd, 'dt', dt);
     end
     
     function [a, logli, filterOut, detailOut] = filter_detail_m(obj, y)
@@ -955,7 +956,8 @@ classdef StateSpace < AbstractStateSpace
       end
       
       [a, logli, P, Pd, v, F, Fd, K, Kd, dt] = mfss_mex.filter_uni(y, ssStruct);
-      filterOut = obj.compileStruct(a, P, Pd, v, F, Fd, K, Kd, dt);
+      filterOut = struct('a', a, 'P', P, 'Pd', Pd, 'v', v, 'F', F, 'Fd', Fd, ...
+        'K', K, 'Kd', Kd, 'dt', dt);
     end
     
     function [alpha, smootherOut] = smoother_m(obj, y, fOut)
@@ -1064,7 +1066,8 @@ classdef StateSpace < AbstractStateSpace
         a0tilde = obj.a0 + Pstar0 * rti;
       end
       
-      smootherOut = obj.compileStruct(alpha, V, eta, r, N, a0tilde);
+      smootherOut = struct('alpha', alpha, 'V', V, 'eta', eta, 'r', r, ...
+        'N', N, 'a0tilde', a0tilde);
     end
     
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
@@ -1083,7 +1086,8 @@ classdef StateSpace < AbstractStateSpace
       end
       
       [alpha, eta, r, N, V, a0tilde] = mfss_mex.smoother_uni(y, ssStruct, fOut);
-      smootherOut = obj.compileStruct(alpha, eta, r, N, V, a0tilde);
+      smootherOut = struct('alpha', alpha, 'V', V, 'eta', eta, 'r', r, ...
+        'N', N, 'a0tilde', a0tilde);
     end
     
     function gradient = gradient_filter_m(obj, y, G, GY, fOut, ftiOut)

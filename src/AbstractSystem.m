@@ -45,18 +45,6 @@ classdef (Abstract) AbstractSystem
   
   methods (Static)
     %% General utility functions
-    function sOut = compileStruct(varargin)
-      % Combines variables passed as arguments into a struct
-      % 
-      % struct = compileStruct(a, b, c) will place the variables a, b, & c
-      % in the output variable using the variable names as the field names.
-      
-      sOut = struct;
-      for iV = 1:nargin
-        sOut.(inputname(iV)) = varargin{iV};
-      end
-    end
-    
     function [Finv, logDetF] = pseudoinv(F, tol)
       % Returns the pseudo-inverse and log determinent of F 
       % 

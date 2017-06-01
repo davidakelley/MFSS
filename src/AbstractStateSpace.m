@@ -162,7 +162,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         % Structure of parameter values or AbstractStateSpace object passed
         parameters = Z;
       elseif nargin == 7
-        parameters = obj.compileStruct(Z, d, H, T, c, R, Q);
+        parameters = struct('Z', Z, 'd', d, 'H', H, ...
+          'T', T, 'c', c, 'R', R, 'Q', Q);
       elseif nargin == 0
         return;
       else
