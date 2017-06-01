@@ -323,18 +323,20 @@ classdef StateSpace < AbstractStateSpace
       maxTauH = max(newTauH);
       factorC = zeros(size(obj.H, 1), size(obj.H, 2), maxTauH);
       newHmat = zeros(size(obj.H, 1), size(obj.H, 2), maxTauH);
+      factorCinv = cell(maxTauH, 1);
       for iH = 1:maxTauH
         ind = logical(obsPatternH(iH, :));
         [factorC(ind,ind,iH), newHmat(ind,ind,iH)] = ldl(obj.H(ind,ind,oldTauH(iH)), 'lower');
+        factorCinv{iH} = inv(factorC(ind,ind,iH));
         assert(isdiag(newHmat(ind,ind,iH)), 'ldl returned non-diagonal d matrix.');
       end
       newH = struct('Ht', abs(newHmat), 'tauH', newTauH);      
       
-      yUni = nan(size(y));
       inds = logical(obsPatternH(newTauH, :));
+      yUni = nan(size(y));
       for iT = 1:size(y,2)
         % Transform observations
-        yUni(inds(iT,:),iT) = factorC(inds(iT,:),inds(iT,:),newTauH(iT)) \ y(inds(iT,:),iT);
+        yUni(inds(iT,:),iT) = factorCinv{newTauH(iT)} * y(inds(iT,:),iT);
       end
       
       % We may need to create more slices of Z. 

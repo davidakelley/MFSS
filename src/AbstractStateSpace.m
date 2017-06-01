@@ -181,10 +181,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         param = param{index};
       end
     end
-    
-    function vec = vectorizedParameters(obj)
-      error('Depricated');
-    end
 
     function [nLags, positions] = LagsInState(obj, varPos)
       % Finds the lags of a variable in the state space
@@ -292,23 +288,26 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       else
         obj.timeInvariant = false;
       
-        tauLens = cellfun(@(x) length(parameters.(x).(['tau' x])), ...
-        obj.systemParam(structParams));
-      
-        subtract = cellfun(@(x) any(strcmpi(x, {'T', 'c', 'R', 'Q'})), ...
-          obj.systemParam(structParams));
+        tauLens = [length(parameters.Z.tauZ), length(parameters.d.taud), ...
+          length(parameters.H.tauH), length(parameters.T.tauT), ...
+          length(parameters.c.tauc), length(parameters.R.tauR), ...
+          length(parameters.Q.tauQ)];
+        
+        % subtract = cellfun(@(x) any(strcmpi(x, {'T', 'c', 'R', 'Q'})), ...
+        %   obj.systemParam(structParams));
+        subtract = structParams' & [0 0 0 1 1 1 1];
         nCandidates = tauLens - subtract;
-        assert(isscalar(unique(nCandidates)), ['Bad tau specification. ' ... 
+        assert(all(nCandidates == nCandidates(1)), ['Bad tau specification. ' ... 
           'tau vectors for Z, d & H should have n elements. ' ...
           'tau vectors for T, c, R & Q should have n+1 elements.']);
-        obj.n = unique(nCandidates);
+        obj.n = nCandidates(1);
       end
       
       % Z system matrix
       if isstruct(parameters.Z)
         obj = obj.setTimeVarrying(length(parameters.Z.tauZ));
         assert(numel(parameters.Z.tauZ) == obj.n);
-        obj.tau.Z = reshape(parameters.Z.tauZ, obj.n, 1);
+        obj.tau.Z = parameters.Z.tauZ;
         obj.Z = parameters.Z.Zt;
       else
         obj.Z = parameters.Z;
@@ -321,7 +320,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if isstruct(parameters.d)
         obj = obj.setTimeVarrying(length(parameters.d.taud));
         assert(numel(parameters.d.taud) == obj.n);
-        obj.tau.d = reshape(parameters.d.taud, obj.n, 1);
+        obj.tau.d = parameters.d.taud;
         obj.d = parameters.d.dt;
       elseif size(parameters.d, 2) > 1
         obj = obj.setTimeVarrying(size(parameters.d, 2));
@@ -338,7 +337,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if isstruct(parameters.H)
         obj = obj.setTimeVarrying(length(parameters.H.tauH));
         assert(numel(parameters.H.tauH) == obj.n);
-        obj.tau.H = reshape(parameters.H.tauH, obj.n, 1);
+        obj.tau.H = parameters.H.tauH;
         obj.H = parameters.H.Ht;
       else
         obj.H = parameters.H;
@@ -364,7 +363,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if isstruct(parameters.c)
         obj = obj.setTimeVarrying(length(parameters.c.tauc) - 1);
         assert(numel(parameters.c.tauc) == obj.n+1);
-        obj.tau.c = reshape(parameters.c.tauc, obj.n+1, 1);
+        obj.tau.c = parameters.c.tauc;
         obj.c = parameters.c.ct;
       elseif size(parameters.c, 2) > 1
         obj = obj.setTimeVarrying(size(parameters.c, 2) - 1);
@@ -381,7 +380,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if isstruct(parameters.R)
         obj = obj.setTimeVarrying(length(parameters.R.tauR) - 1);
         assert(numel(parameters.R.tauR) == obj.n+1);
-        obj.tau.R = reshape(parameters.R.tauR, obj.n+1, 1);
+        obj.tau.R = parameters.R.tauR;
         obj.R = parameters.R.Rt;
       else
         obj.R = parameters.R;
@@ -394,7 +393,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if isstruct(parameters.Q)
         obj = obj.setTimeVarrying(length(parameters.Q.tauQ) - 1);
         assert(numel(parameters.Q.tauQ) == obj.n+1);
-        obj.tau.Q = reshape(parameters.Q.tauQ, obj.n+1, 1);
+        obj.tau.Q = parameters.Q.tauQ;
         obj.Q = parameters.Q.Qt;
       else
         obj.Q = parameters.Q;
@@ -423,7 +422,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.timeInvariant = false;
         obj.n = n;
       else
-        assert(obj.n == n, 'TVP calendar length mismatch.');
+        if obj.n ~= n
+          error('TVP calendar length mismatch.');
+        end
       end
     end
     
