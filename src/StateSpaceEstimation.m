@@ -35,7 +35,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
-    
+
     % Allowable flags in estimation
     flagsAllowed = -1:5;
   end

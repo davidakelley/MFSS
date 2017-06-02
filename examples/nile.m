@@ -2,7 +2,7 @@
 
 % Load data
 data = load('examples\data\dk.mat');
-nile = data.nile';
+nileData = data.nile';
 
 % Set up the state space
 Z = 1; d = 0; H = nan;
@@ -15,7 +15,7 @@ Q0 = 1000;
 ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
 
 % Estimate unknown parameters
-ssE = ss.estimate(nile, ss0);
+ssE = ss.estimate(nileData, ss0);
 
-state = ssE.smooth(nile);
-plot([nile' state'])
+state = ssE.smooth(nileData);
+plot([nileData' state'])

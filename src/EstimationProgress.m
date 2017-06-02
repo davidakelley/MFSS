@@ -252,7 +252,7 @@ classdef EstimationProgress < handle
       % Create plot of current theta
       box(obj.axPt, 'off');
       title(obj.axPt, 'Current Theta Value');
-      xlabel(obj.axPt, sprintf('Varaibles: %d', length(obj.theta0)));
+      xlabel(obj.axPt, sprintf('Parameters: %d', length(obj.theta0)));
       set(obj.plotPt, 'edgecolor', 'none')
       set(obj.axPt, 'xlim', [0,1 + length(obj.theta0)])
       % Initial point outline

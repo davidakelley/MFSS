@@ -13,8 +13,7 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
   
   methods(TestClassSetup)
     function setupOnce(testCase)
-      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
-        struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+      baseDir = fileparts(fileparts(mfilename('fullpath')));
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
 
@@ -129,19 +128,19 @@ classdef mex_multivariate_test < matlab.unittest.TestCase
       ss = testCase.model;
       
       %% Timing
-      ss.useMex(false);
+      ss.useMex = false;
       filter_fn = @() ss.filter(data);
       mTime_filter = timeit(filter_fn, 3);
       
-      ss.useMex(true);
+      ss.useMex = true;
       filter_fn = @() ss.filter(data);
       mexTime_filter = timeit(filter_fn, 3);
       
-      ss.useMex(false);
+      ss.useMex = false;
       smooth_fn = @() ss.smooth(data);
       mTime_smooth = timeit(smooth_fn, 2);
       
-      ss.useMex(true);
+      ss.useMex = true;
       smooth_fn = @() ss.smooth(data);
       mexTime_smooth = timeit(smooth_fn, 2);
 

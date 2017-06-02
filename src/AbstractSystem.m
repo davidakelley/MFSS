@@ -1,27 +1,109 @@
 classdef (Abstract) AbstractSystem
-  % A class of general systems containing measurements and states. 
-    
+  % A class of general systems containing measurements and states.
+  
   % David Kelley, 2016-2017
   
-  properties (SetAccess = protected, Hidden)
-    p               % Number of observed series
-    m               % Number of states
-    g               % Number of shocks
-        
-    timeInvariant   % Indicator for TVP models
-  end
-
-  properties (Hidden)
-    n               % Observed time periods
+  properties (Dependent)
+    % Static Properties
     
-    stationaryStates  % Logical vector for which states are stationary
+    % Indicator for use of compiled functions
+    useMex    
+    
+    % Indicator for use of parallel toolbox
+    useParallel
   end
-
+  
+  properties (SetAccess = protected, Hidden)
+    p % Number of observed series
+    m % Number of states
+    g % Number of shocks
+    
+    timeInvariant % Indicator for TVP models
+  end
+  
+  properties (Hidden)
+    n % Observed time periods
+    
+    stationaryStates % Logical vector for which states are stationary
+  end
+  
   methods
+    %% Constructor
+    % Empty - should do nothing
     function obj = AbstractSystem()
       if nargin == 0
         return
       end
+    end
+  end
+  
+  methods 
+    %% Getter/setter methods for static properties
+    function use = get.useMex(obj)
+      use = obj.getsetGlobalUseMex();
+    end
+    
+    function obj = set.useMex(obj, use)
+      obj.getsetGlobalUseMex(use);
+    end
+    
+    function use = get.useParallel(obj)
+      use = obj.getsetGlobalUseMex();
+    end
+    
+    function obj = set.useParallel(obj, use)
+      obj.getsetGlobalUseMex(use);
+    end
+  end
+  
+  methods (Static, Hidden)
+    %% Method to handle static property
+    function returnVal = getsetGlobalUseMex(newVal)
+      % Static function to mimic a static class property of whether the mex
+      % functions should be used (avoids overhead of checking for them every time)
+      persistent useMex_persistent;
+      
+      % Setter
+      if nargin > 0 && ~isempty(newVal)
+        useMex_persistent = newVal;
+      end
+      
+      % Default setter
+      if isempty(useMex_persistent)
+        % Check mex files exist
+        mexMissing = any([...
+          isempty(which('mfss_mex.filter_uni'));
+          isempty(which('mfss_mex.smoother_uni'))]);
+        if mexMissing
+          useMex_persistent = false;
+          warning('MEX files not found. See .\mex\make.m');
+        else
+          useMex_persistent = true;
+        end
+      end
+      
+      % Getter
+      returnVal = useMex_persistent;
+    end
+    
+    function returnVal = getsetGlobalUseParallel(newVal)
+      % Static function to mimic a static class property of whether the mex
+      % functions should be used (avoids overhead of checking for them every time)
+      persistent useParallel_persistent;
+      
+      % Setter
+      if nargin > 0 && ~isempty(newVal)
+        useParallel_persistent = newVal;
+      end
+      
+      % Default setter
+      if isempty(useParallel_persistent)
+        % Default to not using parallel since its often slower
+        useParallel_persistent = false;
+      end
+      
+      % Getter
+      returnVal = useParallel_persistent;
     end
   end
   
@@ -46,8 +128,8 @@ classdef (Abstract) AbstractSystem
   methods (Static)
     %% General utility functions
     function [Finv, logDetF] = pseudoinv(F, tol)
-      % Returns the pseudo-inverse and log determinent of F 
-      % 
+      % Returns the pseudo-inverse and log determinent of F
+      %
       % [Finv, logDetF] = pseudoinv(F, tol) finds the inverse and log
       % determinent of F. Elements of the SVD of F less than tol are taken as 0.
       
@@ -67,16 +149,16 @@ classdef (Abstract) AbstractSystem
       Finv = PSVD * (DSDV\eye(length(DSDV))) * PSVDinv';
       logDetF = sum(log(diag(DSDV)));
     end
-
+    
     function K = genCommutation(m, n)
       % Generate commutation matrix
-      % 
+      %
       % K = genCommutation(m, n) returns a commutation matrix for an m X n
-      % matrix A such that K * vec(A) = vec(A'). 
+      % matrix A such that K * vec(A) = vec(A').
       
-      % From Magnus & Neudecker (1979) (Definition 3.1): a commutation matrix is 
-      % "a suqare mn-dimensional matrix partitioned into mn sub-matricies of 
-      % order (n, m) such that the ij-th submatrix has a 1 in its ji-th position 
+      % From Magnus & Neudecker (1979) (Definition 3.1): a commutation matrix is
+      % "a suqare mn-dimensional matrix partitioned into mn sub-matricies of
+      % order (n, m) such that the ij-th submatrix has a 1 in its ji-th position
       % and zeros elsewhere."
       if nargin == 1, n = m; end
       

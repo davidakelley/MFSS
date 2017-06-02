@@ -10,8 +10,7 @@ if nargin == 0
   tests = defaultTests;
 end
 
-baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
-  struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+baseDir = fileparts(fileparts(mfilename('fullpath')));
 srcDir = fullfile(baseDir, 'src');
 addpath(srcDir);
 

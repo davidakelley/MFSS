@@ -121,38 +121,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       obj.Q0Private = newQ0;
     end
   end
-  
-  methods (Static)
-    %% Method to mimic static property
-    function returnVal = useMex(newVal)
-      % Static function to mimic a static class property of whether the mex
-      % functions should be used (avoids overhead of checking for them every time)
-      persistent useMex_persistent;
-      
-      % Setter
-      if nargin > 0 && ~isempty(newVal)
-        useMex_persistent = newVal;
-      end
-      
-      % Default setter
-      if isempty(useMex_persistent)
-        % Check mex files exist
-        mexMissing = any([...
-          isempty(which('mfss_mex.filter_uni'));
-          isempty(which('mfss_mex.smoother_uni'))]);
-        if mexMissing
-          useMex_persistent = false;
-          warning('MEX files not found. See .\mex\make.m');
-        else
-          useMex_persistent = true;
-        end
-      end
-      
-      % Getter
-      returnVal = useMex_persistent;
-    end
-  end
-  
+ 
   methods
     %% Constructor
     function obj = AbstractStateSpace(Z, d, H, T, c, R, Q)

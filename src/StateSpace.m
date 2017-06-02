@@ -148,7 +148,11 @@ classdef StateSpace < AbstractStateSpace
         [~, logli, fOut, ftiOut] = obj.filter_detail_m(yUni);      
         gradient = obj.gradient_filter_m(y, GUni, GY, fOut, ftiOut);
       else
-        [logli, gradient, fOut] = obj.gradientFiniteDifferences(y, tm, theta);
+        if obj.useParallel
+          [logli, gradient, fOut] = obj.gradientFiniteDifferences_parallel(y, tm, theta);
+        else
+          [logli, gradient, fOut] = obj.gradientFiniteDifferences(y, tm, theta);
+        end
       end
     end
     
@@ -600,6 +604,44 @@ classdef StateSpace < AbstractStateSpace
             rethrow(ex);
           end
         end
+      end
+      
+      % Handle bad evaluations
+      grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
+    end
+    
+    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, tm, theta)
+      % Compute numeric gradient using central differences
+      [~, ll, fOut] = obj.filter(y);
+      
+      nTheta = tm.nTheta;
+      
+      if obj.numericGradPrec ~= 1
+        % No reason for this other than maintainability
+        error('numericGradPrec = 2 not suported in parallel.')
+      end
+      
+      % Run parallel computation
+      futureResults = repmat(parallel.FevalFuture, [nTheta 2]);
+
+      % Compile likelihoods
+      grad = nan(nTheta, 1);
+      
+      stepSize = 0.5 * obj.delta;
+      for iTheta = 1:nTheta
+        thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
+        ssDown = tm.theta2system(thetaDown);
+        futureResults(iTheta, 1) = parfeval(@ssDown.filter, 2, y);
+        
+        thetaUp = theta + [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
+        ssUp = tm.theta2system(thetaUp);
+        futureResults(iTheta, 2) = parfeval(@ssUp.filter, 2, y);
+      end
+      
+      [~, llOut] = fetchOutputs(futureResults);
+      llGrid = reshape(llOut, size(futureResults));
+      for iTheta = 1:nTheta
+        grad(iTheta) = (llGrid(iTheta,2) - llGrid(iTheta,1)) ./ (2 * stepSize);
       end
       
       % Handle bad evaluations

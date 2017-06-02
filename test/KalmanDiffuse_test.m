@@ -9,8 +9,7 @@ classdef KalmanDiffuse_test < matlab.unittest.TestCase
 
   methods(TestClassSetup)
     function setupOnce(testCase) %#ok<MANU>
-      baseDir =  [subsref(strsplit(mfilename('fullpath'), 'MFSS'), ...
-        struct('type', '{}', 'subs', {{1}})) 'MFSS'];
+      baseDir = fileparts(fileparts(mfilename('fullpath')));
       addpath(baseDir);
     end
   end
