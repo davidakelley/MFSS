@@ -74,6 +74,11 @@ fid = fopen(prjFile, 'w');
 fwrite(fid, prjTextNew);
 fclose(fid);
 
+%% Make sure the path is set correctly
+% Make sure the source files are included
+baseDir = fileparts(buildDir);
+addpath(fullfile(baseDir, 'src'));
+
 %% Create toolbox file
 matlab.addons.toolbox.packageToolbox(...
   fullfile(buildDir, '..', 'toolbox.prj'), ...
