@@ -3,7 +3,7 @@ classdef (Abstract) AbstractSystem
   
   % David Kelley, 2016-2017
   
-  properties (Dependent)
+  properties (Dependent, Hidden)
     % Static Properties
     
     % Indicator for use of compiled functions
@@ -48,11 +48,11 @@ classdef (Abstract) AbstractSystem
     end
     
     function use = get.useParallel(obj)
-      use = obj.getsetGlobalUseMex();
+      use = obj.getsetGlobalUseParallel();
     end
     
     function obj = set.useParallel(obj, use)
-      obj.getsetGlobalUseMex(use);
+      obj.getsetGlobalUseParallel(use);
     end
   end
   

@@ -7,7 +7,7 @@
     <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.5.3</param.version>
+    <param.version>1.5.4</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
     <param.products.name>
       <item>MATLAB</item>
@@ -41,10 +41,13 @@
 
       *.asv</param.exclude.filters>
     <param.examples />
-    <param.demosxml>C:\Users\g1dak02\Documents\MATLAB</param.demosxml>
+    <param.demosxml />
     <param.apps />
     <param.docs>${PROJECT_ROOT}\info.xml</param.docs>
-    <param.matlabpath.excludes />
+    <param.matlabpath.excludes>
+      <item>/examples</item>
+      <item>/test</item>
+    </param.matlabpath.excludes>
     <param.javaclasspath.excludes />
     <unset>
       <param.authnamewatermark />
@@ -54,8 +57,9 @@
       <param.screenshot />
       <param.output />
       <param.platforms />
+      <param.examples />
+      <param.demosxml />
       <param.apps />
-      <param.matlabpath.excludes />
       <param.javaclasspath.excludes />
     </unset>
     <fileset.rootdir>
