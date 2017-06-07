@@ -9,7 +9,7 @@ classdef StateSpace < AbstractStateSpace
   %     - Add filter/smoother weight decompositions
   %     - Add IRF/historical decompositions
   
-  properties
+  properties (Hidden)
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
   end

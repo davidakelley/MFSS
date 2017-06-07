@@ -117,6 +117,7 @@ classdef EstimationProgress < handle
       if ~isempty(ll_XData)
         set(obj.plotVal, 'XData', ll_XData, 'YData', ll_YData);
         obj.axVal.XLim(2) = ll_XData(end);
+        obj.axVal.Title.String = sprintf('Current Log-likelihood: %9.4f', ll_YData(end));
       end
       
       % Plot of state

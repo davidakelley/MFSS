@@ -36,6 +36,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
 
+    % Indicator to use more accurate, slower gradient
+    useInternalNumericGrad = true;
+    
     % Allowable flags in estimation
     flagsAllowed = -1:5;
   end
@@ -108,7 +111,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Estimation restrictions - estimation will be bounded by bounds on
       % parameter matricies passed and non-negative restrictions on variances. 
-%       obj = obj.generateRestrictions(inOpts.LowerBound, inOpts.UpperBound);
+      % obj = obj.generateRestrictions(inOpts.LowerBound, inOpts.UpperBound);
     end
     
     %% Estimation methods
@@ -137,7 +140,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
       outputFcn = @(x, oVals, st) progress.update(x, oVals);
       
       % Run fminunc/fmincon
-      minfunc = @(theta) obj.minimizeFun(theta, y, progress);
       nonlconFn = @obj.nlConstraintFun;
       solverFun = obj.solver;
 
@@ -150,8 +152,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Optimizer options
       optFMinCon = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
-        'SpecifyObjectiveGradient', obj.useAnalyticGrad, ...
-        'UseParallel', false, ...
+        'SpecifyObjectiveGradient', obj.useAnalyticGrad || obj.useInternalNumericGrad, ...
+        'UseParallel', obj.useParallel && ~obj.useInternalNumericGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 1000, ...
@@ -163,8 +165,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
-        'SpecifyObjectiveGradient', obj.useAnalyticGrad, ...
-        'UseParallel', false, ...
+        'SpecifyObjectiveGradient', obj.useAnalyticGrad | obj.useInternalNumericGrad, ...
+        'UseParallel', obj.useParallel && ~obj.useInternalNumericGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 1000, ...
@@ -187,7 +189,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Loop over optimizers 
       loopContinue = true;
-      iter = 0; logli = []; stopestim = false;
+      iter = 0; logli = []; 
       warning off MATLAB:nearlySingularMatrix;
       while loopContinue
         iter = iter + 1;
@@ -198,20 +200,21 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
+            minfunc = @(theta) obj.minimizeFun(theta, y, progress, true);
             [thetaHat, logli, outflag, ~, gradient] = fminunc(...
               minfunc, theta0, optFMinUnc);
           case 'fmincon'
+            minfunc = @(theta) obj.minimizeFun(theta, y, progress, true);
             [thetaHat, logli, outflag, ~, ~, gradient] = fmincon(... 
               minfunc, theta0, [], [], [], [], [], [], nonlconFn, optFMinCon);
           case 'fminsearch'
             tempGrad = obj.useAnalyticGrad;
             obj.useAnalyticGrad = false;
-%             minfunc = @(theta) obj.minimizeFun(theta, y, progress);
+            minfunc = @(theta) obj.minimizeFun(theta, y, progress, false);
 
             [thetaHat, logli, outflag] = fminsearch(...
               minfunc, theta0, optFMinSearch);
             obj.useAnalyticGrad = tempGrad;
-            minfunc = @(theta) obj.minimizeFun(theta, y);
             
             gradient = [];
         end
@@ -260,7 +263,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
-    function [negLogli, gradient] = minimizeFun(obj, theta, y, progress)
+    function [negLogli, gradient] = minimizeFun(obj, theta, y, progress, calcGrad)
       % Get the likelihood of
       ss1 = obj.ThetaMapping.theta2system(theta);
       
@@ -291,9 +294,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
       
       try
-        % Calculate likelihood and gradient
-        [rawLogli, rawGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
-
+        if calcGrad && obj.useInternalNumericGrad
+          % Calculate likelihood and gradient
+          [rawLogli, rawGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
+        else
+          [~, rawLogli, fOut] = ss1.filter(y);
+          rawGradient = [];
+        end
+        
         % Don't plot the diffuse parts of the state because they look odd
         a = fOut.a;
         a(:,1:fOut.dt) = nan;
