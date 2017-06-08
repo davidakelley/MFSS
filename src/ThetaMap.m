@@ -26,7 +26,8 @@ classdef ThetaMap < AbstractSystem
   %   value between 1 and the length of theta, indicating the element of theta
   %   that will be used to construct that element.
   %   - transformations: A cell array of function handles. Each function should
-  %   take a scalar input and return a scalar output.
+  %   take a scalar input and return a scalar output. While not technically
+  %   disallowed, all transformations should be monotonic. 
   %   - derivatives: A cell array of derivatives for each transformation.
   %   - inverses: A cell array of inverses for each transformation.
   %   - transformationIndex: A StateSpace object of integer indexes. Fixed
@@ -751,7 +752,6 @@ classdef ThetaMap < AbstractSystem
         thetaStr{iT} = strjoin(goodStrs, ', ');
       end
     end
-      
   end
   
   methods (Hidden)
@@ -835,6 +835,30 @@ classdef ThetaMap < AbstractSystem
         goodStrs(cellfun(@isempty, goodStrs)) = [];
         outStr{iT} = strjoin(goodStrs, ', ');
       end
+    end
+    
+    function obj = reconstructBoundSystems(obj)
+      % Find what the bounds on the system matricies are given the
+      % transformations inclueded in the ThetaMap. 
+      %
+      % Note that this function assumes all transformations are monotonic.
+      
+      posInfSys = obj.theta2system(Inf([obj.nTheta 1]));
+      negInfSys = obj.theta2system(-Inf([obj.nTheta 1]));
+      
+      lower = negInfSys;
+      upper = negInfSys;
+      
+      for iM = 1:length(lower.systemParam)
+        iMat = lower.systemParam{iM};
+        lower.(iMat) = min(negInfSys.(iMat), posInfSys.(iMat));
+        upper.(iMat) = max(negInfSys.(iMat), posInfSys.(iMat));        
+      end
+      
+      % FIXME: a0 and Q0
+      
+      obj.LowerBound = lower;
+      obj.UpperBound = upper;
     end
   end
   

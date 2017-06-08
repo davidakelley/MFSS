@@ -107,11 +107,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         obj.P0 = inOpts.P0;
       end
       
+      % Add bounds
       obj.ThetaMapping = obj.ThetaMapping.addRestrictions(inOpts.LowerBound, inOpts.UpperBound);
-      
-      % Estimation restrictions - estimation will be bounded by bounds on
-      % parameter matricies passed and non-negative restrictions on variances. 
-      % obj = obj.generateRestrictions(inOpts.LowerBound, inOpts.UpperBound);
     end
     
     %% Estimation methods

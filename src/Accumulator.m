@@ -101,6 +101,9 @@ classdef Accumulator < AbstractSystem
       tmNew = ThetaMap(fixedNew, indexNew, transIndexNew, ...
         transNew, derivNew, invNew, ...
         'explicita0', ~tm.usingDefaulta0, 'explicitP0', ~tm.usingDefaultP0);
+      
+      % Set the bounds matricies that are (probably) messed up
+      tmNew = tmNew.reconstructBoundSystems();
     end
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)
