@@ -166,9 +166,11 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       
       assert(~isempty(obj.tau), 'tau must be set to find lags in the state.');
       
+      eVec = @(size, elem) [false(elem-1, 1); true; false(size-elem, 1)];
+
       criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
         all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
-        all(obj.R(:, :, obj.tau.R(1)) == 0, 2)], 2);
+        all(obj.R(:, :, obj.tau.R(1)) == 0, 2) ~eVec(obj.m, interest)], 2);
       
       nLags = 0;
       positions = [];
