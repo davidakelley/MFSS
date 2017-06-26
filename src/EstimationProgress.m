@@ -38,7 +38,9 @@ classdef EstimationProgress < handle
     
     % Others
     theta0
-    winSize = [725 700];    
+    winSize = [725 700];   
+    
+    m     % State dimension
   end
   
   properties (SetAccess = protected)
@@ -47,10 +49,11 @@ classdef EstimationProgress < handle
   
   methods
     %% Constructor
-    function obj = EstimationProgress(theta0, visible)
+    function obj = EstimationProgress(theta0, visible, m)
 
       % Set up tracking values
       obj.theta0 = theta0;
+      obj.m = m;
       
       maxPossibleIters = 10000;
       obj.thetaHist = nan(maxPossibleIters, length(obj.theta0));
@@ -277,7 +280,7 @@ classdef EstimationProgress < handle
       dropdownX = obj.axA.Position(1) + titleText.Extent(1) + titleText.Extent(3);
       dropdownY = obj.axA.Position(1) + titleText.Extent(2) - titleText.Extent(4);
       obj.stateSelection = uicontrol('Style', 'popupmenu', ...
-        'String', arrayfun(@(x) num2str(x), 1:length(obj.theta0), 'Uniform', false), ...
+        'String', arrayfun(@(x) num2str(x), 1:obj.m, 'Uniform', false), ...
         'Parent', obj.axA.Parent, ...
         'Position', [dropdownX dropdownY 50 20], ...
         'Callback', @(dropdown, ~) obj.plotStateEstimate(dropdown.Value));

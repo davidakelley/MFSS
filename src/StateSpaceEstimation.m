@@ -133,7 +133,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       theta0 = obj.ThetaMapping.system2theta(ss0);
       assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
       
-      progress = EstimationProgress(theta0, obj.diagnosticPlot);
+      progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m);
       outputFcn = @(x, oVals, st) progress.update(x, oVals);
       
       % Run fminunc/fmincon
