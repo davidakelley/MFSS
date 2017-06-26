@@ -123,14 +123,19 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % [ss, flag] = ss.estimate(...) also returns the fmincon flag
                  
       assert(isnumeric(y), 'y must be numeric.');
-      assert(isa(ss0, 'StateSpace'));
+      assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
         'All parameters known. Unable to estimate.');
       
-      % Initialize
-      obj.checkConformingSystem(ss0);
-
-      theta0 = obj.ThetaMapping.system2theta(ss0);
+      % Initialization
+      if isa(ss0, 'StateSpace')
+        obj.checkConformingSystem(ss0);
+        theta0 = obj.ThetaMapping.system2theta(ss0);
+      else
+        theta0 = ss0;
+        validateattributes(theta0, {'numeric'}, ...
+          {'vector', 'numel', obj.ThetaMapping.nTheta}, 'estimate', 'theta0');
+      end
       assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
       
       progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m);

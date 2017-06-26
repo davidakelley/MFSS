@@ -1,9 +1,10 @@
 classdef ThetaMap < AbstractSystem
   % ThetaMap - Mapping from a vector of parameters to a StateSpace 
   %
-  % A vector theta will be used to construct a StateSpace. Each non-fixed scalar
+  % A vector theta will be used to construct a StateSpace. A vector psi will be 
+  % defined element-wise as a function of thetta. Each non-fixed scalar
   % parameter of the StateSpace is allowed to be a function of one element of
-  % the theta vector. Multiple parameter values may be based off of the same
+  % the psi vector. Multiple parameter values may be based off of the same 
   % element of theta.
   %
   % There are two primary uses of a ThetaMap:
@@ -53,14 +54,23 @@ classdef ThetaMap < AbstractSystem
     % StateSpace of indexes of theta that determines parameter values
     index
     
-    % StateSpace of indexes of transformations applied for parameter values
+    % StateSpace of indexes of transformations applied to psi 
     transformationIndex
-    % Cell array of transformations of theta to get parameter values
+    % Cell array of transformations of psi to get parameter values
     transformations
     % Derivatives of transformations
     derivatives
     % Inverses of transformations
     inverses
+    
+    % Psi functions
+    PsiTransformation
+    % Gradient of Psi functions
+    PsiGradient
+    % Inverse of Psi (optional)
+    PsiInverse
+    % Indexes of theta that determine each element of Psi
+    PsiIndexes
     
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
@@ -73,6 +83,9 @@ classdef ThetaMap < AbstractSystem
     
     % Number of elements in theta vector
     nTheta
+    
+    % Number of elements in psi vector
+    nPsi
   end
   
   properties (SetAccess = protected)
@@ -92,6 +105,10 @@ classdef ThetaMap < AbstractSystem
       ThetaMap.validateInputs(fixed, index, transformationIndex, ...
         transformations, derivatives, inverses, opts);
       
+      % Set dimensions
+      obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, opts.explicita0, opts.explicitP0));
+      obj.nPsi = obj.nTheta;
+      
       % Set properties
       obj.fixed = fixed;
       obj.index = index;
@@ -101,13 +118,15 @@ classdef ThetaMap < AbstractSystem
       obj.derivatives = derivatives;
       obj.inverses = inverses;
       
+      obj.PsiTransformation = repmat({@(theta) theta}, [obj.nTheta 1]);
+      obj.PsiGradient = repmat({@(theta) 1}, [obj.nTheta 1]);
+      obj.PsiInverse = repmat({@(psi, inx) psi(inx(1))}, [obj.nTheta 1]);
+      obj.PsiIndexes = num2cell(1:obj.nTheta);
+      
       obj.usingDefaulta0 = ~opts.explicita0;
       obj.usingDefaultP0 = ~opts.explicitP0;
       obj.useAnalyticGrad = opts.useAnalyticGrad;
-      
-      % Set dimensions
-      obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, opts.explicita0, opts.explicitP0));
-      
+
       obj.p = fixed.p;
       obj.m = fixed.m;
       obj.g = fixed.g;
@@ -219,10 +238,12 @@ classdef ThetaMap < AbstractSystem
       knownParams = cell(nParameterMats, 1);
       
       % Construct the new parameter matricies (including initial values)
+      psi = obj.constructPsi(theta);
+      
       for iP = 1:nParameterMats
         iName = obj.fixed.systemParam{iP};
         
-        constructedParamMat = obj.constructParamMat(theta, iName);
+        constructedParamMat = obj.constructParamMat(psi, iName);
         
         if obj.fixed.timeInvariant
           knownParams{iP} = constructedParamMat;
@@ -289,11 +310,11 @@ classdef ThetaMap < AbstractSystem
         indexValues == 0), 'system2theta:UBound', ...
         'System violates upper bound of ThetaMap.');
             
-      % Loop over theta, identify elements determined by each theta element and
-      % compute the inverse of the transformation to get the theta value
-      theta = nan(obj.nTheta, 1);
-      for iTheta = 1:obj.nTheta
-        iIndexes = indexValues == iTheta;
+      % Loop over psi, identify elements determined by each psi element and
+      % compute the inverse of the transformation to get the value
+      psi = nan(obj.nPsi, 1);
+      for iPsi = 1:obj.nPsi
+        iIndexes = indexValues == iPsi;
         nParam = sum(iIndexes);
 
         iParamValues = ssParamValues(iIndexes);
@@ -301,10 +322,18 @@ classdef ThetaMap < AbstractSystem
         
         % Get the optimal theta value for each parameter, make sure they match
         iInverses = obj.inverses(iTransformIndexes);
-        thetaVals = arrayfun(@(x) iInverses{x}(iParamValues(x)), 1:nParam);        
-        assert(all(thetaVals - thetaVals(1) < 1e4 * eps | ~isfinite(thetaVals)), ...
+        psiVals = arrayfun(@(x) iInverses{x}(iParamValues(x)), 1:nParam);        
+        assert(all(psiVals - psiVals(1) < 1e4 * eps | ~isfinite(psiVals)), ...
           'Transformation inverses result in differing values of theta.');
-        theta(iTheta) = thetaVals(1);
+        psi(iPsi) = psiVals(1);
+      end
+      
+      % Loop over theta, construct from psi
+      assert(size(obj.PsiInverse, 1) == obj.nTheta);
+      theta = nan(obj.nTheta, 1);
+      for iTheta = 1:obj.nTheta
+        psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
+        theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
       end
       
     end
@@ -337,6 +366,9 @@ classdef ThetaMap < AbstractSystem
         theta = obj.system2theta(ss);
       end
       
+      psi = obj.constructPsi(theta);
+      GthetaPsi = obj.constructThetaGrad(theta);
+      
       % Construct structure of gradients
       nParameterMats = length(obj.fixed.systemParam);
       structConstructTemp = [obj.fixed.systemParam; cell(1, nParameterMats)];
@@ -345,7 +377,7 @@ classdef ThetaMap < AbstractSystem
       % Construct the new parameter matricies
       for iP = 1:nParameterMats
         iName = obj.fixed.systemParam{iP};
-        G.(iName) = obj.explicitParamGrad(theta, iName);
+        G.(iName) = obj.explicitParamGrad(psi, GthetaPsi, iName);
       end  
     end
     
@@ -372,6 +404,9 @@ classdef ThetaMap < AbstractSystem
         ss = ss.setInvariantTau();
       end
       
+      psi = obj.constructPsi(theta);
+      GthetaPsi = obj.constructThetaGrad(theta);
+            
       % Determine which case we have
       if obj.usingDefaulta0 || obj.usingDefaultP0
         T1 = ss.T(:,:,ss.tau.T(1));
@@ -384,7 +419,7 @@ classdef ThetaMap < AbstractSystem
       
       % Ga0
       if ~obj.usingDefaulta0
-        Ga0 = obj.explicitParamGrad(theta, 'a0');
+        Ga0 = obj.explicitParamGrad(psi, GthetaPsi, 'a0');
       elseif obj.usingDefaulta0 && ~stationaryStateFlag
         % Diffuse case - a0 is always the zero vector and so will not change
         % with any of the theta parameters
@@ -401,7 +436,7 @@ classdef ThetaMap < AbstractSystem
       % GP0
       if ~obj.usingDefaultP0 
         % Need G(P0) = G(R0 * Q0 * R0') = G(Q0) * kron(R0', R0') since G(R0) = 0
-        GQ0 = obj.explicitParamGrad(theta, 'Q0');
+        GQ0 = obj.explicitParamGrad(psi, GthetaPsi, 'Q0');
         GP0 = GQ0 * kron(ss.R0', ss.R0');
       elseif obj.usingDefaultP0 && ~stationaryStateFlag
         % Diffuse case - P0 is always a large diagonal matrix that doesn't
@@ -427,7 +462,7 @@ classdef ThetaMap < AbstractSystem
     end
 
     %% Utility functions
-    function paramGrad = explicitParamGrad(obj, theta, iName)
+    function paramGradTheta = explicitParamGrad(obj, psi, GthetaPsi, iName)
       % Get the gradient of a parameter as a function of theta.
       
       % Allocate: all parameter gradients are 3D (inc. vectors)
@@ -438,10 +473,12 @@ classdef ThetaMap < AbstractSystem
         nSlices = size(obj.index.(iName), 3);
         nSliceElems = numel(obj.index.(iName)(:,:,1));
       end
-      paramGrad = zeros(obj.nTheta, nSliceElems, nSlices);
       
-      % Create gradients of each slice
+      % Create gradients of each slice w.r.t. psi then theta
+      paramGradTheta = zeros(obj.nTheta, nSliceElems, nSlices);
       for iSlice = 1:nSlices
+        paramGradPsi = zeros(obj.nPsi, nSliceElems);
+        
         % Move through each parameter element determined by theta and compute
         % the derivative:
         if any(strcmpi(iName, {'d', 'c'}))
@@ -453,11 +490,15 @@ classdef ThetaMap < AbstractSystem
         for jF = freeValues
           freeIndex = obj.index.(iName)(jF);
           [iRow, jCol] = ind2sub(size(obj.index.(iName)(:,:,1)), jF);
-          jTrans = obj.derivatives{obj.transformationIndex.(iName)(iRow, jCol, iSlice)};
-          jTheta = theta(freeIndex);
-          paramGrad(freeIndex, jF, iSlice) = jTrans(jTheta);
+          jDeriv = obj.derivatives{obj.transformationIndex.(iName)(iRow, jCol, iSlice)};
+          jTheta = psi(freeIndex);
+          paramGradPsi(freeIndex, jF) = jDeriv(jTheta);
         end
+        
+        paramGradTheta(:,:,iSlice) = GthetaPsi * paramGradPsi;
       end
+      
+
       
     end
     
@@ -556,20 +597,22 @@ classdef ThetaMap < AbstractSystem
     function obj = validateThetaMap(obj)
       % Verify that the ThetaMap is valid after user modifications. 
       
-      % Minimize the size of theta needed after edits have been made to index:
-      % If the user changes an element to be a function of a different theta
-      % value, remove the old theta value - effectively shift all indexes down 
-      % by 1.
-      obj.index = ThetaMap.eliminateUnusedIndexes(obj.index, ...
+      % Minimize the size of theta and psi needed after edits have been made to 
+      % index: If the user changes an element to be a function of a different 
+      % theta value, remove the old theta value - effectively shift all indexes 
+      % down by 1.
+      [obj.index, deletedTheta] = ThetaMap.eliminateUnusedIndexes(obj.index, ...
         ~obj.usingDefaulta0, ~obj.usingDefaultP0);
+      obj = obj.compressTheta(deletedTheta);
 
-      % Reset nTheta if we've added/removed elements
-      obj.nTheta = max(ThetaMap.vectorizeStateSpace(obj.index, ...
+      % Reset nTheta and nPsi if we've added/removed elements
+      obj.nTheta = max(cellfun(@max, obj.PsiIndexes));
+      obj.nPsi = max(ThetaMap.vectorizeStateSpace(obj.index, ...
         ~obj.usingDefaulta0, ~obj.usingDefaultP0));
-            
+      
       % Remove duplicate and unused transformations
       obj = obj.compressTransformations();      
-
+      
       % Make sure the lower bound is actually below the upper bound and
       % other error checking?
       assert(all(ThetaMap.vectorizeStateSpace(obj.LowerBound, ...
@@ -577,6 +620,25 @@ classdef ThetaMap < AbstractSystem
         ThetaMap.vectorizeStateSpace(obj.UpperBound, ...
         ~obj.usingDefaulta0, ~obj.usingDefaultP0)), ...
         'Elements of LowerBound are greater than UpperBound.');
+    end
+    
+    function obj = compressTheta(obj, deletedTheta)
+      % Remove unused elements of theta
+      
+      % Delete unused index elements, decrement those we're still keeping if
+      % we're deleting indexes below them.
+      deletedIndexes = obj.PsiIndexes(deletedTheta);
+      obj.PsiIndexes(deletedTheta) = [];
+      for iPsi = 1:length(obj.PsiIndexes)
+        indexSubtract = arrayfun(@(x) sum(x > deletedTheta), obj.PsiIndexes{iPsi});
+        obj.PsiIndexes{iPsi} = obj.PsiIndexes{iPsi} - indexSubtract;
+      end
+      
+      % Delete unused transformations and gradients
+      obj.PsiTransformation(deletedTheta) = [];
+      obj.PsiGradient(deletedTheta) = [];
+      
+      obj.PsiInverse(unique([deletedIndexes{:}])) = [];
     end
     
     function obj = compressTransformations(obj)
@@ -755,7 +817,16 @@ classdef ThetaMap < AbstractSystem
   end
   
   methods (Hidden)
-    function constructed = constructParamMat(obj, theta, matName)
+    function psi = constructPsi(obj, theta)
+      % Create psi as a function of theta
+      
+      psi = nan(obj.nPsi, 1);
+      for iPsi = 1:obj.nPsi
+        psi(iPsi) = obj.PsiTransformation{iPsi}(theta(obj.PsiIndexes{iPsi}));        
+      end      
+    end
+    
+    function constructed = constructParamMat(obj, psi, matName)
       % Create parameter value matrix from fixed and varried values
       
       % Get fixed values
@@ -771,10 +842,20 @@ classdef ThetaMap < AbstractSystem
       
       for jF = freeValues'
         jTrans = obj.transformations{obj.transformationIndex.(matName)(jF)};
-        jTheta = theta(obj.index.(matName)(jF));
-        constructed(jF) = jTrans(jTheta);
+        jPsi = psi(obj.index.(matName)(jF));
+        constructed(jF) = jTrans(jPsi);
       end
       
+    end
+    
+    function GthetaPsi = constructThetaGrad(obj, theta)
+      % Construct G_{theta}(psi)
+      
+      GthetaPsi = zeros(obj.nTheta, obj.nPsi);
+      for iPsi = 1:obj.nPsi
+        psiInx = obj.PsiIndexes{iPsi};
+        GthetaPsi(psiInx, iPsi) = obj.PsiGradient{iPsi}(theta(psiInx));
+      end
     end
     
     function [newTrans, newDeriv, newInver, transInx, newLBmat, newUBmat] = ...
@@ -926,8 +1007,7 @@ classdef ThetaMap < AbstractSystem
       end
       
       possibleParamNames = [indexSS.systemParam, {'a0', 'Q0'}];
-      paramNames = possibleParamNames(...
-        [true(1,7) explicita0 explicitP0]);
+      paramNames = possibleParamNames([true(1,7) explicita0 explicitP0]);
  
       if ~isempty(missingInx)
         for iP = 1:length(paramNames)
@@ -946,7 +1026,7 @@ classdef ThetaMap < AbstractSystem
       
       assert(newMax == max(newVecIndex));
       assert(isempty(setdiff(1:newMax, newVecIndex)), ...
-        'Development error. Index cannot skip elements of theta.');
+        'Development error. Index cannot skip elements of psi.');
     end
     
     function index = IndexStateSpace(ss)
@@ -1142,14 +1222,14 @@ classdef ThetaMap < AbstractSystem
       % Vectorize all parameters of the state space
       % 
       % Arguements: 
-      %     ss : StateSpace
-      %     explicita0 (boolean) : indicates if a0 is explicit or a function of
-      %     the state parameters
-      %     explicitP0 (boolean) : indicates if P0 is explicit or a function of
-      %     the state parameters
+      %   ss : StateSpace
+      %   explicita0 (boolean) : indicates if a0 is explicit or a function of
+      %   the state parameters
+      %   explicitP0 (boolean) : indicates if P0 is explicit or a function of
+      %   the state parameters
       %
       % Returns: 
-      %     vecParam : the vectorized parameters
+      %   vecParam : the vectorized parameters
       
       param = ss.parameters;
       if ~explicita0

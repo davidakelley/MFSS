@@ -146,7 +146,7 @@ classdef gradient_test < matlab.unittest.TestCase
       G = tm.parameterGradients(theta);
 
       ss = ss.setDefaultInitial();
-      Ga0analytic = tm.initialValuesGradients(ss, G);
+      Ga0analytic = tm.initialValuesGradients(ss, G, theta);
       
       % Compute numeric gradient by adding a small number to theta and remaking
       % the system, then computing the initial state.
@@ -177,7 +177,7 @@ classdef gradient_test < matlab.unittest.TestCase
       G = tm.parameterGradients(theta);
       
       ss = ss.setDefaultInitial();
-      [~, GP0analytic] = tm.initialValuesGradients(ss, G);
+      [~, GP0analytic] = tm.initialValuesGradients(ss, G, theta);
       
       % Compute numeric gradient by adding a small number to theta and remaking
       % the system, then computing the initial state.
@@ -208,7 +208,7 @@ classdef gradient_test < matlab.unittest.TestCase
       G = tm.parameterGradients(theta);
       
       ss = ss.setDefaultInitial();
-      [Ga0, GP0] = tm.initialValuesGradients(ss, G);
+      [Ga0, GP0] = tm.initialValuesGradients(ss, G, theta);
       
       testCase.verifyEqual(Ga0, zeros(size(Ga0)));
       testCase.verifyEqual(GP0, zeros(size(GP0)));
