@@ -72,6 +72,9 @@ classdef ThetaMap < AbstractSystem
     % Indexes of theta that determine each element of Psi
     PsiIndexes
     
+    thetaLowerBound
+    thetaUpperBound
+    
     % Indicator for use of analytic gradient
     useAnalyticGrad = true;
   end
@@ -134,6 +137,9 @@ classdef ThetaMap < AbstractSystem
       obj.timeInvariant = fixed.timeInvariant;
       
       % Initialize bounds
+      obj.thetaLowerBound = -Inf(obj.nTheta, 1);
+      obj.thetaUpperBound = Inf(obj.nTheta, 1);
+      
       ssLB = StateSpace.setAllParameters(fixed, -Inf);
       ssUB = StateSpace.setAllParameters(fixed, Inf);
       obj.LowerBound = ssLB;
@@ -265,7 +271,7 @@ classdef ThetaMap < AbstractSystem
       if obj.usingDefaulta0
         a0 = [];
       else
-        a0 = obj.constructParamMat(theta, 'a0');
+        a0 = obj.constructParamMat(psi, 'a0');
       end
       
       if obj.usingDefaultP0
@@ -273,7 +279,7 @@ classdef ThetaMap < AbstractSystem
       else
         A0 = obj.fixed.A0;
         R0 = obj.fixed.R0;
-        Q0 = obj.constructParamMat(theta, 'Q0');
+        Q0 = obj.constructParamMat(psi, 'Q0');
         P0 = R0 * Q0 * R0';
         P0(A0 * A0' == 1) = Inf;
       end
@@ -330,10 +336,13 @@ classdef ThetaMap < AbstractSystem
       
       % Loop over theta, construct from psi
       assert(size(obj.PsiInverse, 1) == obj.nTheta);
+      
+      [~, ~, thetaInverses] = obj.getThetaTransformations();
       theta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
         psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
-        theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
+        transformedTheta = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
+        theta(iTheta) = thetaInverses{iTheta}(transformedTheta);
       end
       
     end
@@ -610,6 +619,16 @@ classdef ThetaMap < AbstractSystem
       obj.nPsi = max(ThetaMap.vectorizeStateSpace(obj.index, ...
         ~obj.usingDefaulta0, ~obj.usingDefaultP0));
       
+      % Make sure the theta bounds are big enough
+      if size(obj.thetaLowerBound, 1) < obj.nTheta
+        obj.thetaLowerBound = [obj.thetaLowerBound; ...
+          -Inf(obj.nTheta - size(obj.thetaLowerBound, 1), 1)];
+      end  
+      if size(obj.thetaUpperBound, 1) < obj.nTheta
+        obj.thetaUpperBound = [obj.thetaUpperBound; ...
+          Inf(obj.nTheta - size(obj.thetaUpperBound, 1), 1)];
+      end
+      
       % Remove duplicate and unused transformations
       obj = obj.compressTransformations();      
       
@@ -639,6 +658,10 @@ classdef ThetaMap < AbstractSystem
       obj.PsiGradient(deletedTheta) = [];
       
       obj.PsiInverse(unique([deletedIndexes{:}])) = [];
+      
+      % Delete unused parts of theta bounds
+      obj.thetaLowerBound(deletedTheta) = [];
+      obj.thetaUpperBound(deletedTheta) = [];
     end
     
     function obj = compressTransformations(obj)
@@ -817,12 +840,32 @@ classdef ThetaMap < AbstractSystem
   end
   
   methods (Hidden)
+    function transformedTheta = transformTheta(obj, theta)
+      % Create restricted version of theta
+      trans = obj.getThetaTransformations();
+      
+      transformedTheta = nan(size(obj.nTheta, 1));
+      for iTheta = 1:obj.nTheta
+        transformedTheta(iTheta) = trans{iTheta}(theta(iTheta));
+      end
+    end
+    
+    function untransformedTheta = invertThetaTransform(obj, theta)
+      [~, ~, thetaInverses] = obj.getThetaTransformations();
+      untransformedTheta = nan(obj.nTheta, 1);
+      for iTheta = 1:obj.nTheta
+        untransformedTheta(iTheta) = thetaInverses{iTheta}(theta(iTheta));
+      end
+    end
+
     function psi = constructPsi(obj, theta)
       % Create psi as a function of theta
       
+      transformedTheta = obj.transformTheta(theta);
+      
       psi = nan(obj.nPsi, 1);
       for iPsi = 1:obj.nPsi
-        psi(iPsi) = obj.PsiTransformation{iPsi}(theta(obj.PsiIndexes{iPsi}));        
+        psi(iPsi) = obj.PsiTransformation{iPsi}(transformedTheta(obj.PsiIndexes{iPsi}));        
       end      
     end
     
@@ -851,10 +894,27 @@ classdef ThetaMap < AbstractSystem
     function GthetaPsi = constructThetaGrad(obj, theta)
       % Construct G_{theta}(psi)
       
+      [~, thetaDeriv] = obj.getThetaTransformations();
+      GtransformedTheta = zeros(obj.nTheta);
+      for iTheta = 1:obj.nTheta
+        GtransformedTheta(iTheta, iTheta) = thetaDeriv{iTheta}(theta(iTheta));
+      end
+      
       GthetaPsi = zeros(obj.nTheta, obj.nPsi);
       for iPsi = 1:obj.nPsi
         psiInx = obj.PsiIndexes{iPsi};
-        GthetaPsi(psiInx, iPsi) = obj.PsiGradient{iPsi}(theta(psiInx));
+        GthetaPsi(psiInx, iPsi) = ...
+          GtransformedTheta(psiInx, psiInx) * obj.PsiGradient{iPsi}(theta(psiInx));
+      end
+    end
+    
+    function [thetaTrans, thetaDeriv, thetaInv] = getThetaTransformations(obj)
+      thetaTrans = cell(obj.nTheta, 1);
+      thetaDeriv= cell(obj.nTheta, 1);
+      thetaInv = cell(obj.nTheta, 1);
+      for iTheta = 1:obj.nTheta
+        [thetaTrans{iTheta}, thetaDeriv{iTheta}, thetaInv{iTheta}] = obj.boundedTransform(...
+          obj.thetaLowerBound(iTheta), obj.thetaUpperBound(iTheta));
       end
     end
     
