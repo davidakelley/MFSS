@@ -99,8 +99,8 @@ ssE.ThetaMapping.PsiGradient{nPsi+3} = @(theta) [-sin(theta(2)), -theta(1) * cos
 %
 % Note that if we generated initial values for the theta vector instead of the
 % state space parameters, this step would be unnecessary.
-ssE.ThetaMapping.PsiInverse{nTheta+1} = @(psi, inx) atan(psi(inx(1)) ./ psi(inx(2)));
-ssE.ThetaMapping.PsiInverse{nTheta+2} = @(psi, inx) sqrt(psi(inx(1)).^2 + psi(inx(2)).^2);
+ssE.ThetaMapping.PsiInverse{nTheta+1} = @(psi, inx) sqrt(psi(inx(1)).^2 + psi(inx(2)).^2);
+ssE.ThetaMapping.PsiInverse{nTheta+2} = @(psi, inx) atan(psi(inx(2)) ./ psi(inx(1)));
 
 % Assign the elements of psi to the state space parameters. We could also modify
 % the transofrmation performed on the elements of psi at this point but this

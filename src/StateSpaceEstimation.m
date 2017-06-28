@@ -291,10 +291,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
         return
       end
       
-      if max(abs(ss1Vectorized)) > 1e15
-        % keyboard;
-      end
-      
       try
         if calcGrad && obj.useInternalNumericGrad
           % Calculate likelihood and gradient
