@@ -139,7 +139,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
       
       progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m);
-      outputFcn = @(x, oVals, st) progress.update(x, oVals);
+      outputFcn = @(thetaU, oVals, st) ...
+        progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
+      
+      theta0U = obj.ThetaMapping.unrestrictTheta(theta0);
       
       % Run fminunc/fmincon
       nonlconFn = @obj.nlConstraintFun;
@@ -202,20 +205,20 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
-            minfunc = @(theta) obj.minimizeFun(theta, y, progress, true);
-            [thetaHat, logli, outflag, ~, gradient] = fminunc(...
-              minfunc, theta0, optFMinUnc);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, true);
+            [thetaUHat, logli, outflag, ~, gradient] = fminunc(...
+              minfunc, theta0U, optFMinUnc);
           case 'fmincon'
-            minfunc = @(theta) obj.minimizeFun(theta, y, progress, true);
-            [thetaHat, logli, outflag, ~, ~, gradient] = fmincon(... 
-              minfunc, theta0, [], [], [], [], [], [], nonlconFn, optFMinCon);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, true);
+            [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(... 
+              minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
           case 'fminsearch'
             tempGrad = obj.useAnalyticGrad;
             obj.useAnalyticGrad = false;
-            minfunc = @(theta) obj.minimizeFun(theta, y, progress, false);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, false);
 
-            [thetaHat, logli, outflag] = fminsearch(...
-              minfunc, theta0, optFMinSearch);
+            [thetaUHat, logli, outflag] = fminsearch(...
+              minfunc, theta0U, optFMinSearch);
             obj.useAnalyticGrad = tempGrad;
             
             gradient = [];
@@ -236,20 +239,22 @@ classdef StateSpaceEstimation < AbstractStateSpace
             'Returning higher likelihood solution.'], logli - logli0);
           diagnostic = progress.diagnostics();
 
-          thetaHat = diagnostic.thetaHist(find(-diagnostic.likelihoodHist == logli0, 1, 'last'), :)';
-          assert(~isempty(thetaHat));
+          thetaUHat = obj.ThetaMapping.unrestrictTheta(diagnostic.thetaHist(...
+            find(-diagnostic.likelihoodHist == logli0, 1, 'last'), :)');
+          assert(~isempty(thetaUHat));
           logli = logli0;
           gradient = [];
           loopContinue = false;
         end
         
-        assert(~any(isnan(thetaHat)), 'Estimation Error');
+        assert(~any(isnan(thetaUHat)), 'Estimation Error');
         
-        theta0 = thetaHat;
+        theta0U = thetaUHat;
       end
       warning on MATLAB:nearlySingularMatrix;
   
       % Save estimated system to current object
+      thetaHat = obj.ThetaMapping.restrictTheta(thetaUHat);
       ss_out = obj.ThetaMapping.theta2system(thetaHat);
       
       % Run smoother, plot smoothed state
@@ -265,8 +270,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
-    function [negLogli, gradient] = minimizeFun(obj, theta, y, progress, calcGrad)
+    function [negLogli, gradient] = minimizeFun(obj, thetaU, y, progress, calcGrad)
       % Get the likelihood of
+      theta = obj.ThetaMapping.restrictTheta(thetaU);
       ss1 = obj.ThetaMapping.theta2system(theta);
       
       if any(diag(ss1.H) < 0)
@@ -274,9 +280,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
       
       % Really enforce constraints
-      if any(obj.nlConstraintFun(theta) > 0)
+      if any(obj.nlConstraintFun(thetaU) > 0)
         % warning('Constraint violated in solver.');
-        negLogli = 1e30 * max(obj.nlConstraintFun(theta));
+        negLogli = 1e30 * max(obj.nlConstraintFun(thetaU));
         gradient = nan(size(theta));
         return
       end
@@ -294,7 +300,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
       try
         if calcGrad && obj.useInternalNumericGrad
           % Calculate likelihood and gradient
-          [rawLogli, rawGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
+          [rawLogli, thetaGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
+          
+          GthetaUtheta = obj.ThetaMapping.thetaUthetaGrad(thetaU);
+          rawGradient = GthetaUtheta * thetaGradient;
         else
           [~, rawLogli, fOut] = ss1.filter(y);
           rawGradient = [];
@@ -322,12 +331,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
       gradient = -rawGradient;
     end
     
-    function [cx, ceqx, deltaCX, deltaCeqX] = nlConstraintFun(obj, theta)
+    function [cx, ceqx, deltaCX, deltaCeqX] = nlConstraintFun(obj, thetaU)
       % Constraints of the form c(x) <= 0 and ceq(x) = 0.
       scale = 1e6;
       vec = @(M) reshape(M, [], 1);
       
       % Return the negative determinants in cx
+      theta = obj.ThetaMapping.restrictTheta(thetaU);
       ss1 = obj.ThetaMapping.theta2system(theta);
       % cx = scale * -[det(ss1.H) det(ss1.Q)]';
       cx = []; % Removed H, Q dets on 1/25

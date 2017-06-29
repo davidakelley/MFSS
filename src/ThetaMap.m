@@ -41,8 +41,6 @@ classdef ThetaMap < AbstractSystem
   %
   % TODO (1/17/17)
   % ---------------
-  %   - Optional: Allow inverses to be passed empty and do the line-search 
-  %     to find the numeric inverse. 
   %   - Write documentation on initial values derivation
   
   properties 
@@ -337,14 +335,11 @@ classdef ThetaMap < AbstractSystem
       % Loop over theta, construct from psi
       assert(size(obj.PsiInverse, 1) == obj.nTheta);
       
-      [~, ~, thetaInverses] = obj.getThetaTransformations();
       theta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
         psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
-        transformedTheta = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
-        theta(iTheta) = thetaInverses{iTheta}(transformedTheta);
+        theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
       end
-      
     end
     
     %% Gradient functions
@@ -376,7 +371,7 @@ classdef ThetaMap < AbstractSystem
       end
       
       psi = obj.constructPsi(theta);
-      GthetaPsi = obj.constructThetaGrad(theta);
+      GthetaPsi = obj.thetaPsiGrad(theta);
       
       % Construct structure of gradients
       nParameterMats = length(obj.fixed.systemParam);
@@ -414,7 +409,7 @@ classdef ThetaMap < AbstractSystem
       end
       
       psi = obj.constructPsi(theta);
-      GthetaPsi = obj.constructThetaGrad(theta);
+      GthetaPsi = obj.thetaPsiGrad(theta);
             
       % Determine which case we have
       if obj.usingDefaulta0 || obj.usingDefaultP0
@@ -470,6 +465,35 @@ classdef ThetaMap < AbstractSystem
       end
     end
 
+    %% Theta restrictions
+    function transformedTheta = restrictTheta(obj, theta)
+      % Create restricted version of theta
+      trans = obj.getThetaTransformations();
+      
+      transformedTheta = nan(obj.nTheta, 1);
+      for iTheta = 1:obj.nTheta
+        transformedTheta(iTheta) = trans{iTheta}(theta(iTheta));
+      end
+    end
+    
+    function untransformedTheta = unrestrictTheta(obj, theta)
+      [~, ~, thetaInverses] = obj.getThetaTransformations();
+      untransformedTheta = nan(obj.nTheta, 1);
+      for iTheta = 1:obj.nTheta
+        untransformedTheta(iTheta) = thetaInverses{iTheta}(theta(iTheta));
+      end
+    end
+    
+    function GtransformedTheta = thetaUthetaGrad(obj, thetaU)
+      % Construct G_{theta^U}(theta)
+      
+      [~, thetaUDeriv] = obj.getThetaTransformations();
+      GtransformedTheta = zeros(obj.nTheta);
+      for iTheta = 1:obj.nTheta
+        GtransformedTheta(iTheta, iTheta) = thetaUDeriv{iTheta}(thetaU(iTheta));
+      end      
+    end
+    
     %% Utility functions
     function paramGradTheta = explicitParamGrad(obj, psi, GthetaPsi, iName)
       % Get the gradient of a parameter as a function of theta.
@@ -840,33 +864,23 @@ classdef ThetaMap < AbstractSystem
   end
   
   methods (Hidden)
-    function transformedTheta = transformTheta(obj, theta)
-      % Create restricted version of theta
-      trans = obj.getThetaTransformations();
-      
-      transformedTheta = nan(size(obj.nTheta, 1));
-      for iTheta = 1:obj.nTheta
-        transformedTheta(iTheta) = trans{iTheta}(theta(iTheta));
-      end
-    end
-    
-    function untransformedTheta = invertThetaTransform(obj, theta)
-      [~, ~, thetaInverses] = obj.getThetaTransformations();
-      untransformedTheta = nan(obj.nTheta, 1);
-      for iTheta = 1:obj.nTheta
-        untransformedTheta(iTheta) = thetaInverses{iTheta}(theta(iTheta));
-      end
-    end
-
     function psi = constructPsi(obj, theta)
       % Create psi as a function of theta
       
-      transformedTheta = obj.transformTheta(theta);
-      
       psi = nan(obj.nPsi, 1);
       for iPsi = 1:obj.nPsi
-        psi(iPsi) = obj.PsiTransformation{iPsi}(transformedTheta(obj.PsiIndexes{iPsi}));        
+        psi(iPsi) = obj.PsiTransformation{iPsi}(theta(obj.PsiIndexes{iPsi}));        
       end      
+    end
+    
+    function Gpsi = thetaPsiGrad(obj, theta)
+      % Construct G_{theta}(psi)
+
+      Gpsi = zeros(obj.nTheta, obj.nPsi);
+      for iPsi = 1:obj.nPsi
+        psiInx = obj.PsiIndexes{iPsi};
+        Gpsi(psiInx, iPsi) = obj.PsiGradient{iPsi}(theta(psiInx));
+      end
     end
     
     function constructed = constructParamMat(obj, psi, matName)
@@ -889,23 +903,6 @@ classdef ThetaMap < AbstractSystem
         constructed(jF) = jTrans(jPsi);
       end
       
-    end
-    
-    function GthetaPsi = constructThetaGrad(obj, theta)
-      % Construct G_{theta}(psi)
-      
-      [~, thetaDeriv] = obj.getThetaTransformations();
-      GtransformedTheta = zeros(obj.nTheta);
-      for iTheta = 1:obj.nTheta
-        GtransformedTheta(iTheta, iTheta) = thetaDeriv{iTheta}(theta(iTheta));
-      end
-      
-      GthetaPsi = zeros(obj.nTheta, obj.nPsi);
-      for iPsi = 1:obj.nPsi
-        psiInx = obj.PsiIndexes{iPsi};
-        GthetaPsi(psiInx, iPsi) = ...
-          GtransformedTheta(psiInx, psiInx) * obj.PsiGradient{iPsi}(theta(psiInx));
-      end
     end
     
     function [thetaTrans, thetaDeriv, thetaInv] = getThetaTransformations(obj)
