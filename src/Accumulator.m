@@ -742,7 +742,7 @@ classdef Accumulator < AbstractSystem
       newD = Accumulator.composeLinearFunc(oldD, A, 0);
       
       % "Undo" the linear transformation with its inverse
-      newI = Accumulator.composeLinearFunc(oldI, 1/A, -B/A);
+      newI = @(y) oldI((y - B) ./ A);
     end
     
     function newFunc = composeLinearFunc(func, A, B)
