@@ -170,7 +170,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
-        'SpecifyObjectiveGradient', obj.useAnalyticGrad | obj.useInternalNumericGrad, ...
+        'SpecifyObjectiveGradient', obj.useAnalyticGrad || obj.useInternalNumericGrad, ...
         'UseParallel', obj.useParallel && ~obj.useInternalNumericGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
@@ -297,16 +297,25 @@ classdef StateSpaceEstimation < AbstractStateSpace
         return
       end
       
+      if calcGrad && nargout == 1
+        warning('Calculating unused gradient!');
+      end
+      
       try
-        if calcGrad && obj.useInternalNumericGrad
-          % Calculate likelihood and gradient
+        if calcGrad && nargout > 1
+          progress.totalEvaluations = progress.totalEvaluations + ...
+            1 + (2 * obj.numericGradPrec * obj.ThetaMapping.nTheta * obj.useInternalNumericGrad);
+
+           % Calculate likelihood and gradient
           [rawLogli, thetaGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
-          
+
           GthetaUtheta = obj.ThetaMapping.thetaUthetaGrad(thetaU);
           rawGradient = GthetaUtheta * thetaGradient;
         else
+          progress.totalEvaluations = progress.totalEvaluations + 1;
+
           [~, rawLogli, fOut] = ss1.filter(y);
-          rawGradient = [];
+          rawGradient = [];          
         end
         
         % Don't plot the diffuse parts of the state because they look odd

@@ -22,7 +22,8 @@ classdef EstimationProgress < handle
     likelihoodHist
     solverHist
     
-    nanIterations = 0;
+    totalEvaluations = 0;
+    nanIterations = 0;    
     
     % Figure components
     figHandle
@@ -34,6 +35,7 @@ classdef EstimationProgress < handle
     plotState
     stateSelection 
     
+    totalEvalText
     nanItersText
     
     % Others
@@ -126,7 +128,8 @@ classdef EstimationProgress < handle
       % Plot of state
       obj.plotStateEstimate(obj.stateSelection.Value);
       
-      % Update string of bad iterations
+      % Update string of iterations
+      obj.totalEvalText.String = obj.getTotalEvalsString();
       obj.nanItersText.String = obj.getNanItersString();
       
       % Draw plot
@@ -232,10 +235,17 @@ classdef EstimationProgress < handle
       obj.plotState = plot(obj.axA, 0, 0, 'b');
       
       % Create textbox
+      obj.totalEvalText = uicontrol('Style', 'text', ...
+        'String', obj.getTotalEvalsString(), ...
+        'Position', [newwin.Position(3)-200 15 200 25], ...
+        'BackgroundColor', ones(1,3), ...
+        'HorizontalAlignment', 'left', ...
+        'Parent', newwin);
       obj.nanItersText = uicontrol('Style', 'text', ...
         'String', obj.getNanItersString(), ...
         'Position', [newwin.Position(3)-200 0 200 25], ...
         'BackgroundColor', ones(1,3), ...
+        'HorizontalAlignment', 'left', ...
         'Parent', newwin);
         
       function buttonStop(~,~)
@@ -288,8 +298,12 @@ classdef EstimationProgress < handle
     end    
     
     %% Utility getters
+    function strOut = getTotalEvalsString(obj)
+      strOut = sprintf('Total likelihood evaulations: %d', obj.totalEvaluations);
+    end
+    
     function strOut = getNanItersString(obj)
-       strOut = sprintf('Bad likelihood evaulations: %d', obj.nanIterations);
+      strOut = sprintf('Bad likelihood evaulations: %d', obj.nanIterations);
     end
     
     function currentColor = getCurrentColor(obj)
