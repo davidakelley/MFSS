@@ -102,8 +102,16 @@ classdef Accumulator < AbstractSystem
         transNew, derivNew, invNew, ...
         'explicita0', ~tm.usingDefaulta0, 'explicitP0', ~tm.usingDefaultP0);
       
+      % The new ThetaMap should have the same theta -> psi properties as the old
+      tmNew.PsiTransformation = tm.PsiTransformation;
+      tmNew.PsiGradient = tm.PsiGradient;
+      tmNew.PsiInverse = tm.PsiInverse;
+      tmNew.PsiIndexes = tm.PsiIndexes;
+      % Have to use internal ThetaMap method to set nTheta
+      tmNew = tmNew.validateThetaMap();
+      
       % Set the bounds matricies that are (probably) messed up
-      tmNew = tmNew.reconstructBoundSystems();
+      tmNew = tmNew.reconstructBoundSystems();      
     end
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)
