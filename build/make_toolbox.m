@@ -62,7 +62,7 @@ docs_status = compile_docs;
 if docs_status == 0
   fprintf('Successfully compiled documentation.\n');
 else
-  error('Error in compiling documentation. Run ''make html'' in the docs folder.');
+  disp('Error in compiling documentation. Run ''make html'' in the docs folder.');
 end
 
 %% Iterate version number in prj file
