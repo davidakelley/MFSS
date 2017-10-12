@@ -1276,6 +1276,9 @@ classdef StateSpace < AbstractStateSpace
       alphaTweights = zeros(obj.m, obj.p, obj.n, length(decompPeriods)); 
       alphaTconstant = zeros(obj.m, length(decompPeriods)); 
       
+      % Add N_{t+1} so the recursion works later
+      sOut.N(:,:,end+1) = 0;
+      
       eyeP = eye(obj.p);
       genF = @(ind, iT) obj.Z(ind,:,obj.tau.Z(iT)) * fOut.P(:,:,iT) * obj.Z(ind,:,obj.tau.Z(iT))' ...
         + obj.H(ind,ind,obj.tau.H(iT));
