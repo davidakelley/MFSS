@@ -156,6 +156,49 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
+    function [dataDecomp, paramContrib] = decompose_filtered(obj, y, decompPeriods)
+      % Decompose the smoothed states by data contributions
+      %
+      % Output ordered by (state, observation, contributingPeriod, effectPeriod)
+      
+      [obj, y] = obj.prepareFilter(y);
+
+      if nargin < 3
+        decompPeriods = 1:obj.n+1;
+      end
+      
+      [a, ~, fOut] = obj.filter(y);
+      [omega, omegac, omegad, omegaa0] = obj.filter_weights(y, fOut, decompPeriods);
+      
+      % Apply weights to data
+      cleanY = y;
+      cleanY(isnan(y)) = 0;
+      
+      nDecomp = length(decompPeriods);
+      dataDecomp = zeros(obj.m, obj.p, obj.n, nDecomp);
+      % Loop over periods effected
+      for iPer = 1:nDecomp
+        % Loop over contributing periods
+        for jT = 1:iPer-1
+          dataDecomp(:,:,jT,iPer) = omega(:,:,jT,iPer) ...
+            .* repmat(cleanY(:, jT)', [obj.m, 1]);
+        end
+      end
+      
+      paramContrib = omegac + omegad + omegaa0;
+      
+      % Weights come out ordered (state, observation, origin, effect) so we need
+      % to collapse the 2nd and 3rd dimensions. 
+      dataContrib = reshape(sum(sum(dataDecomp, 2), 3), [obj.m, nDecomp]);
+      % dataContrib = squeeze(sum(sum(dataDecomp, 2), 3));
+      % if obj.m == 1
+      %   dataContrib = dataContrib';
+      % end
+      a_test = dataContrib + paramContrib;
+      err = a(:,decompPeriods) - a_test;
+      assert(max(max(abs(err))) < 1e-8, 'Did not recover data from decomposition.');
+    end
+    
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
       % Decompose the smoothed states by data contributions
       %
@@ -1266,6 +1309,76 @@ classdef StateSpace < AbstractStateSpace
       gradient = -sum(sum(grad, 3), 2);
     end
     
+    function [omega, omegac, omegad, omegaa0] = filter_weights(obj, y, fOut, decompPeriods)
+      % Generate weights to decompose the filtered state. 
+      %
+      % The outputs of this function should satisfy 
+      %   a_t = \sum_{j=1}^{t-1} \omega_{tj} y_j 
+      %         + \omega_t^c + \omega_t^d + \omega_t^{a_0}
+      % 
+      % Only the values of t passed in decompPeriods will be calculated. If nD 
+      % is the number of period being decomposed, 
+      %   omega is a (m x p x nD x T) array
+      %   omegac, omegad, and omegaa0 are all (m x nD) matrixes
+
+      % Note: This has not been validated with the diffuse initialization yet.
+      
+      % Generate matricies from the multivariate filter
+      K = nan(obj.m, obj.p, obj.n);
+      L = nan(obj.m, obj.m, obj.n);
+      Finv = nan(obj.p, obj.p, obj.n);
+      for jT = 1:obj.n
+        indJJ = ~isnan(y(:,jT));
+        
+        Finv(indJJ,indJJ,jT) = AbstractSystem.pseudoinv(...
+          obj.Z(indJJ,:,obj.tau.Z(jT)) * fOut.P(:,:,jT) ...
+          * obj.Z(indJJ,:,obj.tau.Z(jT))' ...
+          + obj.H(indJJ,indJJ,obj.tau.H(jT)), ...
+          1e-12);
+
+        K(:,indJJ,jT) = obj.T(:,:,obj.tau.T(jT+1)) * fOut.P(:,:,jT) * ...
+            obj.Z(indJJ,:,obj.tau.Z(jT))' * Finv(indJJ,indJJ,jT);
+          
+        L(:,:,jT) = obj.T(:,:,obj.tau.T(jT+1)) - ...
+          K(:,indJJ,jT) * obj.Z(indJJ,:,obj.tau.Z(jT));
+      end
+           
+      nD = length(decompPeriods);
+      omega = nan(obj.m, obj.p, nD, obj.n);
+      omegac = nan(obj.m, nD);
+      omegad = nan(obj.m, nD);
+      omegaa0 = nan(obj.m, nD);
+      
+      % Decompose each period
+      for iPer = 1:nD
+        % We will be building the product of the L_j matricies as we loop
+        % through the data. 
+        Lprod = eye(obj.m);
+        
+        % The running sums for the current period being decomposed
+        Lc = zeros(obj.m, 1);
+        LKd = zeros(obj.m, 1);
+        
+        for jT = (iPer-1):-1:1
+          indJJ = ~isnan(y(:,jT));
+          
+          omega(:, indJJ, jT, iPer) = Lprod * K(:, indJJ, jT);
+          LKd = LKd - Lprod * K(:,indJJ, jT) * obj.d(indJJ, obj.tau.d(jT));
+
+          Lprod = Lprod * L(:,:,jT);
+          
+          Lc = Lc + Lprod * obj.c(:, obj.tau.c(jT));
+        end
+        
+        omegac(:, iPer) = obj.c(:, obj.tau.c(iPer)) + Lc;
+        omegad(:, iPer) = LKd;
+
+        % Note that L_0 = T_1.
+        Lprod = Lprod * obj.T(obj.tau.T(1));
+        omegaa0(:,iPer) = Lprod * obj.a0;
+      end
+    end
+    
     function [alphaTweights, alphaTconstant] = smoother_weights(obj, y, fOut, sOut, decompPeriods)
       % Generate weights (effectively via multivariate smoother) 
       %
@@ -1284,46 +1397,44 @@ classdef StateSpace < AbstractStateSpace
         + obj.H(ind,ind,obj.tau.H(iT));
       genK = @(indJJ, jT) obj.T(:,:,obj.tau.T(jT+1)) * fOut.P(:,:,jT) * ...
             obj.Z(indJJ,:,obj.tau.Z(jT))' * AbstractSystem.pseudoinv(genF(indJJ,jT), 1e-12);
-      genL = @(ind, iT) obj.T(:,:,obj.tau.T(iT+1)) - ...
-        genK(ind,iT) * (eyeP(ind,:) * obj.Z(:,:,obj.tau.Z(iT)));
+      genL = @(ind, iT, Kmat) obj.T(:,:,obj.tau.T(iT+1)) - ...
+        Kmat * (eyeP(ind,:) * obj.Z(:,:,obj.tau.Z(iT)));
       
       wb = waitbar(0, 'Creating smoother weights.');
       
+      % Generate quantities
+      K = nan(obj.m, obj.p, obj.n);
+      L = nan(obj.m, obj.m, obj.n);
+      Finv = nan(obj.p, obj.p, obj.n);
+      FZKNL = nan(obj.m, obj.p, obj.n);
+      for jT = 1:obj.n
+        indJJ = ~isnan(y(:,jT));
+        K(:,indJJ,jT) = genK(indJJ, jT);
+        L(:,:,jT) = genL(indJJ, jT, K(:,indJJ,jT)); % genK(ind,iT)
+        Finv(indJJ,indJJ,jT) = AbstractSystem.pseudoinv(genF(indJJ,jT), 1e-12);
+        
+        FZKNL(:,:,jT) = (Finv(indJJ,indJJ,jT) * obj.Z(indJJ,:,obj.tau.Z(jT)) - ...
+          K(:,indJJ,jT)' * sOut.N(:,:,jT+1) * L(:,:,jT))';
+      end
+      
+      % Decomposition
       for iPer = 1:length(decompPeriods)
         iT = decompPeriods(iPer);
-        ind = ~isnan(y(:,iT));
-        
-        iL = genL(ind, iT);
-        lWeights = iL;
+        % ind = ~isnan(y(:,iT));
+        lWeights = eye(obj.m);
         % Loop through t,t+1,...,n to calculate weights and constant adjustment for j >= t
         for jT = iT:obj.n 
           indJJ = ~isnan(y(:,jT));
-          Zjj = obj.Z(indJJ,:,obj.tau.Z(jT));
-          Kjj = genK(indJJ, jT); % fOut.K(:,indJJ,jT);
-          jL = genL(indJJ,jT);
-          
-          Finvjj = AbstractSystem.pseudoinv(genF(indJJ,jT), 1e-12);
           % Slight alternative calculation for the boundary condition for j == t
-          if jT == iT
-            PFZKNL = fOut.P(:,:,jT) * (Finvjj * Zjj - ...
-              Kjj' * sOut.N(:,:,jT+1) * jL)';
-            
-            alphaTweights(:, indJJ, jT, iPer) = PFZKNL;            
-            alphaTconstant(:,iPer) = -PFZKNL * ...
-               obj.d(indJJ, obj.tau.d(jT)) + ...
-              (eye(obj.m) - fOut.P(:,:,jT) * sOut.N(:,:,jT)) * obj.c(:,obj.tau.c(jT));
-          else
-            % weight and constant adjustment calculations for j >> t
-            PL = fOut.P(:,:,iT) * lWeights;
-            PLFZKNL = PL * (Finvjj * Zjj - ...
-              Kjj' * sOut.N(:,:,jT+1) * jL)';
-            
-            alphaTweights(:,indJJ,jT,iPer) = PLFZKNL;
-            alphaTconstant(:,iPer) = alphaTconstant(:,iPer) - ...
-              PLFZKNL * obj.d(indJJ, obj.tau.d(jT)) - ...
-              PL * sOut.N(:,:,jT) * obj.c(:,obj.tau.c(jT));
-            lWeights = lWeights * jL';
-          end
+          
+          % weight and constant adjustment calculations for j >> t
+          PL = fOut.P(:,:,iT) * lWeights;
+          PLFZKNL = PL * FZKNL(:,:,jT);
+          alphaTweights(:,indJJ,jT,iPer) = PLFZKNL;
+          alphaTconstant(:,iPer) = alphaTconstant(:,iPer) - ...
+            PLFZKNL * obj.d(indJJ, obj.tau.d(jT)) - ...
+            PL * sOut.N(:,:,jT) * obj.c(:,obj.tau.c(jT));
+          lWeights = lWeights * L(:,:,jT)';
         end
         
         if iT > 1
@@ -1333,15 +1444,14 @@ classdef StateSpace < AbstractStateSpace
         for jT = iT-1:-1:1
           % find non-missing observations for time period "jj"
           indJJ = ~isnan(y(:,jT));
-          jL = genL(ind,jT);
 
           if iT > jT
-            lK =  lWeights * genK(indJJ,jT);
+            lK =  lWeights * K(:,indJJ,jT);
             alphaTweights(:,indJJ,jT,iPer) = lK;
             alphaTconstant(:,iPer) = alphaTconstant(:,iPer) + ...
-              lWeights * jL * obj.c(:,obj.tau.c(jT)) - ...
+              lWeights * L(:,:,jT) * obj.c(:,obj.tau.c(jT)) - ...
               lK * obj.d(indJJ,obj.tau.d(jT));
-            lWeights = lWeights * jL;
+            lWeights = lWeights * L(:,:,jT);
           end
         end
         
