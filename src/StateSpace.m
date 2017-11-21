@@ -199,6 +199,35 @@ classdef StateSpace < AbstractStateSpace
       assert(max(max(abs(err))) < 1e-8, 'Did not recover data from decomposition.');
     end
     
+    function [dataContrib, paramContrib] = decompose_filtered_uni(obj, y)
+      % Decompose the smoothed states by data contributions
+      %
+      % Output ordered by (state, observation, effectPeriod, contributingPeriod)
+      
+      % Transform to the univariate form. 
+      % So long as we're ok thinking about the data conditional on earlier
+      % observations within the same period, we don't need factorC since the
+      % data gets transformed too and so the information content of each 
+      % observation remains the same.
+      % If we do want to undo the transformation, that's a bit more work.
+      [obj, y] = obj.prepareFilter(y);
+
+      [a, ~, fOut] = obj.filter(y);
+      [omega, omegac, omegad, omegaa0] = obj.filter_weights_uni(y, fOut);
+      
+      dataContrib = sum(omega,4);
+      % Weights come out ordered (state, observation, effect, origin) so we need
+      % to collapse the 2nd and 4th dimensions. 
+      paramContrib = reshape(sum(sum(omegad, 2), 4), [obj.m, obj.n+1]) ...
+        + reshape(sum(sum(omegac, 2), 4), [obj.m, obj.n+1]) ...
+        + omegaa0;
+     
+%       a_test = reshape(sum(dataContrib, 2), [obj.m, obj.n+1]) + paramContrib;
+      
+%       err = a - a_test;
+%       assert(max(max(abs(err))) < 1e-8, 'Did not recover data from decomposition.');
+    end
+    
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
       % Decompose the smoothed states by data contributions
       %
@@ -1307,6 +1336,69 @@ classdef StateSpace < AbstractStateSpace
       end
       
       gradient = -sum(sum(grad, 3), 2);
+    end
+    
+    function [omega, omegac, omegad, omegaa0] = filter_weights_uni(obj, y, fOut)
+      % Decompose the effect of all of the data on a subset of periods
+      % using the univariate filter.
+      %
+      % See MFSS Estimation Methods for the derivation of this recursion.
+      
+      omega = zeros(obj.m, obj.p, obj.n+1, obj.n); 
+      omegad = zeros(obj.m, obj.p, obj.n+1, obj.n);
+      omegac = zeros(obj.m, obj.m, obj.n+1, obj.n+1);
+      omegaa0 = zeros(obj.m, obj.n+1);
+      
+      TMprod = zeros(obj.m, obj.m, obj.n+1);
+      TMprod(:,:,1) = obj.T(:,:,obj.tau.T(1));
+      
+      Im = eye(obj.m);
+      
+      % Loop over the data and determine effects of observations as they happen      
+      for iJ = 1:obj.n
+        Mprod = Im;
+        iOmega = zeros(obj.m, obj.p);
+        iOmegad = zeros(obj.m, obj.p);
+        % Loop over observations backward so the product of M is correct
+        for iP = obj.p:-1:1
+          if iJ > fOut.dt || fOut.Fd(iP,iJ) == 0
+            K = fOut.K(:,iP,iJ);
+          else
+            K = fOut.Kd(:,iP,iJ);
+          end
+          if ~isnan(y(iP,iJ))
+            % Find contribution. If y is nan, it's zero already.
+            iOmega(:,iP) = Mprod * K * y(iP, iJ);
+            iOmegad(:,iP) = Mprod * K * obj.d(iP, obj.tau.d(iJ));
+          end
+          
+          Mprod = (Im - K * obj.Z(iP,:,obj.tau.Z(iJ))) * Mprod;
+        end
+        TMprod(:,:,iJ+1) = obj.T(:,:,obj.tau.T(iJ+1)) * Mprod;
+        
+        % Determine effect of data/parameters the period after observation
+        omega(:,:,iJ+1,iJ) = obj.T(:,:,obj.tau.T(iJ+1)) * iOmega;
+        omegad(:,:,iJ+1,iJ) = -obj.T(:,:,obj.tau.T(iJ+1)) * iOmegad;
+        omegac(:,:,iJ,iJ) = diag(obj.c(:,obj.tau.c(iJ)));
+      end
+      omegac(:,:,obj.n+1,obj.n+1) = diag(obj.c(:,obj.tau.c(obj.n+1)));
+      
+      % Propogate effect forward to other time periods of states
+       for iJ = 1:obj.n
+        omegac(:,:,iJ+1,iJ) = TMprod(:,:,iJ+1) * omegac(:,:,iJ,iJ);
+        for iT = iJ+1:obj.n
+          omega(:,:,iT+1,iJ) = TMprod(:,:,iT+1)  * omega(:,:,iT,iJ);
+          omegad(:,:,iT+1,iJ) = TMprod(:,:,iT+1) * omegad(:,:,iT,iJ);
+          omegac(:,:,iT+1,iJ) = TMprod(:,:,iT+1) * omegac(:,:,iT,iJ);
+        end
+      end
+      
+      % Determine effect of initial conditions
+      omegaa0(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0;
+      for iT = 2:obj.n+1
+        omegaa0(:,iT) = TMprod(:,:,iT) * omegaa0(:,iT-1);        
+      end
+      
     end
     
     function [omega, omegac, omegad, omegaa0] = filter_weights(obj, y, fOut, decompPeriods)
