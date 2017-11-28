@@ -5,7 +5,8 @@ function result = execTests(tests)
 
 % David Kelley, 2016 
 
-defaultTests = {'basic', 'mex', 'Accumulator', 'gradient', 'ThetaMap', 'ml'};
+defaultTests = {'basic', 'mex', 'Accumulator', ...
+  'gradient', 'ThetaMap', 'ml', 'decomp'};
 if nargin == 0
   tests = defaultTests;
 end
@@ -29,8 +30,10 @@ accumulatorTests = [TestSuite.fromFile(fullfile(testDir, 'Accumulator_test.m')),
 gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_test.m'));
 thetaMapTests = TestSuite.fromFile(fullfile(testDir, 'ThetaMap_test.m'));
 mlTests = TestSuite.fromFile(fullfile(testDir, 'estimate_test.m'));
-          
-alltests = {basicTests mexTests accumulatorTests gradientTests thetaMapTests mlTests};
+decompTests = TestSuite.fromFile(fullfile(testDir, 'Decompose_test.m'));
+
+alltests = {basicTests mexTests accumulatorTests ...
+  gradientTests thetaMapTests mlTests decompTests};
 selectedTests = alltests(ismember(defaultTests, tests));
 suite = [selectedTests{:}];
 

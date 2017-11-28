@@ -156,50 +156,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [dataDecomp, paramContrib] = decompose_filtered(obj, y, decompPeriods)
-      % Decompose the smoothed states by data contributions
-      %
-      % Output ordered by (state, observation, contributingPeriod, effectPeriod)
-      
-      [obj, y] = obj.prepareFilter(y);
-
-      if nargin < 3
-        decompPeriods = 1:obj.n+1;
-      end
-      
-      [a, ~, fOut] = obj.filter(y);
-      [omega, omegac, omegad, omegaa0] = obj.filter_weights(y, fOut, decompPeriods);
-      
-      % Apply weights to data
-      cleanY = y;
-      cleanY(isnan(y)) = 0;
-      
-      nDecomp = length(decompPeriods);
-      dataDecomp = zeros(obj.m, obj.p, obj.n, nDecomp);
-      % Loop over periods effected
-      for iPer = 1:nDecomp
-        % Loop over contributing periods
-        for jT = 1:iPer-1
-          dataDecomp(:,:,jT,iPer) = omega(:,:,jT,iPer) ...
-            .* repmat(cleanY(:, jT)', [obj.m, 1]);
-        end
-      end
-      
-      paramContrib = omegac + omegad + omegaa0;
-      
-      % Weights come out ordered (state, observation, origin, effect) so we need
-      % to collapse the 2nd and 3rd dimensions. 
-      dataContrib = reshape(sum(sum(dataDecomp, 2), 3), [obj.m, nDecomp]);
-      % dataContrib = squeeze(sum(sum(dataDecomp, 2), 3));
-      % if obj.m == 1
-      %   dataContrib = dataContrib';
-      % end
-      a_test = dataContrib + paramContrib;
-      err = a(:,decompPeriods) - a_test;
-      assert(max(max(abs(err))) < 1e-8, 'Did not recover data from decomposition.');
-    end
-    
-    function [dataContrib, paramContrib] = decompose_filtered_uni(obj, y)
+    function [dataContrib, paramContrib] = decompose_filtered(obj, y)
       % Decompose the smoothed states by data contributions
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
@@ -212,7 +169,7 @@ classdef StateSpace < AbstractStateSpace
       % If we do want to undo the transformation, that's a bit more work.
       [obj, y] = obj.prepareFilter(y);
 
-      [a, ~, fOut] = obj.filter(y);
+      [~, ~, fOut] = obj.filter_mex(y);
       [omega, omegac, omegad, omegaa0] = obj.filter_weights_uni(y, fOut);
       
       dataContrib = sum(omega,4);
@@ -222,10 +179,9 @@ classdef StateSpace < AbstractStateSpace
         + reshape(sum(sum(omegac, 2), 4), [obj.m, obj.n+1]) ...
         + omegaa0;
      
-%       a_test = reshape(sum(dataContrib, 2), [obj.m, obj.n+1]) + paramContrib;
-      
-%       err = a - a_test;
-%       assert(max(max(abs(err))) < 1e-8, 'Did not recover data from decomposition.');
+      % a_test = reshape(sum(dataContrib, 2), [obj.m, obj.n+1]) + paramContrib;
+      % err = a - a_test;
+      % assert(max(max(abs(err))) < 1e-8, 'Did not recover data.');
     end
     
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
@@ -272,6 +228,34 @@ classdef StateSpace < AbstractStateSpace
       alpha_test = dataContrib + constContrib;
       err = alpha(:,decompPeriods) - alpha_test;
       assert(max(max(abs(err))) < 0.001, 'Did not recover data from decomposition.');
+    end
+    
+    function [dataContrib, paramContrib] = decompose_smoothed_uni(obj, y)
+      % Decompose the smoothed states by data contributions
+      %
+      % Output ordered by (state, observation, effectPeriod, contributingPeriod)
+      
+      % Transform to the univariate form. 
+      % So long as we're ok thinking about the data conditional on earlier
+      % observations within the same period, we don't need factorC since the
+      % data gets transformed too and so the information content of each 
+      % observation remains the same.
+      % If we do want to undo the transformation, that's a bit more work.
+      [obj, y] = obj.prepareFilter(y);
+
+      [~, ~, fOut] = obj.filter(y);
+      [omega, omegac, omegad, omegaa0] = obj.smoother_weights_uni(y, fOut);
+      
+      dataContrib = sum(omega,4);
+      % Weights come out ordered (state, observation, effect, origin) so we need
+      % to collapse the 2nd and 4th dimensions. 
+      paramContrib = reshape(sum(sum(omegad, 2), 4), [obj.m, obj.n]) ...
+        + reshape(sum(sum(omegac, 2), 4), [obj.m, obj.n]) ...
+        + omegaa0;
+     
+      % alpha_test = reshape(sum(dataContrib, 2), [obj.m, obj.n]) + paramContrib;
+      % err = alpha - alpha_test;
+      % assert(max(max(abs(err))) < 1e-8, 'Did not recover data.');
     end
     
     %% Utilties
@@ -699,7 +683,7 @@ classdef StateSpace < AbstractStateSpace
       stepSize = 0.5 * obj.delta;
       parfor iTheta = 1:nTheta
         thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
-        ssDown = tm.theta2system(thetaDown);
+        ssDown = tm.theta2system(thetaDown); %#ok<PFBNS>
         [~, llDown] = ssDown.filter(y);
         
         thetaUp = theta + [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
@@ -1339,9 +1323,24 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [omega, omegac, omegad, omegaa0] = filter_weights_uni(obj, y, fOut)
-      % Decompose the effect of all of the data on a subset of periods
-      % using the univariate filter.
+      % Decompose the effect of the data on the filtered state.
       %
+      % The outputs of this function should satisfy 
+      %   a_t = \omega_t^{a_0}
+      %         + \sum_{j=1}^{t} \omega_{tj} + \omega_{tj}^c + \omega_{tj}^d
+      % Inputs:
+      %   y - univariate data
+      %   fOut - detailed output from Kalman filter
+      % Outputs:
+      %   omega - (m X p X T+1 X T) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omegac - (m X m X T+1 X T+1) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omegad - (m X p X T+1 X T) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omegaa0 - (m X T+1) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      
       % See MFSS Estimation Methods for the derivation of this recursion.
       
       omega = zeros(obj.m, obj.p, obj.n+1, obj.n); 
@@ -1399,6 +1398,125 @@ classdef StateSpace < AbstractStateSpace
         omegaa0(:,iT) = TMprod(:,:,iT) * omegaa0(:,iT-1);        
       end
       
+    end
+    
+    function [omega, omegac, omegad, omegaa0] = smoother_weights_uni(obj, y, fOut)
+      % Decompose the effect of the data on the filtered state.
+      %
+      % The outputs of this function should satisfy 
+      %   alpha_t = \omega_t^{a_0}
+      %         + \sum_{j=1}^{t} \omega_{tj} + \omega_{tj}^c + \omega_{tj}^d
+      % Inputs:
+      %   y - univariate data
+      %   fOut - detailed output from Kalman filter
+      %
+      % Outputs:
+      %   omega - (m X p X T X T) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omegac - (m X m X T X T+1) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omegad - (m X p X T X T) array organized as 
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omegaa0 - (m X T) array organized as 
+      %           (state, effectPeriod)
+      
+      % See MFSS Estimation Methods for the derivation of this recursion.
+      % 
+      % We'll start by computing the filter weights because we'll need them to
+      % construct weights for r_t. After computing the weights for r_t, the
+      % computation of weights for alpha_t is straightforward. 
+      
+      % Filter weights (a_t)
+      [wa, wac, wad, waa0] = filter_weights_uni(obj, y, fOut);
+      
+      % Weights for r_t
+      omegar = zeros(obj.m, obj.p, obj.n, obj.n); 
+      omegard = zeros(obj.m, obj.p, obj.n, obj.n);
+      omegarc = zeros(obj.m, obj.m, obj.n, obj.n+1);
+      omegara0 = zeros(obj.m, obj.n+1);
+      
+      LprodT = zeros(obj.m, obj.m, obj.n);
+      Im = eye(obj.m);
+      
+      % Loop over the contemporaneous effects and build decomposition quantities
+      directEffect = zeros(obj.m, obj.p, obj.n);
+      LZFZL = zeros(obj.m, obj.m, obj.n);
+      for iT = 1:obj.n
+        % Build a matrix LZFZM that can be used to handle the whole vector of
+        % data y_t or a matrix of weights omega_tj at a time:
+        LprimeProd = Im;
+        LProd = Im;
+        
+        for iP = 1:obj.p
+          Z = obj.Z(iP,:,obj.tau.Z(iT));
+          F = fOut.F(iP,iT);
+          K = fOut.K(:,iP,iT);
+          
+          directEffect(:,iP,iT) = LprimeProd * Z' ./ F * y(iP,iT);
+          % FIXME - not indexed by iP?
+          LZFZL(:,:,iT) = LprimeProd * Z' ./ F * Z * LProd; 
+        
+          L = (Im - K * Z);
+          LProd = L * LProd;          
+          LprimeProd = LprimeProd * L';
+        end
+        
+        LprodT(:,:,iT) = LprimeProd * obj.T(:,:,obj.tau.T(iT+1))';
+      end
+        
+      % NOTE - period T reconstruct_alpha is correct. 
+      % Makes me think something below here is wrong.
+      %
+      % The correlation between r and the error in reconstruction -> 1 with a
+      % one period lead - there's a timing issue.
+      % The error in period T-1 "has to" be coming from the effect of period T.
+      
+      % Compute forward effects
+      for iT = obj.n:-1:1
+        for iJ = 1:obj.n
+          % The effect of the data on the filtered state estimate, a_t.
+          if iT > iJ
+            filterEffect = -LZFZL(:,:,iT) * wa(:,:,iT,iJ);
+          else
+            filterEffect = zeros(obj.m, obj.p);
+          end
+          
+          % The effect of the data on the error term, v_t.
+          if iT == iJ
+            contempEffect = directEffect(:,:,iJ);
+          else
+            contempEffect = zeros(obj.m, obj.p);
+          end
+          
+          % The effect of future v_t on r_t, recursively.
+          if iT ~= obj.n
+            % In order for this to work we need to make sure we have done
+            % omegar_{t+1,j} before omegar_{t,j}. There shouldn't be any concern
+            % over doing the j's in any order here. 
+            forwardEffect = LprodT(:,:,iT) * omegar(:,:,iT+1,iJ);
+          else
+            forwardEffect = zeros(obj.m, obj.p);
+          end
+          
+          omegar(:,:,iT,iJ) = forwardEffect + filterEffect + contempEffect;
+        end
+      end
+      
+      % Calculate smoothed state weights
+      omega = zeros(obj.m, obj.p, obj.n, obj.n); 
+      omegad = zeros(obj.m, obj.p, obj.n, obj.n);
+      omegac = zeros(obj.m, obj.m, obj.n, obj.n+1);
+      omegaa0 = zeros(obj.m, obj.n);
+      
+      for iT = 1:obj.n
+        for iJ = 1:obj.n        
+          omega(:,:,iT,iJ) = wa(:,:,iT,iJ) + fOut.P(:,:,iT) * omegar(:,:,iT,iJ);
+          omegad(:,:,iT,iJ) = wad(:,:,iT,iJ) + fOut.P(:,:,iT) * omegard(:,:,iT,iJ);
+          omegac(:,:,iT,iJ) = wac(:,:,iT,iJ) + fOut.P(:,:,iT) * omegarc(:,:,iT,iJ);
+        end
+        omegaa0(:,iT) = waa0(:,iT) + fOut.P(:,:,iT) * omegara0(:,iT);
+      end
+
     end
     
     function [omega, omegac, omegad, omegaa0] = filter_weights(obj, y, fOut, decompPeriods)

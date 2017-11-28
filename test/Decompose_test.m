@@ -25,10 +25,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = generateData(ss, 150);
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
       reconstruct_a = squeeze(decomp_data) + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
 
     function testAR1M_a(testCase)
@@ -37,10 +37,11 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = generateData(ss, 150);
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
-      reconstruct_a = sum(squeeze(decomp_data(1,:,:)) + decomp_const(1,:), 1);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
+      dataEff = reshape(sum(decomp_data, 2), [1 151]);
+      reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a(1,:), reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
       
     function testAR1Mc_a(testCase)
@@ -49,10 +50,11 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = generateData(ss, 150);
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
-      reconstruct_a = sum(squeeze(decomp_data(1,:,:)) + decomp_const(1,:), 1);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
+      dataEff = reshape(sum(decomp_data, 2), [1 151]);
+      reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a(1,:), reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
       
     function testNile_a(testCase)
@@ -62,10 +64,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = testCase.data.nile';
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
       reconstruct_a = squeeze(decomp_data)';
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
       testCase.verifyEqual(decomp_const, zeros(1, 101));
     end
     
@@ -76,10 +78,11 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = generateData(ss, 150);
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
-      reconstruct_a = sum(squeeze(decomp_data(1,:,:)) + decomp_const(1,:), 1);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
+      dataEff = reshape(sum(decomp_data, 2), [4 151]);
+      reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a(1,:), reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
     
     function testARpM_const_a(testCase)
@@ -91,11 +94,11 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = generateData(ss, 150);
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
       dataEff = squeeze(sum(decomp_data, 2));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
     
      function testARpM_a0_a(testCase)
@@ -106,14 +109,122 @@ classdef Decompose_test < matlab.unittest.TestCase
       y = generateData(ss, 150);
       
       a = ss.filter(y);
-      [decomp_data, decomp_const] = ss.decompose_filtered_uni(y);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
       dataEff = squeeze(sum(decomp_data, 2));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-8);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
     
     %% Smoother weight tests
+    function testSimple_alpha(testCase)
+      % Stationary multivariate AR(1) test
+      ss = generateARmodel(1, 0, false);
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      dataEff = reshape(sum(decomp_data, 2), [1 150]);
+      reconstruct_alpha = dataEff + decomp_const;
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+    end
     
+    function testAR1_alpha(testCase)
+      % Stationary univariate AR(2) test
+      ss = generateARmodel(1, 1, false);
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      reconstruct_alpha = reshape(sum(decomp_data, 2), [2 150]) + decomp_const;
+      
+      testCase.verifyEqual(reconstruct_alpha, alpha, 'AbsTol', 1e-11);
+    end
+   
+    function testAR1M_alpha(testCase)
+      % Stationary multivariate AR(1) test
+      ss = generateARmodel(3, 0, false);
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      dataEff = reshape(sum(decomp_data, 2), [1 150]);
+      reconstruct_alpha = dataEff + decomp_const;
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+    end
+      
+    function testAR1Mc_alpha(testCase)
+      % Stationary multivariate correlated errors AR(1) test
+      ss = generateARmodel(3, 0, true);
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      dataEff = reshape(sum(decomp_data, 2), [1 150]);
+      reconstruct_alpha = dataEff + decomp_const;
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+    end
+      
+    function testNile_alpha(testCase)
+      % Use estimated model from DK
+      % This is non-stationary.
+      ss = StateSpace(1, 0, 15099, 1, 0, 1, 1469.1);
+      y = testCase.data.nile';
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      reconstruct_alpha = squeeze(decomp_data)';
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+      testCase.verifyEqual(decomp_const, zeros(1, 100));
+    end
+    
+    function testARpM_alpha(testCase)
+      % Do a multivariate non-stationary AR(p) test
+      ss = generateARmodel(2, 3, true);
+      ss.T(1,1) = 1.001 - sum(ss.T(1,2:end));
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      dataEff = reshape(sum(decomp_data, 2), [4 150]);
+      reconstruct_alpha = dataEff + decomp_const;
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+    end
+    
+    function testARpM_const_alpha(testCase)
+      % Do a multivariate non-stationary AR(p) test with constants
+      ss = generateARmodel(5, 3, false);
+      ss.d = [-1; 2; .5; -.2; 0];
+      ss.c = [-1; .5; 0; 0];
+      ss.T(1,1) = 1.01 - sum(ss.T(1,2:end));
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      dataEff = reshape(sum(decomp_data, 2), [4 150]);
+      reconstruct_alpha = dataEff + decomp_const;
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+    end
+    
+     function testARpM_a0_alpha(testCase)
+      % Do a multivariate non-stationary AR(p) test with explicit a0
+      ss = generateARmodel(5, 3, false);
+      ss.a0 = [10; 9.9; 9.9; 9.9];
+      ss.T(1,1) = 1.01 - sum(ss.T(1,2:end));
+      y = generateData(ss, 150);
+      
+      alpha = ss.smooth(y);
+      [decomp_data, decomp_const] = ss.decompose_smoothed_uni(y);
+      dataEff = reshape(sum(decomp_data, 2), [4 150]);
+      reconstruct_alpha = dataEff + decomp_const;
+      
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
+    end
   end
 end
