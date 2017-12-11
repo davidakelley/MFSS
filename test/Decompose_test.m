@@ -30,7 +30,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
-
+    
     function testAR1M_a(testCase)
       % Stationary multivariate AR(1) test
       ss = generateARmodel(3, 0, false);
@@ -43,7 +43,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
-      
+    
     function testAR1Mc_a(testCase)
       % Stationary multivariate correlated errors AR(1) test
       ss = generateARmodel(3, 0, true);
@@ -56,7 +56,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
-      
+    
     function testNile_a(testCase)
       % Use estimated model from DK
       % This is non-stationary.
@@ -79,7 +79,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       a = ss.filter(y);
       [decomp_data, decomp_const] = ss.decompose_filtered(y);
-      dataEff = reshape(sum(decomp_data, 2), [4 151]);
+      dataEff = reshape(sum(decomp_data, 2), size(a));
       reconstruct_a = dataEff + decomp_const;
       
       testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
@@ -101,7 +101,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
     
-     function testARpM_a0_a(testCase)
+    function testARpM_a0_a(testCase)
       % Do a multivariate non-stationary AR(p) test with explicit a0
       ss = generateARmodel(5, 3, false);
       ss.a0 = [10; 9.9; 9.9; 9.9];
@@ -113,6 +113,51 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = squeeze(sum(decomp_data, 2));
       reconstruct_a = dataEff + decomp_const;
       
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+    end
+    
+    function testARpTVP_a(testCase)
+      % Do a time-varrying parameters test
+      ss = generateARmodel(2, 2, true);
+      ss.Q = 1;
+      
+      ss = ss.setTimeVarrying(12);
+      ss = ss.setInvariantTau();
+      ss.tau.T = [repmat([1; 2], [6 1]); 1];
+      ss.T(:,:,2) = ss.T;
+      ss.T(1,1,2) = -ss.T(1,1,2);
+      
+      y = generateData(ss, 12);
+
+      a = ss.filter(y);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
+      dataEff = reshape(sum(decomp_data, 2), size(a));
+      reconstruct_a = dataEff + decomp_const;
+      
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+    end
+    
+    function testARp_a_oddZ(testCase)
+      % Do a test that I'm not sure why its failing
+      % It was failing due to L being incorrectly specified.
+      ss = generateARmodel(2, 1, true);
+      % Neccessary to have one obs load off the second state
+      ss.Z = [1 0; 0 1];
+      
+      % Not neccessary but makes differences easier to see.
+      ss.T(1,:) = [1 0]; 
+      ss.H = diag(ones(2,1));
+      ss.Q = 1;
+      ss.a0 = [1; 0];
+      ss.P0 = eye(2);
+      
+      y = nan(2, 2);
+      y(:, 1) = [0; 0];
+      
+      a = ss.filter(y);
+      [decomp_data, decomp_const] = ss.decompose_filtered(y);
+      reconstruct_a = reshape(sum(decomp_data, 2), size(a)) + decomp_const;
+  
       testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
     
@@ -141,7 +186,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(reconstruct_alpha, alpha, 'AbsTol', 1e-11);
     end
-   
+    
     function testAR1M_alpha(testCase)
       % Stationary multivariate AR(1) test
       ss = generateARmodel(3, 0, false);
@@ -154,7 +199,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
     end
-      
+    
     function testAR1Mc_alpha(testCase)
       % Stationary multivariate correlated errors AR(1) test
       ss = generateARmodel(3, 0, true);
@@ -167,7 +212,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
     end
-      
+    
     function testNile_alpha(testCase)
       % Use estimated model from DK
       % This is non-stationary.
@@ -212,7 +257,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       testCase.verifyEqual(alpha, reconstruct_alpha, 'AbsTol', 1e-11);
     end
     
-     function testARpM_a0_alpha(testCase)
+    function testARpM_a0_alpha(testCase)
       % Do a multivariate non-stationary AR(p) test with explicit a0
       ss = generateARmodel(5, 3, false);
       ss.a0 = [10; 9.9; 9.9; 9.9];

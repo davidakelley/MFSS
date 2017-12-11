@@ -156,32 +156,26 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [dataContrib, paramContrib] = decompose_filtered(obj, y)
+    function [dataContrib, paramContrib, Kstar, Lstar] = decompose_filtered(obj, y)
       % Decompose the smoothed states by data contributions
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
       
-      % Transform to the univariate form. 
-      % So long as we're ok thinking about the data conditional on earlier
-      % observations within the same period, we don't need factorC since the
-      % data gets transformed too and so the information content of each 
-      % observation remains the same.
-      % If we do want to undo the transformation, that's a bit more work.
-      [obj, y] = obj.prepareFilter(y);
-
-      [~, ~, fOut] = obj.filter_mex(y);
-      [omega, omegac, omegad, omegaa0] = obj.filter_weights_uni(y, fOut);
+      % Transform to the univariate form.
+      obj.validateKFilter();
+      obj = obj.checkSample(y);
+      ssMulti = obj; 
       
-      dataContrib = sum(omega,4);
+      [obj, ~, C] = obj.prepareFilter(y);
+      [~, ~, fOut] = obj.filter_mex(y);
+      [omega, omegac, omegad, omegaa0, Kstar, Lstar] = obj.filter_weights_uni(y, fOut, ssMulti, C);
+      
       % Weights come out ordered (state, observation, effect, origin) so we need
       % to collapse the 2nd and 4th dimensions. 
+      dataContrib = sum(omega,4);
       paramContrib = reshape(sum(sum(omegad, 2), 4), [obj.m, obj.n+1]) ...
         + reshape(sum(sum(omegac, 2), 4), [obj.m, obj.n+1]) ...
-        + omegaa0;
-     
-      % a_test = reshape(sum(dataContrib, 2), [obj.m, obj.n+1]) + paramContrib;
-      % err = a - a_test;
-      % assert(max(max(abs(err))) < 1e-8, 'Did not recover data.');
+        + reshape(sum(omegaa0, 2), [obj.m, obj.n+1]);
     end
     
     function [dataDecomposition, constContrib] = decompose_smoothed(obj, y, decompPeriods)
@@ -1322,7 +1316,8 @@ classdef StateSpace < AbstractStateSpace
       gradient = -sum(sum(grad, 3), 2);
     end
     
-    function [omega, omegac, omegad, omegaa0] = filter_weights_uni(obj, y, fOut)
+    function [omega, omegac, omegad, omegaa0, Kstar, Lstar] = ...
+        filter_weights_uni(obj, y, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
       % The outputs of this function should satisfy 
@@ -1346,61 +1341,75 @@ classdef StateSpace < AbstractStateSpace
       omega = zeros(obj.m, obj.p, obj.n+1, obj.n); 
       omegad = zeros(obj.m, obj.p, obj.n+1, obj.n);
       omegac = zeros(obj.m, obj.m, obj.n+1, obj.n+1);
-      omegaa0 = zeros(obj.m, obj.n+1);
-      
-      TMprod = zeros(obj.m, obj.m, obj.n+1);
-      TMprod(:,:,1) = obj.T(:,:,obj.tau.T(1));
+      omegaa0 = zeros(obj.m, obj.m, obj.n+1);
       
       Im = eye(obj.m);
       
+      % Kstar - the effect of the whole observable on the state
+      Kstar = zeros(obj.m, obj.p, obj.n);      
+      % Lstar - propogation of current state to next period
+      Lstar = zeros(obj.m, obj.m, obj.n+1);
+      Lstar(:,:,1) = obj.T(:,:,obj.tau.T(1));
+      
       % Loop over the data and determine effects of observations as they happen      
       for iJ = 1:obj.n
-        Mprod = Im;
-        iOmega = zeros(obj.m, obj.p);
-        iOmegad = zeros(obj.m, obj.p);
-        % Loop over observations backward so the product of M is correct
+        T = obj.T(:,:,obj.tau.T(iJ+1));
+        Lproduct = Im;
+        KstarTemp = zeros(obj.m, obj.p);
+        
         for iP = obj.p:-1:1
+          % If we don't observe a y value we don't learn anything about the
+          % state so we shouldn't be downweighting past observations.
+          % Kstar doesn't get any nonzero values and Lproduct doesn't change so
+          % we can just skip the iteration.
+          if isnan(y(iP,iJ))
+            continue;
+          end
+          
+          % Select between diffuse and standar value of K.
           if iJ > fOut.dt || fOut.Fd(iP,iJ) == 0
             K = fOut.K(:,iP,iJ);
           else
             K = fOut.Kd(:,iP,iJ);
           end
-          if ~isnan(y(iP,iJ))
-            % Find contribution. If y is nan, it's zero already.
-            iOmega(:,iP) = Mprod * K * y(iP, iJ);
-            iOmegad(:,iP) = Mprod * K * obj.d(iP, obj.tau.d(iJ));
-          end
-          
-          Mprod = (Im - K * obj.Z(iP,:,obj.tau.Z(iJ))) * Mprod;
+          KstarTemp(:,iP) = Lproduct * K;
+
+          % FIXME: ok to use Z* and not Z here? Test with a multi example later
+          Lproduct = Lproduct * (Im - K * obj.Z(iP,:,obj.tau.Z(iJ)));
         end
-        TMprod(:,:,iJ+1) = obj.T(:,:,obj.tau.T(iJ+1)) * Mprod;
+        Kstar(:,:,iJ) = T * KstarTemp;
+        Lstar(:,:,iJ+1) = T * Lproduct;
+        
+        ind = ~isnan(y(:,iJ));
         
         % Determine effect of data/parameters the period after observation
-        omega(:,:,iJ+1,iJ) = obj.T(:,:,obj.tau.T(iJ+1)) * iOmega;
-        omegad(:,:,iJ+1,iJ) = -obj.T(:,:,obj.tau.T(iJ+1)) * iOmegad;
+        omega(:,ind,iJ+1,iJ) = Kstar(:,ind,iJ) / C(ind,ind,obj.tau.H(iJ)) * diag(y(ind,iJ));
+        omegad(:,ind,iJ+1,iJ) = -Kstar(:,ind,iJ) / C(ind,ind,obj.tau.H(iJ)) * ...
+          diag(ssMulti.d(ind, ssMulti.tau.d(iJ)));
         omegac(:,:,iJ,iJ) = diag(obj.c(:,obj.tau.c(iJ)));
       end
+      % Get the effect on the T+1 period filtered state
       omegac(:,:,obj.n+1,obj.n+1) = diag(obj.c(:,obj.tau.c(obj.n+1)));
       
       % Propogate effect forward to other time periods of states
-       for iJ = 1:obj.n
-        omegac(:,:,iJ+1,iJ) = TMprod(:,:,iJ+1) * omegac(:,:,iJ,iJ);
+      for iJ = 1:obj.n
+        omegac(:,:,iJ+1,iJ) = Lstar(:,:,iJ+1) * omegac(:,:,iJ,iJ);
         for iT = iJ+1:obj.n
-          omega(:,:,iT+1,iJ) = TMprod(:,:,iT+1)  * omega(:,:,iT,iJ);
-          omegad(:,:,iT+1,iJ) = TMprod(:,:,iT+1) * omegad(:,:,iT,iJ);
-          omegac(:,:,iT+1,iJ) = TMprod(:,:,iT+1) * omegac(:,:,iT,iJ);
+          omega(:,:,iT+1,iJ) = Lstar(:,:,iT+1)  * omega(:,:,iT,iJ);
+          omegad(:,:,iT+1,iJ) = Lstar(:,:,iT+1) * omegad(:,:,iT,iJ);
+          omegac(:,:,iT+1,iJ) = Lstar(:,:,iT+1) * omegac(:,:,iT,iJ);
         end
       end
       
       % Determine effect of initial conditions
-      omegaa0(:,1) = obj.T(:,:,obj.tau.T(1)) * obj.a0;
+      omegaa0(:,:,1) = obj.T(:,:,obj.tau.T(1)) * diag(obj.a0);
       for iT = 2:obj.n+1
-        omegaa0(:,iT) = TMprod(:,:,iT) * omegaa0(:,iT-1);        
+        omegaa0(:,:,iT) = Lstar(:,:,iT) * omegaa0(:,:,iT-1);
       end
       
     end
     
-    function [omega, omegac, omegad, omegaa0] = smoother_weights_uni(obj, y, fOut)
+    function [omega, omegac, omegad, omegaa0] = smoother_weights_uni(obj, y, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
       % The outputs of this function should satisfy 
@@ -1427,7 +1436,7 @@ classdef StateSpace < AbstractStateSpace
       % computation of weights for alpha_t is straightforward. 
       
       % Filter weights (a_t)
-      [wa, wac, wad, waa0] = filter_weights_uni(obj, y, fOut);
+      [wa, wac, wad, waa0] = filter_weights_uni(obj, y, fOut, ssMulti, C);
       
       % Weights for r_t
       omegar = zeros(obj.m, obj.p, obj.n, obj.n); 
@@ -1506,7 +1515,7 @@ classdef StateSpace < AbstractStateSpace
       omega = zeros(obj.m, obj.p, obj.n, obj.n); 
       omegad = zeros(obj.m, obj.p, obj.n, obj.n);
       omegac = zeros(obj.m, obj.m, obj.n, obj.n+1);
-      omegaa0 = zeros(obj.m, obj.n);
+      omegaa0 = zeros(obj.m, obj.m, obj.n);
       
       for iT = 1:obj.n
         for iJ = 1:obj.n        
