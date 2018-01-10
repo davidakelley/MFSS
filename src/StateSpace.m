@@ -3,7 +3,7 @@ classdef StateSpace < AbstractStateSpace
   %
   % See documentation in the function reference.
   
-  % David Kelley, 2016-2017
+  % David Kelley, 2016-2018
   
   properties (Hidden)
     % Indicator for use of analytic gradient
@@ -157,8 +157,6 @@ classdef StateSpace < AbstractStateSpace
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
       
-      % FIXME: Why was this working with y v. yUni? Do I need more tests?
-      
       % Get quantities from filter
       [~, ~, fOut] = obj.filter(y);
 
@@ -168,18 +166,15 @@ classdef StateSpace < AbstractStateSpace
       ssMulti = obj;
       [obj, ~, C] = obj.prepareFilter(y);
       
-      [omega, omegac, omegad, omegaa0] = obj.filter_weights(y, fOut, ssMulti, C);
+      % Compute recursion
+      weights = obj.filter_weights(y, fOut, ssMulti, C);
       
-      % Weights come out ordered (state, observation, effect, origin) so we need
-      % to collapse the 4th dimension for the data and the 2nd and 4th
-      % dimensions for the parameters. 
-      dataContrib = sum(omega,4);
-      paramContrib = reshape(sum(sum(omegad, 2), 4), [obj.m, obj.n+1]) ...
-        + reshape(sum(sum(omegac, 2), 4), [obj.m, obj.n+1]) ...
-        + reshape(sum(omegaa0, 2), [obj.m, obj.n+1]);
-    
-      weights = struct('omega', omega, 'omegac', omegac, 'omegad', omegad, ...
-        'omegaa0', omegaa0);
+      % Weights are ordered (state, observation, effect, origin) so we need to collapse 
+      % the 4th dimension for the data and the 2nd and 4th dimensions for the parameters. 
+      dataContrib = sum(weights.y,4);
+      paramContrib = reshape(sum(sum(weights.d, 2), 4), [obj.m, obj.n+1]) ...
+        + reshape(sum(sum(weights.c, 2), 4), [obj.m, obj.n+1]) ...
+        + reshape(sum(weights.a0, 2), [obj.m, obj.n+1]);
     end
     
     function [dataContrib, paramContrib, weights] = decompose_smoothed(obj, y)
@@ -196,18 +191,15 @@ classdef StateSpace < AbstractStateSpace
       ssMulti = obj;
       [obj, ~, C] = obj.prepareFilter(y);      
       
-      [omega, omegac, omegad, omegaa0] = obj.smoother_weights(y, fOut, ssMulti, C);
+      weights = obj.smoother_weights(y, fOut, ssMulti, C);
       
       % Weights come out ordered (state, observation, effect, origin) so we need
       % to collapse the 4th dimension for the data and the 2nd and 4th
       % dimensions for the parameters. 
-      dataContrib = sum(omega,4);
-      paramContrib = reshape(sum(sum(omegad, 2), 4), [obj.m, obj.n]) ...
-        + reshape(sum(sum(omegac, 2), 4), [obj.m, obj.n]) ...
-        + reshape(sum(omegaa0, 2), [obj.m, obj.n]);
-      
-      weights = struct('omega', omega, 'omegac', omegac, 'omegad', omegad, ...
-        'omegaa0', omegaa0);
+      dataContrib = sum(weights.y,4);
+      paramContrib = reshape(sum(sum(weights.d, 2), 4), [obj.m, obj.n]) ...
+        + reshape(sum(sum(weights.c, 2), 4), [obj.m, obj.n]) ...
+        + reshape(sum(weights.a0, 2), [obj.m, obj.n]);
     end
     
     %% Utilties
@@ -1047,9 +1039,10 @@ classdef StateSpace < AbstractStateSpace
             % NOTE: minus sign!
             L0ti = (fOut.Kd(:,iP,iT) - fOut.K(:,iP,iT)) * Zti * fOut.F(iP,iT) ./ fOut.Fd(iP,iT);
             
-            r0ti = Ldti' * r0ti;
             % NOTE: plus sign!
             r1ti = Zti' / fOut.Fd(iP,iT) * fOut.v(iP,iT) + L0ti' * r0ti + Ldti' * r1ti;
+            % Be sure to compute r0ti after r1ti since it is used in r1ti
+            r0ti = Ldti' * r0ti;
             
             N0ti = Ldti' * N0ti * Ldti;
             N1ti = Zti' / fOut.Fd(iP,iT) * Zti + Ldti' * N0ti * L0ti + Ldti' * N1ti * Ldti;
@@ -1097,7 +1090,7 @@ classdef StateSpace < AbstractStateSpace
       end
       
       smootherOut = struct('alpha', alpha, 'V', V, 'eta', eta, 'r', r, ...
-        'N', N, 'a0tilde', a0tilde);
+        'N', N, 'a0tilde', a0tilde, 'r1', r1);
     end
     
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
@@ -1259,7 +1252,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     %% Decomposition mathematical methods
-    function [omega, omegac, omegad, omegaa0] = filter_weights(obj, y, fOut, ssMulti, C)
+    function fWeights = filter_weights(obj, y, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
       % The outputs of this function should satisfy
@@ -1348,9 +1341,10 @@ classdef StateSpace < AbstractStateSpace
         omegaa0(:,:,iT) = Lstar(:,:,iT) * omegaa0(:,:,iT-1);
       end
       
+      fWeights = struct('y', omega, 'd', omegad, 'c', omegac, 'a0', omegaa0);
     end
     
-    function [omega, omegac, omegad, omegaa0] = smoother_weights(obj, y, fOut, ssMulti, C)
+    function sWeights = smoother_weights(obj, y, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
       % The outputs of this function should satisfy
@@ -1371,9 +1365,8 @@ classdef StateSpace < AbstractStateSpace
       %           (state, effectPeriod)
       
       % Filter weights (a_t)
-      [wa, wac, wad, waa0] = obj.filter_weights(y, fOut, ssMulti, C);
-      [omegar, omegard, omegarc, omegara0] = obj.smoother_weights_r(y, ...
-        fOut, wa, wad, wac, waa0, ssMulti, C);
+      fWeight = obj.filter_weights(y, fOut, ssMulti, C);
+      [rWeight, r1Weight] = obj.r_weights(y, fOut, fWeight, ssMulti, C);
       
       % Calculate smoothed state weights
       omega = zeros(obj.m, obj.p, obj.n, obj.n);
@@ -1381,55 +1374,101 @@ classdef StateSpace < AbstractStateSpace
       omegac = zeros(obj.m, obj.m, obj.n, obj.n);
       omegaa0 = zeros(obj.m, obj.m, obj.n);
       
-      for iJ = 1:obj.n
-        for iT = 1:obj.n
-          omega(:,:,iJ,iT) = wa(:,:,iJ,iT) + fOut.P(:,:,iJ) * omegar(:,:,iJ,iT);
-          omegad(:,:,iJ,iT) = wad(:,:,iJ,iT) + fOut.P(:,:,iJ) * omegard(:,:,iJ,iT);
-          omegac(:,:,iJ,iT) = wac(:,:,iJ,iT) + fOut.P(:,:,iJ) * omegarc(:,:,iJ,iT);
+      % Diffuse filter
+      for iT = 1:fOut.dt
+        for iJ = 1:obj.n
+          omega(:,:,iT,iJ) = fWeight.y(:,:,iT,iJ) ...
+            + fOut.P(:,:,iT) * rWeight.y(:,:,iT,iJ) + fOut.Pd(:,:,iT) * r1Weight.y(:,:,iT,iJ);
+          omegad(:,:,iT,iJ) = fWeight.d(:,:,iT,iJ) ...
+            + fOut.P(:,:,iT) * rWeight.d(:,:,iT,iJ) + fOut.Pd(:,:,iT) * r1Weight.d(:,:,iT,iJ);
+          omegac(:,:,iT,iJ) = fWeight.c(:,:,iT,iJ) ...
+            + fOut.P(:,:,iT) * rWeight.c(:,:,iT,iJ) + fOut.Pd(:,:,iT) * r1Weight.c(:,:,iT,iJ);
         end
-        omegaa0(:,:,iJ) = waa0(:,:,iJ) + fOut.P(:,:,iJ) * omegara0(:,:,iJ);
+        omegaa0(:,:,iT) = fWeight.a0(:,:,iT) ...
+          + fOut.P(:,:,iT) * rWeight.a0(:,:,iT) + fOut.Pd(:,:,iT) * r1Weight.a0(:,:,iT);
+      end
+
+      % Standard Kalman filter
+      for iT = fOut.dt+1:obj.n
+        for iJ = 1:obj.n
+          omega(:,:,iT,iJ) = fWeight.y(:,:,iT,iJ) + fOut.P(:,:,iT) * rWeight.y(:,:,iT,iJ);
+          omegad(:,:,iT,iJ) = fWeight.d(:,:,iT,iJ) + fOut.P(:,:,iT) * rWeight.d(:,:,iT,iJ);
+          omegac(:,:,iT,iJ) = fWeight.c(:,:,iT,iJ) + fOut.P(:,:,iT) * rWeight.c(:,:,iT,iJ);
+        end
+        omegaa0(:,:,iT) = fWeight.a0(:,:,iT) + fOut.P(:,:,iT) * rWeight.a0(:,:,iT);
       end
       
+      sWeights = struct('y', omega, 'd', omegad, 'c', omegac, 'a0', omegaa0);
     end
     
-    function [omegar, omegard, omegarc, omegara0] = smoother_weights_r(obj, ...
-        y, fOut, wa, wad, wac, waa0, ssMulti, C)
+    function [r, r1] = r_weights(obj, y, fOut, fWeight, ssMulti, C)
       % Ordering:
       %    (state, observation, effectPeriod, contributionPeriod)
       
-      [Ldagger, Mdagger, Ay, Aa] = obj.build_smoother_weight_parts(y, fOut, ssMulti, C);
+      comp = obj.build_smoother_weight_parts(y, fOut);
       
-      % Weights for r_t
-      omegar = zeros(obj.m, obj.p, obj.n, obj.n);
-      omegard = zeros(obj.m, obj.p, obj.n, obj.n);
-      omegarc = zeros(obj.m, obj.m, obj.n, obj.n);
-      omegara0 = zeros(obj.m, obj.m, obj.n);
+      % Compute the decomposition of r and r^0
+      rComp = struct('Ay', comp.Ay, 'Aa', comp.Aa, ...
+        'M', comp.Mdagger, 'Lown', comp.Ldagger, 'Lother', []);
+      r = r_weight_recursion(obj, y, ssMulti, C, fWeight, rComp, obj.n, []);
+      
+      % Compute the decomposition of r^1
+      r1Comp = struct('Ay', comp.Ay, 'Aa', comp.Aa, ...
+        'M', comp.Minfty, 'Lown', comp.Linfty, 'Lother', comp.Lzero);
+      r1 = r_weight_recursion(obj, y, ssMulti, C, fWeight, r1Comp, fOut.dt, r);
+    end
+    
+    function weights = r_weight_recursion(obj, y, ssMulti, C, fWeights, sOut2, T, otherOmega)
+      % The recursions for the weights are similar regardless of if its for r,
+      % r^0 or r^1. This function generalizes it so that they all can all be
+      % performed by changing the inputs. 
+      
+      % If this is for r, we need to compute the decomposition of r_1 to r_T (since r^0 is
+      % stored at the beginning of r). If this is for r^1, we only need r_1 to r_dt.
+      
+      omegar = zeros(obj.m, obj.p, T, obj.n);
+      omegard = zeros(obj.m, obj.p, T, obj.n);
+      omegarc = zeros(obj.m, obj.m, T, obj.n);
+      omegara0 = zeros(obj.m, obj.m, T);
+
+      if isempty(sOut2.Lother)
+        sOut2.Lother = zeros(size(sOut2.Lown));
+      end
       
       % Iterate over periods affected
-      for iT = obj.n:-1:1
+      for iT = T:-1:1
         
         % Iterate over observed data
         for iJ = obj.n:-1:1
           
           % The effect of future v_t on r_t, recursively.
-          if iT ~= obj.n
+          if iT ~= T
             % In order for this to work we need to make sure we have done
             % omegar_{t+1,j} before omegar_{t,j}. There shouldn't be any concern
             % over doing the j's in any order here.
-            forwardEffect = Ldagger(:,:,iT)' * omegar(:,:,iT+1,iJ);
-            forwardEffectd = Ldagger(:,:,iT)' * omegard(:,:,iT+1,iJ);
-            forwardEffectc = Ldagger(:,:,iT)' * omegarc(:,:,iT+1,iJ);
+            forwardEffect = sOut2.Lown(:,:,iT)' * omegar(:,:,iT+1,iJ); 
+            forwardEffectd = sOut2.Lown(:,:,iT)' * omegard(:,:,iT+1,iJ);
+            forwardEffectc = sOut2.Lown(:,:,iT)' * omegarc(:,:,iT+1,iJ);
           else
             forwardEffect = zeros(obj.m, obj.p);
             forwardEffectd = zeros(obj.m, obj.p);
             forwardEffectc = zeros(obj.m, obj.m);
           end
+          if ~isempty(otherOmega) && iT ~= obj.n
+            forwardEffectOther = sOut2.Lother(:,:,iT)' * otherOmega.y(:,:,iT+1,iJ);
+            forwardEffectOtherd = sOut2.Lother(:,:,iT)' * otherOmega.d(:,:,iT+1,iJ);
+            forwardEffectOtherc = sOut2.Lother(:,:,iT)' * otherOmega.c(:,:,iT+1,iJ);
+          else
+            forwardEffectOther = zeros(obj.m, obj.p);
+            forwardEffectOtherd = zeros(obj.m, obj.p);
+            forwardEffectOtherc = zeros(obj.m, obj.m);
+          end
           
           % The effect of the data on the filtered state estimate, a_t.
-          % FIXME: Can be eliminated for t <= j
-          filterEffect = -Mdagger(:,:,iT) * Aa(:,:,iT) * wa(:,:,iT,iJ);
-          filterEffectd = -Mdagger(:,:,iT) * Aa(:,:,iT) * wad(:,:,iT,iJ);
-          filterEffectc = -Mdagger(:,:,iT) * Aa(:,:,iT) * wac(:,:,iT,iJ);
+          % FIXME: Can be eliminated for t <= j (and t < j for c)
+          filterEffect = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.y(:,:,iT,iJ);
+          filterEffectd = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.d(:,:,iT,iJ);
+          filterEffectc = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.c(:,:,iT,iJ);
           
           % The effect of the data on the error term, v_t.
           % Note that there's no c here because it was already included in a_t.
@@ -1437,58 +1476,98 @@ classdef StateSpace < AbstractStateSpace
           contempEffectd = zeros(obj.m, obj.p);
           if iT == iJ
             validY = ~isnan(y(:,iJ));
-            contempEffect(:,validY) = Mdagger(:,:,iT) * Ay(:,validY,iT) ...
+            contempEffect(:,validY) = sOut2.M(:,:,iT) * sOut2.Ay(:,validY,iT) ...
               / C(validY,validY,obj.tau.H(iT)) * diag(y(validY,iJ));
-            contempEffectd(:,validY) = -Mdagger(:,:,iT) * Ay(:,validY,iT) ...
+            contempEffectd(:,validY) = -sOut2.M(:,:,iT) * sOut2.Ay(:,validY,iT) ...
               / C(validY,validY,obj.tau.H(iT)) * diag(ssMulti.d(validY,ssMulti.tau.d(iJ)));
           end
           
           % No filter effect since the filter does nothing when j == t.
-          omegar(:,:,iT,iJ) = forwardEffect + filterEffect + contempEffect;
-          omegard(:,:,iT,iJ) = forwardEffectd + filterEffectd + contempEffectd;
-          omegarc(:,:,iT,iJ) = forwardEffectc + filterEffectc;
+          omegar(:,:,iT,iJ) = forwardEffect + forwardEffectOther + filterEffect + contempEffect;
+          omegard(:,:,iT,iJ) = forwardEffectd + forwardEffectOtherd + filterEffectd + contempEffectd;
+          omegarc(:,:,iT,iJ) = forwardEffectc + forwardEffectOtherc + filterEffectc;
         end
         
         % Weight for a0
-        if iT ~= obj.n
-          forwardEffecta0 = Ldagger(:,:,iT)' * omegara0(:,:,iT+1);
+        if iT ~= T
+          forwardEffecta0 = sOut2.Lown(:,:,iT)' * omegara0(:,:,iT+1);
         else
           forwardEffecta0 = zeros(obj.m, obj.m);
         end
-        filterEffecta0 = -Mdagger(:,:,iT) * Aa(:,:,iT) * waa0(:,:,iT);
-        omegara0(:,:,iT) = forwardEffecta0 + filterEffecta0;
+        if ~isempty(otherOmega) && iT ~= obj.n
+          forwardEffectOthera0 = sOut2.Lother(:,:,iT)' * otherOmega.a0(:,:,iT+1);
+        else
+          forwardEffectOthera0 = zeros(obj.m, obj.m);
+        end
+        filterEffecta0 = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.a0(:,:,iT);
+        omegara0(:,:,iT) = forwardEffecta0 + forwardEffectOthera0 + filterEffecta0;
       end
       
-      % plot([sOut.r(1,:)' squeeze(sum(sum(omegar(1,:,:,:), 4), 2))])
+      weights = struct('y', omegar, 'd', omegard, 'c', omegarc, 'a0', omegara0);
     end
     
-    function [Ldagger, Mdagger, Ay, Aa] = build_smoother_weight_parts(obj, y, fOut, ssMulti, C)
+    function components = build_smoother_weight_parts(obj, y, fOut)
       % Build the quantities we need to build the smoother weights
       % A^a, A^y, L^\dagger & M^\dagger
+      % 
+      % Because we would have to set the last value of all of the * quantities in the
+      % diffuse smoother with the corresponding values from the non-diffuse smoother, the
+      % * values will stored in the non-diffuse smoother value arrays. 
       
       Im = eye(obj.m);
       Ip = eye(obj.p);
       
-      % A^a, Mdagger and Ldagger
+      % A^a*, A^a\infty, M^*, \tilde{M}^\infty, L^* and L^\infty
+      Aa = zeros(obj.p, obj.m, obj.n);
       Ldagger = zeros(obj.m, obj.m, obj.n);
       Mdagger = zeros(obj.m, obj.p, obj.n);
-      Aa = zeros(obj.p, obj.m, obj.n);
+
+      Aainfty = zeros(obj.p, obj.m, fOut.dt);
+      Linfty = zeros(obj.m, obj.m, fOut.dt);
+      MinftyTilde = zeros(obj.m, obj.p, fOut.dt);
       
-      for iT = 1:obj.n
-        Lprod = Im;
-        for iP = 1:obj.p
-          if isnan(y(iP,iT))
+      for iT = 1:fOut.dt
+        SstarProd = Im;
+        SinftyProd = Im;
+        
+        for jP = 1:obj.p
+          if isnan(y(jP,iT))
             continue
           end
           
-          Z = obj.Z(iP,:,obj.tau.Z(iT));
-          if iT > fOut.dt || fOut.Fd(iP,iT) == 0
-            K = fOut.K(:,iP,iT);
+          Z = obj.Z(jP,:,obj.tau.Z(iT));
+          Aa(jP,:,iT) = Z * SstarProd;
+          Aainfty(jP,:,iT) = Z * SinftyProd;
+          
+          if fOut.Fd(jP,iT) ~= 0
+            Sinfty = (Im - fOut.Kd(:,jP,iT) * Z);
+            Sstar = Sinfty;
+            MinftyTilde(:,jP,iT) = SstarProd' * Z' / fOut.Fd(jP,iT);
           else
-            K = fOut.Kd(:,iP,iT);
+            Sstar = (Im - fOut.K(:,jP,iT) * Z);
+            Sinfty = Im;
+            Mdagger(:,jP,iT) = SstarProd' * Z' / fOut.F(jP,iT);
           end
           
-          Aa(iP,:,iT) = Z * Lprod;
+          SstarProd = Sstar * SstarProd;
+          SinftyProd = Sinfty * SinftyProd;
+        end
+        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SstarProd;
+        Linfty(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SinftyProd;
+      end
+      
+      % A^a, Mdagger and Ldagger
+      for iT = fOut.dt+1:obj.n
+        Lprod = Im;
+        for jP = 1:obj.p
+          if isnan(y(jP,iT))
+            continue
+          end
+          
+          Z = obj.Z(jP,:,obj.tau.Z(iT));
+          K = fOut.K(:,jP,iT);
+          
+          Aa(jP,:,iT) = Z * Lprod;
           Lprod = (Im - K * Z) * Lprod;
         end
         Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lprod;
@@ -1499,51 +1578,117 @@ classdef StateSpace < AbstractStateSpace
         Mdagger(:,:,iT) = Aa(:,:,iT)' * FinvDiag;
       end
       
+      % L^(0) and M^\infty (M^(0) as a component)
+      Lzero = zeros(obj.m, obj.m, fOut.dt);
+      Minfty = zeros(obj.m, obj.p, fOut.dt);
+      for iT = 1:fOut.dt
+        Mzero = zeros(obj.m, obj.p);
+        Lzerosum = zeros(obj.m, obj.m);
+        
+        % Prebuild S^* product that runs in reverse
+        SstarProd = zeros(obj.m, obj.m, obj.p+1);
+        SstarProd(:,:,end) = Im;
+        % We only need to do p-1 multiplications here since for the first observation we
+        % need the product of the i=2 through p S* matricies.
+        for iP = obj.p:-1:1
+          Zi = obj.Z(iP, :, obj.tau.Z(iT));
+          if fOut.Fd(iP,iT) ~= 0
+            Sstar = (Im - fOut.Kd(:,iP,iT) * Zi);
+          else
+            Sstar = (Im - fOut.K(:,iP,iT) * Zi);
+          end
+          SstarProd(:,:,iP) = Sstar' * SstarProd(:,:,iP+1);          
+        end
+        
+        % Build M^(0) and L^(0) (and the product of S^\infty as we go)
+        SinftyProd = Im;
+        for iP = 1:obj.p
+          if fOut.Fd(iP,iT) ~= 0
+            Zi = obj.Z(iP, :, obj.tau.Z(iT));
+            S0ti = (fOut.Kd(:,iP,iT) - fOut.K(:,iP,iT)) * Zi * fOut.F(iP,iT) / fOut.Fd(iP,iT);
+            Sinfty = (Im - fOut.Kd(:,iP,iT) * Zi);
+          else
+            S0ti = zeros(obj.m, obj.m);
+            Sinfty = Im;
+          end
+          
+          % Compute M^(0) and the complicated part of L^(0)
+          Mzero = Mzero + SinftyProd * S0ti' * obj.build_M0ti(y, fOut, iT, iP);
+          Lzerosum = Lzerosum + SinftyProd * S0ti' * SstarProd(:,:,iP+1);
+          SinftyProd = SinftyProd * Sinfty';
+        end
+        Minfty(:,:,iT) = MinftyTilde(:,:,iT) + Mzero;
+        Lzero(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lzerosum';
+      end
+      
       % A^y
-      Ay = zeros(obj.p, obj.p, obj.n);
+      Ay = zeros(obj.p, obj.p, fOut.dt);
       for iT = 1:obj.n
         AyTilde = zeros(obj.p, obj.p);
-        
-        for iP = 1:obj.p-1
+
+        % Even for the diffuse case, we're going to call everything L
+        for jP = 1:obj.p-1
           % Looping over columns of Ay
-          if isnan(y(iP,iT))
+          if isnan(y(jP,iT))
             continue
           end
           
-          if iT > fOut.dt || fOut.Fd(iP,iT) == 0
-            K_i = fOut.K(:,iP,iT);
-          else
-            K_i = fOut.Kd(:,iP,iT);
-          end
-          
+          % We're building AyTilde element-by-element here. The i's index the
+          % row (which v_ti is affected), the j's index the column (which y_tj is used).
           Lprod = Im;
-          % We're building AyTilde element-by-element here. The j's index the
-          % row (which v_tj is affected), the i's index the column (which y_ti is used).
-          for jP = iP+1:obj.p
+          for iP = jP+1:obj.p
             % Looping over rows of Ay
-            Z = obj.Z(jP, :, obj.tau.Z(iT));
+            Zi = obj.Z(iP, :, obj.tau.Z(iT));
             
-            if iT > fOut.dt || fOut.Fd(iP,iT) == 0
-              K_j = fOut.K(:,jP,iT);
+            if iT <= fOut.dt && fOut.Fd(jP,iT) ~= 0
+              AyTilde(iP, jP) = Zi * Lprod * fOut.Kd(:,jP,iT);
             else
-              K_j = fOut.Kd(:,jP,iT);
+              AyTilde(iP, jP) = Zi * Lprod * fOut.K(:,jP,iT);
             end
             
-            AyTilde(jP, iP) = Z * Lprod * K_i;
-            L = (Im - K_j * Z);
-            Lprod = L * Lprod;
+            if iT <= fOut.dt && fOut.Fd(iP,iT) ~= 0
+              Sk = (Im - fOut.Kd(:,iP,iT) * Zi);
+            else
+              Sk = (Im - fOut.K(:,iP,iT) * Zi);
+            end
+            Lprod = Sk * Lprod;
           end
+          
         end
         
-        Ay(:,:,iT) = Ip - AyTilde;
+        Ay(:,:,iT) = Ip - AyTilde;        
       end
       
-      % FIXME: remove this once development is done
-      ind = ~isnan(y(:,iT));
-      v_test = Ay(:,ind,iT) / C(ind,ind,obj.tau.H(iT)) * ...
-        (y(ind,iT) - ssMulti.d(ind,ssMulti.tau.d(iT))) - Aa(:,:,iT) * fOut.a(:,iT);
-      assert(all(abs(v_test - fOut.v(:,iT)) < 5e-14 | isnan(v_test)));
+      components = struct('Ay', Ay, 'Aa', Aa, 'Aainfty', Aainfty,...
+        'Ldagger', Ldagger, 'Mdagger', Mdagger, ...
+        'Linfty', Linfty, 'Minfty', Minfty, 'Lzero', Lzero);
     end
+    
+    function M0ti = build_M0ti(obj, y, fOut, iT, iP)
+      % Build the M_{t,i}^{(0)} matrix for use in the diffuse smoother recursion
+      
+      M0ti = zeros(obj.m, obj.p);
+      Im = eye(obj.m);
+      SstarProdJ = Im;
+      for jP = iP+1:obj.p
+        if isnan(y(jP,iT))
+          continue
+        end
+        
+        Zj = obj.Z(jP, :, obj.tau.Z(iT));
+        if fOut.Fd(jP,iT) ~= 0
+          Sstar = (Im - fOut.Kd(:,jP,iT) * Zj);
+          Mstarti = zeros(obj.m, 1);
+        else
+          Sstar = (Im - fOut.K(:,jP,iT) * Zj);
+          Mstarti = Zj' / fOut.F(jP,iT);
+        end
+        
+        M0ti(:,jP) = SstarProdJ * Mstarti;
+        SstarProdJ = SstarProdJ * Sstar';
+      end
+    end
+    
   end
   
   methods (Static)

@@ -133,8 +133,8 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
         Ldti = eyeM - Kd.slice(ii-1).col(jj) * Zti;
         L0ti = (Kd.slice(ii-1).col(jj) - K.slice(ii-1).col(jj)) * Zti * F(jj,ii-1) / Fd(jj,ii-1);
 
-        r0ti = trans(Ldti) * r0ti;
         r1ti = trans(Zti) / Fd(jj,ii-1) * v(jj,ii-1) + trans(L0ti) * r0ti + trans(Ldti) * r1ti;
+        r0ti = trans(Ldti) * r0ti;
 
         N0ti = trans(Ldti) * N0ti * Ldti;
         N1ti = trans(Zti) / Fd(jj,ii-1) * Zti + trans(Ldti) * N0ti * L0ti + trans(Ldti) * N1ti * Ldti;
