@@ -213,8 +213,23 @@ classdef StateSpaceEstimation < AbstractStateSpace
               minfunc, theta0U, optFMinUnc);
           case 'fmincon'
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, true);
+            try
             [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(... 
               minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
+            catch ex
+              switch ex.identifier
+                case 'optim:barrier:GradUndefAtX0'
+                  if iter > 1
+                    warning('StateSpaceEstimation:estimate:badInitialGrad', ...
+                      ['Gradient contains Inf, NaN, or complex values. ' ... 
+                      'Returning previous solver output']);
+                  else
+                    rethrow(ex);
+                  end
+                otherwise
+                  rethrow(ex);
+              end 
+            end
           case 'fminsearch'
             tempGrad = obj.useAnalyticGrad;
             obj.useAnalyticGrad = false;
@@ -236,7 +251,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         loopContinue = ~stopestim && iter < obj.solveIterMax && ...
           (iter <= 2 || abs(logli0 - logli) > obj.solveTol);
         
-        if logli0 < logli
+        if logli0 < logli - 1e-12
           warning('StateSpaceEstimation:estimate:solverDecrease', ...
             ['Solver decreased likelihood by %g. \n' ...
             'Returning higher likelihood solution.'], logli - logli0);

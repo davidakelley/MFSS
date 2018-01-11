@@ -1277,7 +1277,7 @@ classdef StateSpace < AbstractStateSpace
       omegac = zeros(obj.m, obj.m, obj.n+1, obj.n+1);
       omegad = zeros(obj.m, obj.p, obj.n+1, obj.n);
       omegaa0 = zeros(obj.m, obj.m, obj.n+1);
-      
+
       Im = eye(obj.m);
       
       % Kstar - the effect of the whole observable on the state
@@ -1285,6 +1285,8 @@ classdef StateSpace < AbstractStateSpace
       % Lstar - propogation of current state to next period
       Lstar = zeros(obj.m, obj.m, obj.n+1);
       Lstar(:,:,1) = obj.T(:,:,obj.tau.T(1));
+      
+      eps3 = eps^4;
       
       % Loop over the data and determine effects of observations as they happen
       for iJ = 1:obj.n
@@ -1308,7 +1310,6 @@ classdef StateSpace < AbstractStateSpace
           end
           KstarTemp(:,iP) = Lproduct * K;
           
-          % FIXME: ok to use Z* and not Z here? Test with a multi example later
           Lproduct = Lproduct * (Im - K * obj.Z(iP,:,obj.tau.Z(iJ)));
         end
         Kstar(:,:,iJ) = T * KstarTemp;
@@ -1330,8 +1331,21 @@ classdef StateSpace < AbstractStateSpace
         omegac(:,:,iJ+1,iJ) = Lstar(:,:,iJ+1) * omegac(:,:,iJ,iJ);
         for iT = iJ+1:obj.n
           omega(:,:,iT+1,iJ) = Lstar(:,:,iT+1)  * omega(:,:,iT,iJ);
+          if all(abs(omega(:,:,iT+1,iJ)) < eps3)
+            break
+          end
+        end
+        for iT = iJ+1:obj.n
           omegad(:,:,iT+1,iJ) = Lstar(:,:,iT+1) * omegad(:,:,iT,iJ);
+          if all(abs(omegad(:,:,iT+1,iJ)) < eps3)
+            break
+          end
+        end
+        for iT = iJ+1:obj.n
           omegac(:,:,iT+1,iJ) = Lstar(:,:,iT+1) * omegac(:,:,iT,iJ);
+          if all(abs(omegac(:,:,iT+1,iJ)) < eps3)
+            break
+          end
         end
       end
       
@@ -1434,6 +1448,9 @@ classdef StateSpace < AbstractStateSpace
       if isempty(sOut2.Lother)
         sOut2.Lother = zeros(size(sOut2.Lown));
       end
+       
+      zeroMP = zeros(obj.m, obj.p);
+      zeroMM = zeros(obj.m, obj.m);
       
       % Iterate over periods affected
       for iT = T:-1:1
@@ -1450,30 +1467,37 @@ classdef StateSpace < AbstractStateSpace
             forwardEffectd = sOut2.Lown(:,:,iT)' * omegard(:,:,iT+1,iJ);
             forwardEffectc = sOut2.Lown(:,:,iT)' * omegarc(:,:,iT+1,iJ);
           else
-            forwardEffect = zeros(obj.m, obj.p);
-            forwardEffectd = zeros(obj.m, obj.p);
-            forwardEffectc = zeros(obj.m, obj.m);
+            forwardEffect = zeroMP;
+            forwardEffectd = zeroMP;
+            forwardEffectc = zeroMM;
           end
+          
+          % The effect of y on r^(1) via future r^(0) 
           if ~isempty(otherOmega) && iT ~= obj.n
             forwardEffectOther = sOut2.Lother(:,:,iT)' * otherOmega.y(:,:,iT+1,iJ);
             forwardEffectOtherd = sOut2.Lother(:,:,iT)' * otherOmega.d(:,:,iT+1,iJ);
             forwardEffectOtherc = sOut2.Lother(:,:,iT)' * otherOmega.c(:,:,iT+1,iJ);
           else
-            forwardEffectOther = zeros(obj.m, obj.p);
-            forwardEffectOtherd = zeros(obj.m, obj.p);
-            forwardEffectOtherc = zeros(obj.m, obj.m);
+            forwardEffectOther = zeroMP;
+            forwardEffectOtherd = zeroMP;
+            forwardEffectOtherc = zeroMM;
           end
           
           % The effect of the data on the filtered state estimate, a_t.
-          % FIXME: Can be eliminated for t <= j (and t < j for c)
-          filterEffect = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.y(:,:,iT,iJ);
-          filterEffectd = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.d(:,:,iT,iJ);
-          filterEffectc = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.c(:,:,iT,iJ);
-          
+          if iT < iJ
+            filterEffect = zeroMP;
+            filterEffectd = zeroMP;
+            filterEffectc = zeroMM;
+          else
+            filterEffect = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.y(:,:,iT,iJ);
+            filterEffectd = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.d(:,:,iT,iJ);
+            filterEffectc = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.c(:,:,iT,iJ);
+          end
+
           % The effect of the data on the error term, v_t.
           % Note that there's no c here because it was already included in a_t.
-          contempEffect = zeros(obj.m, obj.p);
-          contempEffectd = zeros(obj.m, obj.p);
+          contempEffect = zeroMP;
+          contempEffectd = zeroMP;
           if iT == iJ
             validY = ~isnan(y(:,iJ));
             contempEffect(:,validY) = sOut2.M(:,:,iT) * sOut2.Ay(:,validY,iT) ...
@@ -1492,12 +1516,12 @@ classdef StateSpace < AbstractStateSpace
         if iT ~= T
           forwardEffecta0 = sOut2.Lown(:,:,iT)' * omegara0(:,:,iT+1);
         else
-          forwardEffecta0 = zeros(obj.m, obj.m);
+          forwardEffecta0 = zeroMM;
         end
         if ~isempty(otherOmega) && iT ~= obj.n
           forwardEffectOthera0 = sOut2.Lother(:,:,iT)' * otherOmega.a0(:,:,iT+1);
         else
-          forwardEffectOthera0 = zeros(obj.m, obj.m);
+          forwardEffectOthera0 = zeroMM;
         end
         filterEffecta0 = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.a0(:,:,iT);
         omegara0(:,:,iT) = forwardEffecta0 + forwardEffectOthera0 + filterEffecta0;

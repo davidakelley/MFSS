@@ -132,17 +132,18 @@ classdef estimate_test < matlab.unittest.TestCase
       
       A = 1; B = nan; C = 1; D = nan;
       mdl = ssm(A, B, C, D);
-      estmdl = estimate(mdl, nile', [1000; 1000]);
+      estmdl = estimate(mdl, nile', [1000; 1000], 'display', 'off');
 
       testCase.verifyEqual(ssE.H, estmdl.D^2, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, estmdl.B^2, 'RelTol',  1e-2);
     end
     
     function testGeneratedSmallGradientZero(testCase)
-      assumeFail(testCase); % Filter by assumption
-
+      % Make sure that the gradient at the estimated parameters is close to zero
       p = 2; m = 1; timeDim = 500;
+      rng(1007648153)
       ssTrue = generateARmodel(p, m-1, false);
+      ssTrue.T = 1;
       y = generateData(ssTrue, timeDim);
       
       % Estimated system
@@ -167,14 +168,15 @@ classdef estimate_test < matlab.unittest.TestCase
       T0(isnan(T0)) = 0.5./m;
       Q0 = 1;
       ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0);
-
+      
       [~, ~, grad] = ssE.estimate(y, ss0);
-      testCase.verifyLessThanOrEqual(abs(grad), 5e-4);
+      testCase.verifyLessThanOrEqual(abs(grad), 1e-4);
     end
     
     function testBounds(testCase)
       p = 2; m = 1; timeDim = 500;
       ssTrue = generateARmodel(p, m-1, false);
+      ssTrue.T = 1;
       y = generateData(ssTrue, timeDim);
       
       % Estimated system
@@ -212,9 +214,11 @@ classdef estimate_test < matlab.unittest.TestCase
       ss0 = ssTrue;
       ss0.T = 0.2;
       
+      % The warnings thrown in this example don't worry me but I don't know how to
+      % addresse them right now, so they stay.
       [ssE, ~, ~] = ss.estimate(y, ss0);
       testCase.verifyLessThanOrEqual(ssE.T, Tub);
-      testCase.verifyGreaterThanOrEqual(ssE.T, Tlb);      
+      testCase.verifyGreaterThanOrEqual(ssE.T, Tlb);
     end
   end
 end
