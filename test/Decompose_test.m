@@ -28,7 +28,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       [decomp_data, decomp_const] = ss.decompose_filtered(y);
       reconstruct_a = squeeze(decomp_data) + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR1M_a(testCase)
@@ -41,7 +41,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), [1 151]);
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR1Mc_a(testCase)
@@ -54,7 +54,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), [1 151]);
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testNile_a(testCase)
@@ -67,7 +67,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       [decomp_data, decomp_const] = ss.decompose_filtered(y);
       reconstruct_a = squeeze(decomp_data)';
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
       testCase.verifyEqual(decomp_const, zeros(1, 101));
     end
     
@@ -82,7 +82,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(a));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_const_a(testCase)
@@ -95,10 +95,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       a = ss.filter(y);
       [decomp_data, decomp_const] = ss.decompose_filtered(y);
-      dataEff = squeeze(sum(decomp_data, 2));
+      dataEff = reshape(sum(decomp_data, 2), size(a));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(reconstruct_a, a, 'RelTol', 1e-13);
+      testCase.verifyEqual(reconstruct_a, a, 'RelTol', 1e-13, 'AbsTol', 1e-12);
     end
     
     function testARpM_a0_a(testCase)
@@ -113,7 +113,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = squeeze(sum(decomp_data, 2));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpTVP_a(testCase)
@@ -134,7 +134,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(a));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARp_a_oddZ(testCase)
@@ -158,7 +158,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       [decomp_data, decomp_const] = ss.decompose_filtered(y);
       reconstruct_a = reshape(sum(decomp_data, 2), size(a)) + decomp_const;
   
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     %% Tests of the weights for r_t
@@ -191,7 +191,7 @@ classdef Decompose_test < matlab.unittest.TestCase
           - comp.Aa(:,:,iT) * fOut.a(:,iT);
       end
       
-      testCase.verifyEqual(fOut.v, v_reconstruct, 'AbsTol', 1e-11);
+      testCase.verifyEqual(fOut.v, v_reconstruct, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR11_r(testCase)
@@ -213,9 +213,15 @@ classdef Decompose_test < matlab.unittest.TestCase
       
       fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
       rWeights = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
-      r_reconstruct = reshape(sum(sum(rWeights.y, 2), 4), size(r));
+      r_reconstruct = zeros(size(r));
+      for iT = 1:ss.n
+        if any(~cellfun(@isempty, rWeights.y(iT,:)))
+          r_reconstruct(:,iT) = sum(cat(3, ...
+            rWeights.y{iT, ~cellfun(@isempty, rWeights.y(iT,:))}), 3);
+        end
+      end
       
-      testCase.verifyEqual(r, r_reconstruct, 'AbsTol', 1e-11);
+      testCase.verifyEqual(r, r_reconstruct, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
 
     function testLLM_diffuse_r(testCase)
@@ -242,12 +248,24 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Decompose
       fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
-      r_reconstruct = reshape(sum(sum(rWeights.y, 2), 4), size(r));
-      r1_reconstruct = [reshape(sum(sum(r1Weights.y, 2), 4), size(r1)-[0 1]) zeros(ss.m, 1)];
+      r_reconstruct = zeros(size(r));
+      r1_reconstruct = zeros(size(r1));
+      for iT = 1:ss.n
+        if any(~cellfun(@isempty, rWeights.y(iT,:)))
+          r_reconstruct(:,iT) = sum(cat(3, ...
+            rWeights.y{iT, ~cellfun(@isempty, rWeights.y(iT,:))}), 3);
+        end
+      end
+      for iT = 1:fOut.dt
+        if any(~cellfun(@isempty, r1Weights.y(iT,:)))
+          r1_reconstruct(:,iT) = sum(cat(3, ...
+            r1Weights.y{iT, ~cellfun(@isempty, r1Weights.y(iT,:))}), 3);
+        end
+      end
       
       % Test
-      testCase.verifyEqual(r_reconstruct, r, 'AbsTol', 1e-11);
-      testCase.verifyEqual(r1_reconstruct, r1, 'AbsTol', 1e-11);
+      testCase.verifyEqual(r_reconstruct, r, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
+      testCase.verifyEqual(r1_reconstruct, r1, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
     end
 
     function testARp1_diffuse_r(testCase)
@@ -274,12 +292,24 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Decompose
       fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
-      r_reconstruct = reshape(sum(sum(rWeights.y, 2), 4), size(r));
-      r1_reconstruct = [reshape(sum(sum(r1Weights.y, 2), 4), size(r1)-[0 1]) zeros(ss.m, 1)];
+      r_reconstruct = zeros(size(r));
+      r1_reconstruct = zeros(size(r1));
+      for iT = 1:ss.n
+        if any(~cellfun(@isempty, rWeights.y(iT,:)))
+          r_reconstruct(:,iT) = sum(cat(3, ...
+            rWeights.y{iT, ~cellfun(@isempty, rWeights.y(iT,:))}), 3);
+        end
+      end
+      for iT = 1:fOut.dt
+        if any(~cellfun(@isempty, r1Weights.y(iT,:)))
+          r1_reconstruct(:,iT) = sum(cat(3, ...
+            r1Weights.y{iT, ~cellfun(@isempty, r1Weights.y(iT,:))}), 3);
+        end
+      end
       
       % Test
-      testCase.verifyEqual(r_reconstruct, r, 'RelTol', 1e-10);
-      testCase.verifyEqual(r1_reconstruct, r1, 'RelTol', 1e-10);
+      testCase.verifyEqual(r_reconstruct, r, 'RelTol', 1e-10, 'AbsTol', 1e-12);
+      testCase.verifyEqual(r1_reconstruct, r1, 'RelTol', 1e-10, 'AbsTol', 1e-12);
     end
     
     function testAR1M_diffuse_r(testCase)
@@ -307,12 +337,24 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Decompose
       fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
-      r_reconstruct = reshape(sum(sum(rWeights.y, 2), 4), size(r));
-      r1_reconstruct = [reshape(sum(sum(r1Weights.y, 2), 4), size(r1)-[0 1]) zeros(ss.m, 1)];
+      r_reconstruct = zeros(size(r));
+      r1_reconstruct = zeros(size(r1));
+      for iT = 1:ss.n
+        if any(~cellfun(@isempty, rWeights.y(iT,:)))
+          r_reconstruct(:,iT) = sum(sum(cat(3, ...
+            rWeights.y{iT, ~cellfun(@isempty, rWeights.y(iT,:))}), 3), 2);
+        end
+      end
+      for iT = 1:fOut.dt
+        if any(~cellfun(@isempty, r1Weights.y(iT,:)))
+          r1_reconstruct(:,iT) = sum(sum(cat(3, ...
+            r1Weights.y{iT, ~cellfun(@isempty, r1Weights.y(iT,:))}), 3), 2);
+        end
+      end
       
       % Test
-      testCase.verifyEqual(r_reconstruct, r, 'RelTol', 1e-11);
-      testCase.verifyEqual(r1_reconstruct, r1, 'RelTol', 1e-11);
+      testCase.verifyEqual(r_reconstruct, r, 'RelTol', 1e-11, 'AbsTol', 1e-12);
+      testCase.verifyEqual(r1_reconstruct, r1, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end    
 
     function testARpM_diffuse_r(testCase)
@@ -337,12 +379,24 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Decompose
       fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
-      r_reconstruct = reshape(sum(sum(rWeights.y, 2), 4), size(r));
-      r1_reconstruct = [reshape(sum(sum(r1Weights.y, 2), 4), size(r1)-[0 1]) zeros(ss.m, 1)];
+      r_reconstruct = zeros(size(r));
+      r1_reconstruct = zeros(size(r1));
+      for iT = 1:ss.n
+        if any(~cellfun(@isempty, rWeights.y(iT,:)))
+          r_reconstruct(:,iT) = sum(sum(cat(3, ...
+            rWeights.y{iT, ~cellfun(@isempty, rWeights.y(iT,:))}), 3), 2);
+        end
+      end
+      for iT = 1:fOut.dt
+        if any(~cellfun(@isempty, r1Weights.y(iT,:)))
+          r1_reconstruct(:,iT) = sum(sum(cat(3, ...
+            r1Weights.y{iT, ~cellfun(@isempty, r1Weights.y(iT,:))}), 3), 2);
+        end
+      end
       
       % Test
-      testCase.verifyEqual(r_reconstruct, r, 'RelTol', 1e-11);
-      testCase.verifyEqual(r1_reconstruct, r1, 'RelTol', 1e-11);
+      testCase.verifyEqual(r_reconstruct, r, 'RelTol', 1e-11, 'AbsTol', 1e-12);
+      testCase.verifyEqual(r1_reconstruct, r1, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     %% Smoother weight tests
@@ -358,7 +412,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR1_alpha(testCase)
@@ -370,7 +424,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       [decomp_data, decomp_const] = ss.decompose_smoothed(y);
       reconstruct_alpha = reshape(sum(decomp_data, 2), size(alpha)) + decomp_const;
       
-      testCase.verifyEqual(reconstruct_alpha, alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR1_multivariate_simple_alpha(testCase)
@@ -386,7 +440,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR1_fullH_alpha(testCase)
@@ -399,7 +453,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testNile_alpha(testCase)
@@ -411,7 +465,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       [decomp_data, decomp_const] = ss.decompose_smoothed(y);
       reconstruct_alpha = squeeze(decomp_data)';
       
-      testCase.verifyEqual(reconstruct_alpha, alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
       testCase.verifyEqual(decomp_const, zeros(1, 100));
     end
     
@@ -425,7 +479,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testAR11_diffuse_alpha(testCase)
@@ -439,7 +493,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
         
     function testAR1M_diffuse_alpha(testCase)
@@ -453,7 +507,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_diffuse_alpha(testCase)
@@ -467,7 +521,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARp_uni_d_alpha(testCase)
@@ -481,7 +535,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_d_alpha(testCase)
@@ -495,7 +549,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_uni_c_alpha(testCase)
@@ -510,7 +564,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
 
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_c_alpha(testCase)
@@ -525,7 +579,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
 
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_diffuse_const_alpha(testCase)
@@ -541,7 +595,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-10);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_uni_a0_alpha(testCase)
@@ -556,7 +610,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
 
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_a0_alpha(testCase)
@@ -572,7 +626,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
             
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_diffuse_a0_alpha(testCase)
@@ -587,7 +641,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-10);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
     function testARpM_diffuse_nan_alpha(testCase)
@@ -602,7 +656,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
     end
     
   end
