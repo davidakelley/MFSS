@@ -124,7 +124,29 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % ss.estimate(y, ss0, a0, P0) uses the initial values a0 and P0
       %
       % [ss, flag] = ss.estimate(...) also returns the fmincon flag
-                 
+      
+      if nargin < 3 || isempty(ss0)
+        % Generate default initialization
+        % The default initialization 
+        maxAttempt = 20;
+        iT = 0; ll = nan;
+        while isnan(ll) && iT < maxAttempt
+          iT = iT + 1;
+          theta0 = obj.ThetaMapping.restrictTheta(randi([-2 2], obj.ThetaMapping.nTheta, 1));
+          ss0 = obj.ThetaMapping.theta2system(theta0);
+          try 
+            [~, ll] = ss0.filter(y);
+          catch
+            
+          end
+          
+        end
+        
+        if isnan(ll) && iT == maxAttemp
+          error('Could not find initialization. Please specify valid starting point.');
+        end
+      end
+        
       assert(isnumeric(y), 'y must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
@@ -141,7 +163,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
       assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
       
-      progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m);
+      progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m, ss0);
       outputFcn = @(thetaU, oVals, st) ...
         progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
       
@@ -292,6 +314,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Get the likelihood of
       theta = obj.ThetaMapping.restrictTheta(thetaU);
       ss1 = obj.ThetaMapping.theta2system(theta);
+      ss1 = ss1.setDefaultInitial();
       
       if any(diag(ss1.H) < 0)
         keybaord;
@@ -346,7 +369,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         end
         
         % Put filtered state in figure for plotting
-        progress.a = a;        
+        progress.a = a;  
+        progress.ss = ss1;
       catch ex
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);

@@ -32,6 +32,10 @@ classdef EstimationProgress < handle
     axPt
     plotPt
     axA
+    tableParams   
+    tableSubplot
+    paramSelection
+    paramSelectionSlice
     plotState
     stateSelection 
     
@@ -43,6 +47,7 @@ classdef EstimationProgress < handle
     winSize = [725 700];   
     
     m     % State dimension
+    ss
   end
   
   properties (SetAccess = protected)
@@ -51,11 +56,12 @@ classdef EstimationProgress < handle
   
   methods
     %% Constructor
-    function obj = EstimationProgress(theta0, visible, m)
+    function obj = EstimationProgress(theta0, visible, m, ss)
 
       % Set up tracking values
       obj.theta0 = theta0;
       obj.m = m;
+      obj.ss = ss;
       
       maxPossibleIters = 10000;
       obj.thetaHist = nan(maxPossibleIters, length(obj.theta0));
@@ -94,6 +100,7 @@ classdef EstimationProgress < handle
       % Update current values
       obj.theta = x;
       obj.logli = -optimValues.fval;
+      % obj.ss = ss;
       
       % Update tracking values
       obj.thetaIter = obj.thetaIter + 1;
@@ -121,9 +128,14 @@ classdef EstimationProgress < handle
       ll_YData = obj.likelihoodHist(obj.solverHist == obj.solverIter);
       if ~isempty(ll_XData)
         set(obj.plotVal, 'XData', ll_XData, 'YData', ll_YData);
-        obj.axVal.XLim(2) = ll_XData(end);
+        % obj.axVal.XLim(2) = ll_XData(end);
+        obj.axVal.XLim = [floor(ll_XData(end)*.05) ll_XData(end)];
         obj.axVal.Title.String = sprintf('Current Log-likelihood: %9.4f', ll_YData(end));
       end
+      
+      % Plot of state
+      obj.showParamEstimate(obj.paramSelection.String{obj.paramSelection.Value}, ...
+        obj.paramSelectionSlice.Value);
       
       % Plot of state
       obj.plotStateEstimate(obj.stateSelection.Value);
@@ -221,13 +233,22 @@ classdef EstimationProgress < handle
       
       % Create plot of current theta
       axH = axes(newwin);
-      obj.axPt = subplot(3, 1, 1, axH);
+      obj.axPt = subplot(3, 2, 1, axH);
       obj.plotPt = bar(obj.axPt, 1:length(obj.theta0), obj.theta0, 0.65);
       
       % Plot of likelihood improvement
-      obj.axVal = subplot(3, 1, 2, copyobj(axH, newwin));
+      obj.axVal = subplot(3, 2, 2, copyobj(axH, newwin));
       delete(obj.axVal.Children);
       obj.plotVal = plot(obj.axVal, 0, 0, 'kd', 'MarkerFaceColor', [1 0 1]);
+      
+      % Table of state space elements
+      obj.tableSubplot = subplot(3, 1, 2, copyobj(axH, newwin));
+      obj.tableSubplot.Position(2) = obj.tableSubplot.Position(2) -.03;
+      obj.tableParams = uitable('Parent', obj.tableSubplot.Parent, 'Units', 'normalized', ...
+        'Position', obj.tableSubplot.Position, ...
+        'Data', obj.ss.T(:,:,1));
+      obj.tableSubplot.XAxis.Visible = 'off';
+      obj.tableSubplot.YAxis.Visible = 'off';
       
       % Plot of state
       obj.axA = subplot(3, 1, 3, copyobj(axH, newwin));
@@ -282,6 +303,48 @@ classdef EstimationProgress < handle
       ylabel(obj.axVal, 'Log-likelihood')
       obj.plotVal.MarkerFaceColor =  obj.getCurrentColor();      
       
+      % Table of parameter values
+      titleText = title(obj.tableSubplot, sprintf('State space parameter: '));
+      obj.tableSubplot.Units = 'pixels';
+      titleText.Units = 'pixels';
+      dropdownX = obj.tableSubplot.Position(1) + titleText.Extent(1) + titleText.Extent(3);
+      dropdownY = obj.tableSubplot.Position(2) + titleText.Extent(2);
+      obj.paramSelection = uicontrol('Style', 'popupmenu', ...
+        'String', {'Z', 'd', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'}, ...
+        'Value', 4, ...
+        'Parent', obj.tableSubplot.Parent, ...
+        'Position', [dropdownX dropdownY 50 20]);
+      
+      dropdownXslice = obj.tableSubplot.Position(1) + ...
+        titleText.Extent(1) + titleText.Extent(3) + obj.paramSelection.OuterPosition(3);
+      obj.paramSelectionSlice = uicontrol('Style', 'popupmenu', ...
+        'String', arrayfun(@(x) num2str(x), 1:size(obj.ss.T, 3), 'Uniform', false), ...
+        'Value', 1, ...
+        'Parent', obj.tableSubplot.Parent, ...
+        'Position', [dropdownXslice dropdownY 50 20], ...
+        'Callback', @(dropdown, ~) obj.showParamEstimate(...
+          obj.paramSelection.String{obj.paramSelection.Value}, dropdown.Value));
+      
+      function paramSelectCallback(dropdown, ~)
+        
+        ssParamName = dropdown.String{dropdown.Value};
+        if any(strcmpi(ssParamName, {'Z', 'H', 'T', 'R', 'Q'}))
+          maxSlice = size(obj.ss.(ssParamName), 3);
+        elseif any(strcmpi(ssParamName, {'d', 'c'}))
+          maxSlice = size(obj.ss.(ssParamName), 2);
+        elseif any(strcmpi(ssParamName, {'a0', 'P0'}))
+          maxSlice = 1;
+        else
+          error('Unknown input');
+        end
+        
+        obj.paramSelectionSlice.Value = 1;
+        obj.paramSelectionSlice.String = ...
+          arrayfun(@(x) num2str(x), 1:maxSlice, 'Uniform', false);
+        obj.showParamEstimate(ssParamName, obj.paramSelectionSlice.Value);
+      end
+      obj.paramSelection.Callback = @paramSelectCallback; 
+      
       % Plot of state
       box(obj.axA, 'off');
       titleText = title(obj.axA, sprintf('Filtered State: '));
@@ -311,6 +374,21 @@ classdef EstimationProgress < handle
     end
     
     %% Plot functions
+    function showParamEstimate(obj, paramName, slice)
+      % Plot the filtered/smoothed state
+      
+      if any(strcmpi(paramName, {'Z', 'H', 'T', 'R', 'Q'}))
+        obj.tableParams.Data = obj.ss.(paramName)(:,:,slice);
+      elseif any(strcmpi(paramName, {'d', 'c'}))
+        obj.tableParams.Data = obj.ss.(paramName)(:,slice);
+      elseif any(strcmpi(paramName, {'a0', 'P0'}))
+        obj.tableParams.Data = obj.ss.(paramName);
+      else
+        error('Unknown input');
+      end
+      
+    end    
+    
     function plotStateEstimate(obj, stateIndex)
       % Plot the filtered/smoothed state
       
