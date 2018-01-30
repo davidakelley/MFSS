@@ -74,7 +74,7 @@ classdef ThetaMap < AbstractSystem
     thetaUpperBound
     
     % Indicator for use of analytic gradient
-    useAnalyticGrad = true;
+    useAnalyticGrad = false;
   end
   
   properties (SetAccess = protected)
@@ -1006,7 +1006,7 @@ classdef ThetaMap < AbstractSystem
       inP = inputParser();
       inP.addParameter('explicita0', false);
       inP.addParameter('explicitP0', false);
-      inP.addParameter('useAnalyticGrad', true);
+      inP.addParameter('useAnalyticGrad', false);
       
       inP.parse(argin{:});
       opts = inP.Results;

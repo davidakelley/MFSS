@@ -129,7 +129,11 @@ classdef EstimationProgress < handle
       if ~isempty(ll_XData)
         set(obj.plotVal, 'XData', ll_XData, 'YData', ll_YData);
         % obj.axVal.XLim(2) = ll_XData(end);
-        obj.axVal.XLim = [floor(ll_XData(end)*.05) ll_XData(end)];
+        obj.axVal.XLim(2) = ll_XData(end);
+%         xShowInd = ceil(ll_XData(end)*.05):ll_XData(end);
+        
+%         obj.axVal.YLim = [min(ll_YData(xShowInd))-.1 max(ll_YData(xShowInd))+.1];
+
         obj.axVal.Title.String = sprintf('Current Log-likelihood: %9.4f', ll_YData(end));
       end
       

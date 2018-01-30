@@ -7,7 +7,7 @@ classdef StateSpace < AbstractStateSpace
   
   properties (Hidden)
     % Indicator for use of analytic gradient
-    useAnalyticGrad = true;
+    useAnalyticGrad = false;
   end
   
   properties (Dependent)

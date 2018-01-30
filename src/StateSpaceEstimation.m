@@ -37,13 +37,19 @@ classdef StateSpaceEstimation < AbstractStateSpace
     fminsearchMaxIter = 500;
     
     % Indicator for use of analytic gradient
-    useAnalyticGrad = true;
+    useAnalyticGrad = false;
 
     % Indicator to use more accurate, slower gradient
     useInternalNumericGrad = true;
     
     % Allowable flags in estimation
     flagsAllowed = -1:5;
+    
+    % Number of attempts at random initialization
+    initializeAttempts = 20;
+    
+    % Range to attempt initialization over
+    initializeRange = [-2 2];
   end
   
   properties (Dependent)
@@ -125,49 +131,36 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %
       % [ss, flag] = ss.estimate(...) also returns the fmincon flag
       
-      if nargin < 3 || isempty(ss0)
-        % Generate default initialization
-        % The default initialization 
-        maxAttempt = 20;
-        iT = 0; ll = nan;
-        while isnan(ll) && iT < maxAttempt
-          iT = iT + 1;
-          theta0 = obj.ThetaMapping.restrictTheta(randi([-2 2], obj.ThetaMapping.nTheta, 1));
-          ss0 = obj.ThetaMapping.theta2system(theta0);
-          try 
-            [~, ll] = ss0.filter(y);
-          catch
-            
-          end
-          
-        end
-        
-        if isnan(ll) && iT == maxAttemp
-          error('Could not find initialization. Please specify valid starting point.');
-        end
+      if size(y, 1) ~= obj.p && size(y,2) == obj.p
+        y = y';
       end
+        
+      if nargin < 3 || isempty(ss0)
+        [theta0U, theta0, ss0] = obj.initializeRandom(y);
+      else
+        % Initialization
+        if isa(ss0, 'StateSpace')
+          obj.checkConformingSystem(ss0);
+          theta0 = obj.ThetaMapping.system2theta(ss0);
+        else
+          theta0 = ss0;
+          validateattributes(theta0, {'numeric'}, ...
+            {'vector', 'numel', obj.ThetaMapping.nTheta}, 'estimate', 'theta0');
+        end
+        assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
+        
+        theta0U = obj.ThetaMapping.unrestrictTheta(theta0);
+      end
+        
+      progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m, ss0);
+      outputFcn = @(thetaU, oVals, st) ...
+          progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
         
       assert(isnumeric(y), 'y must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
         'All parameters known. Unable to estimate.');
       
-      % Initialization
-      if isa(ss0, 'StateSpace')
-        obj.checkConformingSystem(ss0);
-        theta0 = obj.ThetaMapping.system2theta(ss0);
-      else
-        theta0 = ss0;
-        validateattributes(theta0, {'numeric'}, ...
-          {'vector', 'numel', obj.ThetaMapping.nTheta}, 'estimate', 'theta0');
-      end
-      assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
-      
-      progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m, ss0);
-      outputFcn = @(thetaU, oVals, st) ...
-        progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
-      
-      theta0U = obj.ThetaMapping.unrestrictTheta(theta0);
       
       % Run fminunc/fmincon
       nonlconFn = @obj.nlConstraintFun;
@@ -378,6 +371,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
         progress.nanIterations = progress.nanIterations + 1;
       end
       
+      if rawLogli > 0
+        keyboard;
+      end
+      
       negLogli = -rawLogli;
       gradient = -rawGradient;
     end
@@ -439,6 +436,48 @@ classdef StateSpaceEstimation < AbstractStateSpace
       if any(isnan(cx))
         warning('Nan constraint.');
       end
+    end
+    
+    function [theta0U, theta0, ss0] = initializeRandom(obj, y)
+      % Generate default initialization
+      
+      % The default initialization
+      iAttempt = 0; 
+      iLogli = nan(obj.initializeAttempts, 1); 
+      iTheta0U = nan(obj.ThetaMapping.nTheta, obj.initializeAttempts);
+      
+      %while (~isfinite(ll0) || any(~isfinite(grad0))) && iAttempt < obj.initializeAttempts
+      for iAttempt = 1:obj.initializeAttempts
+        iTheta0U(:,iAttempt) = obj.initializeRange(1) + rand(obj.ThetaMapping.nTheta, 1) * ...
+          (obj.initializeRange(2) - obj.initializeRange(1));
+        
+        try
+          theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,iAttempt));
+          ss0 = obj.ThetaMapping.theta2system(theta0);
+          [~, iLogli(iAttempt)] = ss0.filter(y);
+        catch
+        end
+      end
+      
+      % Find the best starting point with a valid gradient
+      iLogli(~isfinite(iLogli)) = -Inf;
+      [~, thetaOrder] = sort(iLogli, 'descend');
+      for iGradAtt = 1:sum(~isnan(iLogli))
+        theta0U = iTheta0U(:, thetaOrder(iGradAtt));
+        theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,thetaOrder(iGradAtt)));
+        ss0 = obj.ThetaMapping.theta2system(theta0);
+        [ll0, grad0] = ss0.gradient(y, obj.ThetaMapping);
+        
+        if isfinite(ll0) && all(isfinite(grad0))
+          break
+        end
+      end
+      
+      % Check that we got a good starting point
+      if (~isfinite(ll0) || any(~isfinite(grad0))) && iAttempt == obj.initializeAttempts
+        error('Could not find initialization. Please specify valid starting point.');
+      end
+      
     end
   end
   
