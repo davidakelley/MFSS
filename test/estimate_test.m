@@ -54,6 +54,27 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
     end
     
+    function testNile_noInit(testCase)
+      nile = testCase.data.nile';
+      
+      Z = 1;
+      d = 0;
+      H = nan;
+      T = 1;
+      c = 0;
+      R = 1;
+      Q = nan;
+      
+      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      
+      ss.useAnalyticGrad = false;
+      ssE = ss.estimate(nile);
+      
+      % Using values from Dubrin & Koopman (2012), p. 37
+      testCase.verifyEqual(ssE.H, 15099, 'RelTol', 1e-2);
+      testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
+    end
+    
     function testNileKappa(testCase)
       nile = testCase.data.nile';
       
@@ -169,9 +190,33 @@ classdef estimate_test < matlab.unittest.TestCase
       Q0 = 1;
       ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0);
       
-      [~, ~, grad] = ssE.estimate(y, ss0);
+      ssML = ssE.estimate(y, ss0);
+      [~, grad] = ssML.gradient(y, ssE.ThetaMapping);
       testCase.verifyLessThanOrEqual(abs(grad), 1e-4);
     end
+    
+    function testGenerated_noInit(testCase)
+      % Make sure that the gradient at the estimated parameters is close to zero
+      p = 4; m = 2; timeDim = 500;
+      rng(1007648153)
+      ssTrue = generateARmodel(p, m-1, true);
+      y = generateData(ssTrue, timeDim);
+      
+      % Estimated system
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      d = zeros(p, 1);
+      H = diag(nan(p, 1));
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      c = zeros(m, 1);
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ssE = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      
+      ssML = ssE.estimate(y);
+      testCase.verifyEqual(ssTrue.T, ssML.T, 'AbsTol', 0.1);
+    end   
     
     function testBounds(testCase)
       p = 2; m = 1; timeDim = 500;
