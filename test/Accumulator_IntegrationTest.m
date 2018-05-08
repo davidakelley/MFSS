@@ -1,11 +1,10 @@
-% Test Harvey accumulators for filter/smoother
+% Test accumulators for filter/smoother
 
-% David Kelley, 2016
+% David Kelley, 2016-2018
 
 classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
   
   properties
-%     deai
   end
   
   methods(TestClassSetup)
@@ -18,7 +17,617 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
   end
   
   methods (Test)
-    %% StateSpace tests    
+    %% StateSpace parameter tests
+    function testSumParameters(testCase)
+      p = 2; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      
+      Y = generateData(ssGen, timeDim)';
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      
+      accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [p m+1+1]);
+      testCase.verifySize(ssA.T, [m+2 m+2 2]);
+      testCase.verifySize(ssA.c, [m+2 1]);
+      testCase.verifySize(ssA.R, [m+2 1]);
+      
+      % Make sure Z elements got moved
+      testCase.verifyEqual(ssA.Z(2, m+2), ssGen.Z(2,1));
+      testCase.verifyEqual(ssA.Z(2, 1), 0);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(m+2, m+2, 1), 0);
+      testCase.verifyEqual(ssA.T(m+2, m+2, 2), 1);
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(m+2,1));            
+      % R matrix
+      testCase.verifyEqual(ssA.R, [1; 0; 1]);
+    end
+    
+    function testSumMultipleParameters(testCase)
+      p = 3; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      Y = generateData(ssGen, timeDim)';
+      
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 3) = Accumulator_test.aggregateY(Y(:, 3), 12, 'sum');
+      
+      accum = Accumulator.GenerateRegular(Y, {'', 'sum', 'sum'}, [1 3 12]);
+      
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [3 4]);
+      testCase.verifySize(ssA.T, [4 4 3]);
+      testCase.verifySize(ssA.c, [4 1]);
+      testCase.verifySize(ssA.R, [4 1]);
+      
+      % Make sure Z elements got moved
+      testCase.verifyEqual(ssA.Z(2, 3), ssGen.Z(2,1));
+      testCase.verifyEqual(ssA.Z(3, 4), ssGen.Z(3,1));
+      testCase.verifyEqual(ssA.Z(2, 1), 0);
+      testCase.verifyEqual(ssA.Z(3, 1), 0);
+
+      % T matrix
+      testCase.verifyEqual(ssA.T(3, 1:2, 1), ssGen.T(1,1:2));
+      testCase.verifyEqual(ssA.T(4, 1:2, 1), ssGen.T(1,1:2));
+      testCase.verifyEqual(ssA.T(3, 1:2, 2), ssGen.T(1,1:2));
+      testCase.verifyEqual(ssA.T(4, 1:2, 2), ssGen.T(1,1:2));
+      testCase.verifyEqual(ssA.T(3, 1:2, 3), ssGen.T(1,1:2));
+      testCase.verifyEqual(ssA.T(4, 1:2, 3), ssGen.T(1,1:2));
+      % Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2, 2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 2), [1 0; 0 0]);
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 3), eye(2));
+      
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(4,1));
+
+      % R matrix
+      testCase.verifyEqual(ssA.R, [1; 0; 1; 1]);
+      
+    end
+    
+    function testSumCommonParameters(testCase)      
+      p = 3; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      Y = generateData(ssGen, timeDim)';
+      
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 3) = Accumulator_test.aggregateY(Y(:, 3), 3, 'sum');
+      
+      accum = Accumulator.GenerateRegular(Y, {'', 'sum', 'sum'}, [1 3 3]);
+      
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [3 3]);
+      testCase.verifySize(ssA.T, [3 3 2]);
+      testCase.verifySize(ssA.c, [3 1]);
+      testCase.verifySize(ssA.R, [3 1]);
+      
+      % Make sure Z elements got moved
+      testCase.verifyEqual(ssA.Z(2:3, 3), ssGen.Z(2:3,1));
+      testCase.verifyEqual(ssA.Z(2:3, 1), [0; 0]);
+      
+      % T matrix
+      testCase.verifyEqual(ssA.T(3, 1:2, 1:2), repmat(ssGen.T(1,1:2), [1 1 2]));
+      testCase.verifyEqual(ssA.T(3, 3, 1:2), cat(3, 0, 1));
+      
+    end
+    
+    function testAvgParameters(testCase)
+      p = 10; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      
+      Y = generateData(ssGen, timeDim)';
+      
+      aggY = Y;
+      aggY(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'avg');
+      
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [p m+1+1]);
+      testCase.verifySize(ssA.T, [m+2 m+2 3]);
+      testCase.verifySize(ssA.c, [m+2 3]);
+      testCase.verifySize(ssA.R, [m+2 1 3]);
+      
+      % Make sure Z elements got moved
+      newZ = zeros(size(ssGen.Z,1), 3);
+      newZ([1 3:10],1) = ssGen.Z([1 3:10],1);
+      newZ(2,3) = ssGen.Z(2,1);
+      testCase.verifyEqual(ssA.Z, newZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(1:2, 1:2, :), repmat(ssGen.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(3, 1:2, 1), ssGen.T(1,1:2) + [1 1]);
+      testCase.verifyEqual(ssA.T(3, 1:2, 2), (ssGen.T(1,1:2) + [1 1]) ./ 2);
+      testCase.verifyEqual(ssA.T(3, 1:2, 3), (ssGen.T(1,1:2) + [1 1]) ./ 3, 'AbsTol', 1e-15);
+      testCase.verifyEqual(ssA.T(3, 3, :), reshape([0 1/2 2/3], [1 1 3]));
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(m+2,3));            
+      % R matrix
+      testCase.verifyEqual(ssA.R(:,:,1), [1; 0; 1]);
+      testCase.verifyEqual(ssA.R(:,:,2), [1; 0; 1/2]);
+      testCase.verifyEqual(ssA.R(:,:,3), [1; 0; 1/3]);      
+    end
+    
+    function testAvgMultipleParameters(testCase)
+      p = 10; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      
+      Y = generateData(ssGen, timeDim)';
+      
+      aggY = Y;
+      aggY(:, 2:3) = Accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
+      
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg', 'avg'}, [1 3 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+
+      % Sizes
+      testCase.verifySize(ssA.Z, [p m+1+1]);
+      testCase.verifySize(ssA.T, [m+2 m+2 3]);
+      testCase.verifySize(ssA.c, [m+2 3]);
+      testCase.verifySize(ssA.R, [m+2 1 3]);
+      
+      % Make sure Z elements got moved
+      newZ = zeros(size(ssGen.Z,1), 3);
+      newZ([1 4:10],1) = ssGen.Z([1 4:10],1);
+      newZ(2:3,3) = ssGen.Z(2:3,1);
+      testCase.verifyEqual(ssA.Z, newZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(1:2, 1:2, :), repmat(ssGen.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(3, 1:2, 1), ssGen.T(1,1:2) + [1 1]);
+      testCase.verifyEqual(ssA.T(3, 1:2, 2), (ssGen.T(1,1:2) + [1 1]) ./ 2);
+      testCase.verifyEqual(ssA.T(3, 1:2, 3), (ssGen.T(1,1:2) + [1 1]) ./ 3, 'AbsTol', 1e-15);
+      testCase.verifyEqual(ssA.T(3, 3, :), reshape([0 1/2 2/3], [1 1 3]));
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(m+2,3));            
+      % R matrix
+      testCase.verifyEqual(ssA.R(:,:,1), [1; 0; 1]);
+      testCase.verifyEqual(ssA.R(:,:,2), [1; 0; 1/2]);
+      testCase.verifyEqual(ssA.R(:,:,3), [1; 0; 1/3]);      
+    end
+    
+    function testAvgMultipleParametersSeparated(testCase)
+      p = 10; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      
+      Y = generateData(ssGen, timeDim)';
+      
+      aggY = Y;
+      aggY(:, [2 5]) = Accumulator_test.aggregateY(Y(:, [2 5]), 3, 'avg');
+      
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg', '', '', 'avg'}, [1 3 1 1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+
+      % Sizes
+      testCase.verifySize(ssA.Z, [p m+1+1]);
+      testCase.verifySize(ssA.T, [m+2 m+2 3]);
+      testCase.verifySize(ssA.c, [m+2 3]);
+      testCase.verifySize(ssA.R, [m+2 1 3]);
+      
+      % Make sure Z elements got moved
+      newZ = zeros(size(ssGen.Z,1), 3);
+      newZ([1 3:4 6:10],1) = ssGen.Z([1 3:4 6:10],1);
+      newZ([2 5],3) = ssGen.Z([2 5],1);
+      testCase.verifyEqual(ssA.Z, newZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(1:2, 1:2, :), repmat(ssGen.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(3, 1:2, 1), ssGen.T(1,1:2) + [1 1]);
+      testCase.verifyEqual(ssA.T(3, 1:2, 2), (ssGen.T(1,1:2) + [1 1]) ./ 2);
+      testCase.verifyEqual(ssA.T(3, 1:2, 3), (ssGen.T(1,1:2) + [1 1]) ./ 3, 'AbsTol', 1e-15);
+      testCase.verifyEqual(ssA.T(3, 3, :), reshape([0 1/2 2/3], [1 1 3]));
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(m+2,3));            
+      % R matrix
+      testCase.verifyEqual(ssA.R(:,:,1), [1; 0; 1]);
+      testCase.verifyEqual(ssA.R(:,:,2), [1; 0; 1/2]);
+      testCase.verifyEqual(ssA.R(:,:,3), [1; 0; 1/3]);
+    end
+    
+    function testAvgAddLagsParameters(testCase)
+      p = 10; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      
+      Y = generateData(ssGen, timeDim)';
+      
+      aggY = Y;
+      aggY(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 6, 'avg');
+      
+      % Not really the right horizon for this data, but we need a test for lags
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg', ''}, [1 6 1]);
+      ssA = accum.augmentStateSpace(ssGen);
+            
+      % Sizes
+      testCase.verifySize(ssA.Z, [p 6]);
+      testCase.verifySize(ssA.T, [6 6 6]);
+      testCase.verifySize(ssA.c, [6 6]);
+      testCase.verifySize(ssA.R, [6 1 6]);
+      
+      % Make sure Z elements got moved
+      newZ = zeros(size(ssGen.Z,1), 6);
+      newZ([1 3:10],1) = ssGen.Z([1 3:10],1);
+      newZ(2,6) = ssGen.Z(2,1);
+      testCase.verifyEqual(ssA.Z, newZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(1:2, 1:2, :), repmat(ssGen.T, [1 1 6]));
+      testCase.verifyEqual(ssA.T(2:5, 1:4, :), repmat(eye(4), [1 1 6]));
+      testCase.verifyEqual(ssA.T(6, 1:5, :), ...
+        repmat([ssGen.T(1,1:2) zeros(1,3)] + ones(1,5), [1 1 6]) ...
+        ./ reshape(1:6, [1 1 6]), 'AbsTol', 1e-15);
+      testCase.verifyEqual(ssA.T(6, 6, :), reshape((0:5) ./ (1:6), [1 1 6]));
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(6,6));
+      % R matrix
+      testCase.verifyEqual(ssA.R(1,1,:), ones(1,1,6));
+      testCase.verifyEqual(ssA.R(6,1,:), reshape(1 ./ (1:6), [1 1 6]));
+    end
+    
+    function testAccumExistingTVP(testCase)
+      % Check to make sure we can add an accumulator to a StateSpace that's got
+      % slices of T, c or R. Easiest way to test this is to add 2 accumulators
+      % to a StateSpace separately.
+      
+      assumeFail(testCase); % Write full test
+    end
+        
+    function testSameStateSumParameters(testCase)
+      % Test that accumlators for the first and third observations work. This is really
+      % testing the ordering of the accumulator variables. We should order them by
+      % observation then by state, in the order that they are needed based on the first
+      % observation they're used for. 
+      
+      Z = reshape((1:8)', [4 2]);
+      d = zeros(4,1);
+      H = eye(4);
+      
+      T = diag([.99 -.5]);
+      c = [0; 0];
+      R = eye(2);
+      Q = eye(2);
+      
+      ss = StateSpace(Z, d, H, T, c, R, Q);
+      % Generate data for y and aggregate the first and 3rd series
+      y = generateData(ss, 300);
+      y(1,:) = reshape([nan(100,2) mean(reshape(y(1,:), [100 3]), 2)]', [], 1)';
+      y(3,:) = reshape([nan(50,5) sum(reshape(y(3,:), [50 6]), 2)]', [], 1)';
+      y(4,:) = reshape([nan(100,2) mean(reshape(y(4,:), [100 3]), 2)]', [], 1)';
+      
+      accum = Accumulator.GenerateRegular(y', {'sum', '', 'sum', 'sum'}, [3 1 6 3]);
+      ssA = accum.augmentStateSpace(ss);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [4 6]);
+      testCase.verifySize(ssA.T, [6 6 3]);
+      testCase.verifySize(ssA.c, [6 1]);
+      testCase.verifySize(ssA.R, [6 2]);
+      
+      % Make sure Z elements got moved and the states are ordered correctly.
+      testZ = [...
+        0 0 1 5 0 0
+        2 6 0 0 0 0
+        0 0 0 0 3 7
+        0 0 4 8 0 0];
+      testCase.verifyEqual(ssA.Z, testZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(:, 1:2, :), repmat(ss.T, [3 1 3]));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 2:3), repmat(eye(2), [1 1 2]));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 1:2), zeros(2, 2, 2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 3), eye(2));
+      
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(6,1));
+      
+      % R matrix
+      testCase.verifyEqual(ssA.R, repmat(ss.R, [3 1]));      
+    end
+    
+    function testSameStateSumParametersB(testCase)
+      % Test that accumlators in the first and third observations work. Basically the same
+      % test as above but a different ordering to make sure we did it right. 
+            
+      Z = reshape((1:8)', [4 2]);
+      d = zeros(4,1);
+      H = eye(4);
+      
+      T = diag([.99 -.5]);
+      c = [0; 0];
+      R = eye(2);
+      Q = eye(2);
+      
+      ss = StateSpace(Z, d, H, T, c, R, Q);
+      % Generate data for y and aggregate the first and 3rd series
+      y = generateData(ss, 300);
+      y(1,:) = reshape([nan(50,5) sum(reshape(y(1,:), [50 6]), 2)]', [], 1)';
+      y(3,:) = reshape([nan(50,5) sum(reshape(y(3,:), [50 6]), 2)]', [], 1)';
+      y(4,:) = reshape([nan(100,2) sum(reshape(y(4,:), [100 3]), 2)]', [], 1)';
+      
+      accum = Accumulator.GenerateRegular(y', {'sum', '', 'sum', 'sum'}, [6 1 6 3]);
+      ssA = accum.augmentStateSpace(ss);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [4 6]);
+      testCase.verifySize(ssA.T, [6 6 3]);
+      testCase.verifySize(ssA.c, [6 1]);
+      testCase.verifySize(ssA.R, [6 2]);
+      
+      % Make sure Z elements got moved and the states are ordered correctly.
+      testZ = [...
+        0 0 1 5 0 0
+        2 6 0 0 0 0
+        0 0 3 7 0 0
+        0 0 0 0 4 8 ];
+      testCase.verifyEqual(ssA.Z, testZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(:, 1:2, :), repmat(ss.T, [3 1 3]));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1:2), zeros(2,2,2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 3), eye(2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 1), zeros(2, 2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 2:3), repmat(eye(2), [1 1 2]));
+      
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(6,1));
+      
+      % R matrix
+      testCase.verifyEqual(ssA.R, repmat(ss.R, [3 1]));  
+    end
+    
+    function testSameStateAvgAccumulators(testCase)
+      % Test that accumlators in the first and third observations work
+      Z = [1; .5; 1];
+      d = zeros(3,1);
+      H = diag(ones(3,1));
+      
+      T = diag(.99);
+      c = 0;
+      R = 1;
+      Q = 1;
+      
+      ss = StateSpace(Z, d, H, T, c, R, Q);
+      % Generate data for y and aggregate the first and 3rd series
+      y = generateData(ss, 300);
+      y(1,:) = reshape([nan(100,2) mean(reshape(y(1,:), [100 3]), 2)]', [], 1)';
+      y(3,:) = reshape([nan(100,2) mean(reshape(y(3,:), [100 3]), 2)]', [], 1)';
+      
+      accum = Accumulator.GenerateRegular(y', {'avg', '', 'avg'}, [3 1 3]);
+      ssA = accum.augmentStateSpace(ss);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [3 3]);
+      testCase.verifySize(ssA.T, [3 3 3]);
+      testCase.verifySize(ssA.c, [3 3]);
+      testCase.verifySize(ssA.R, [3 1 3]);
+      
+      % Make sure Z elements got moved
+      testCase.verifyEqual(ssA.Z, [0 0 1; .5 0 0; 0 0 1]);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(1, 1, :), repmat(ss.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(2, 1, :), ones(1,1,3));
+      testCase.verifyEqual(ssA.T(3, 1:2, 1), [ss.T+1 1]);
+      testCase.verifyEqual(ssA.T(3, 1:2, 2), [ss.T+1 1] ./ 2);
+      testCase.verifyEqual(ssA.T(3, 1:2, 3), [ss.T+1 1] ./ 3, 'AbsTol', 1e-15);
+      testCase.verifyEqual(ssA.T(3, 3, :), reshape([0 1/2 2/3], [1 1 3]));
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(3,3));            
+      % R matrix
+      testCase.verifyEqual(ssA.R(:,:,1), [1; 0; 1]);
+      testCase.verifyEqual(ssA.R(:,:,2), [1; 0; 1/2]);
+      testCase.verifyEqual(ssA.R(:,:,3), [1; 0; 1/3]);
+    end
+    
+    function testMultipleObsAccum(testCase)
+      % Test that accumlators in the first and third observations work      
+      Z = [1 2; 3 4; 5 6];
+      d = zeros(3,1);
+      H = diag(ones(3,1));
+      
+      T = diag([.99 -.1]);
+      c = zeros(2,1);
+      R = [1 0; 0 1];
+      Q = diag([1 1]);
+      
+      ss = StateSpace(Z, d, H, T, c, R, Q);
+      % Generate data for y and aggregate the first and 3rd series
+      y = generateData(ss, 300);
+      y(1,:) = reshape([nan(100,2) sum(reshape(y(1,:), [3 100]))']', [], 1)';
+      y(3,:) = reshape([nan(50,5) sum(reshape(y(3,:)', [6 50]))']', [], 1)';
+      
+      accum = Accumulator.GenerateRegular(y', {'sum', '', 'sum'}, [3 1 6]);
+      ssA = accum.augmentStateSpace(ss);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [3 6]);
+      testCase.verifySize(ssA.T, [6 6 3]);
+      testCase.verifySize(ssA.c, [6 1]);
+      testCase.verifySize(ssA.R, [6 2]);
+      
+      % Make sure Z elements got moved
+      testCase.verifyEqual(ssA.Z(1, 3:4), ss.Z(1,:));
+      testCase.verifyEqual(ssA.Z(2, 1:2), ss.Z(2,:));
+      testCase.verifyEqual(ssA.Z(3, 5:6), ss.Z(3,:));
+      
+      % T matrix
+      testCase.verifyEqual(ssA.T(1:2, 1:2, :), repmat(ss.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(3:4, 1:2, :), repmat(ss.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(5:6, 1:2, :), repmat(ss.T, [1 1 3]));
+      % Make sure s_t is correct
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 2:3), repmat(eye(2), [1 1 2]));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 1:2), zeros(2,2,2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 3), eye(2));
+      
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(6,1));
+
+      % R matrix
+      testCase.verifyEqual(ssA.R, repmat(ss.R, [3 1]));
+    end
+    
+    function testSeparatedAccumulators(testCase)
+      % Test that accumlators in the first and third observations work      
+      Z = [0 1; .5 1; 1 1];
+      d = zeros(3,1);
+      H = diag(ones(3,1));
+      
+      T = diag([.99 -.1]);
+      c = zeros(2,1);
+      R = [1 0; 0 1];
+      Q = diag([1 1]);
+      
+      ssGen = StateSpace(Z, d, H, T, c, R, Q);
+      % Generate data for y and aggregate the first and 3rd series
+      y = generateData(ssGen, 300);
+      y(1,:) = reshape([nan(100,2) mean(reshape(y(1,:), [100 3]), 2)]', [], 1)';
+      y(3,:) = reshape([nan(100,2) mean(reshape(y(3,:), [100 3]), 2)]', [], 1)';
+      
+      accum = Accumulator.GenerateRegular(y', {'avg', '', 'avg'}, [1 1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Sizes
+      testCase.verifySize(ssA.Z, [3 7]);
+      testCase.verifySize(ssA.T, [7 7 3]);
+      testCase.verifySize(ssA.c, [7 3]);
+      testCase.verifySize(ssA.R, [7 2 3]);
+      
+      % Make sure Z elements got moved
+      newZ = zeros(size(ssGen.Z,1), 7);
+      newZ(1,5) = ssGen.Z(1,2);
+      newZ(2,1:2) = ssGen.Z(2,1:2);
+      newZ(3,6:7) = ssGen.Z(3,1:2);
+      testCase.verifyEqual(ssA.Z, newZ);
+      
+      % T Matrix - Make sure 0 and 1 elements in the right places
+      testCase.verifyEqual(ssA.T(1:2, 1:2, :), repmat(ssGen.T, [1 1 3]));
+      testCase.verifyEqual(ssA.T(3:4, 1:2, :), repmat(eye(2), [1 1 3]));
+      testCase.verifyEqual(ssA.T(5, 1:2, :), ...
+        repmat(ssGen.T(2,1:2), [1 1 3]) ./ reshape(1:3, [1 1 3]));
+      testCase.verifyEqual(ssA.T(5, 3:4, :), zeros(1, 2, 3))
+      testCase.verifyEqual(ssA.T(5, 5, :), reshape((0:2) ./ (1:3), [1 1 3]));
+      
+      testCase.verifyEqual(ssA.T(6:7, 1:2, :), ...
+        (repmat(ssGen.T, [1 1 3]) + eye(2)) ./ reshape(1:3, [1 1 3]));
+      testCase.verifyEqual(ssA.T(6:7, 3:4, :), eye(2) ./ reshape(1:3, [1 1 3]));
+      testCase.verifyEqual(ssA.T(6, 6, :), reshape((0:2) ./ (1:3), [1 1 3]));
+      testCase.verifyEqual(ssA.T(7, 7, :), reshape((0:2) ./ (1:3), [1 1 3]));
+
+      % c vector 
+      testCase.verifyEqual(ssA.c, zeros(7,3));
+      % R matrix
+      testCase.verifyEqual(ssA.R(1:2,1:2,:), repmat(ssGen.R, [1 1 3]));
+      testCase.verifyEqual(ssA.R(5,1:2,:), repmat(ssGen.R(2,:), [1 1 3]) ./ reshape(1:3, [1 1 3]))
+      testCase.verifyEqual(ssA.R(6:7,1:2,:), repmat(ssGen.R, [1 1 3]) ./ reshape(1:3, [1 1 3]))
+    end
+    
+    %% Tests that accumlated states equal the data
+    function testSumSmoother(testCase)
+      % Test that when a low-frequency series has no measurement error that the
+      % smoothed accumulator variable for that observation matches the observation. 
+      p = 2; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = [0.5 0.3];
+      ssGen.Z(2,1) = 1;
+      ssGen.H = blkdiag(1, 0);
+      
+      Y = generateData(ssGen, timeDim)';
+      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      
+      accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Make sure we can run the filter
+      [~, ll] = ssA.filter(Y');
+      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
+      
+      % Test smoother
+      alpha = ssA.smooth(Y);
+      testCase.verifyEqual(alpha(3,3:3:end)', Y(3:3:end,2), 'AbsTol', 1e-10);
+    end
+    
+    function testAvgSmoother(testCase)
+      % Test that when a low-frequency series has no measurement error that the
+      % smoothed accumulator variable for that observation matches the observation. 
+      p = 2; m = 1; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.Z(2,1) = 1;
+      ssGen.H = diag([1 0]);
+      ssGen.T(1,:) = [0.5 0.3];
+      
+      Y = generateData(ssGen, timeDim)';
+      
+      aggY = Y;
+      aggY(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'avg');
+      
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Make sure we can run the filter
+      [~, ll] = ssA.filter(Y');
+      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
+      
+      % Test smoother
+      alpha = ssA.smooth(aggY);
+      testCase.verifyEqual(alpha(end,3:3:end)', aggY(3:3:end,2), 'AbsTol', 1e-10);
+    end
+    
+    function testCommonStateProcess(testCase)
+      p = 7; timeDim = 205;
+      m1 = generateARmodel(p, 1, true);
+      m1.T(1,:) = [0.85 0.05];
+      m2 = generateARmodel(p, 2, true);
+      m2.T(1,:) = [0.85 0.05 -0.2];
+      m = m1.m + m2.m;
+      ssGen = StateSpace([m1.Z m2.Z], zeros(p,1), m1.H, ...
+        blkdiag(m1.T, m2.T), zeros(m, 1), blkdiag(m1.R, m2.R), blkdiag(m1.Q, m2.Q));
+      ssGen.Z(6,[1 3]) = [1 1];
+      ssGen.H(6,6) = 0;
+      
+      Y = generateData(ssGen, timeDim);
+      
+      aggY = Y';
+      aggY(:, 3) = Accumulator_test.aggregateY(Y(3, :)', 3, 'sum');
+      aggY(:, 6) = Accumulator_test.aggregateY(Y(4, :)', 3, 'avg');
+      
+      accum = Accumulator.GenerateRegular(aggY, ...
+        {'', '', 'sum', '', '', 'avg', ''}, [1 1 3 1 1 3 1]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      % Make sure we can run the filter
+      [~, ll] = ssA.filter(Y');
+      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
+      
+      % Test smoother
+      alpha = ssA.smooth(aggY);
+      testCase.verifyEqual(sum(alpha(end-1:end,3:3:end)', 2), ...
+        aggY(3:3:end,6), 'AbsTol', 1e-10);
+    end
+    
+    % Not sure what this is doing here:
     function testNoAccumWithMissing(testCase)
       % Run smoother over a dataset with missing observations, check that
       % its close to a dataset without missing values.
@@ -38,213 +647,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       diffPeriods = sum((abs(alpha(1, :)' - obsAlpha(1,:)')) > 0.02);
       testCase.verifyLessThanOrEqual(diffPeriods, allowedDiffPeriods);
     end
-    
-    function testSumAccumulatorSmoother(testCase)
-      p = 2; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
-      
-      Y = generateData(ssGen, timeDim)';
-      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
 
-      accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
-      ssA = accum.augmentStateSpace(ssGen);
-       
-      % Sizes
-      testCase.verifySize(ssA.Z, [p m+1+1]);
-      testCase.verifySize(ssA.T, [m+2 m+2 2]);
-      testCase.verifySize(ssA.c, [m+2 2]);
-      testCase.verifySize(ssA.R, [m+2 1 2]);
-      
-      % Make sure 0 and 1 elements in the right places
-      testCase.verifyEqual(ssA.T(m+2, m+2, 1), 0);
-      testCase.verifyEqual(ssA.T(m+2, m+2, 2), 1);
-      
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z(2, m+2), ssGen.Z(2,1));
-      testCase.verifyEqual(ssA.Z(2, 1), 0);
-      
-      % Make sure the smoother works
-      [~, ll] = ssA.filter(Y');
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-
-%       alpha = ssA.smooth(Y);
-%       latentAlpha = ssGen.smooth(Y);
-%       testCase.verifyGreaterThan(corr(alpha(1,:)', latentAlpha(1,:)'), 0.94);
-%       testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.75, 'RelTol', 0.5);
-    end
-    
-    function testSumAccumutlatorMultiple(testCase)
-      p = 3; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
-      Y = generateData(ssGen, timeDim)';
-      
-      Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
-      Y(:, 3) = Accumulator_test.aggregateY(Y(:, 3), 12, 'sum');
-      
-      accum = Accumulator.GenerateRegular(Y, {'', 'sum', 'sum'}, [1 3 12]);
-      
-      ssA = accum.augmentStateSpace(ssGen);
-      
-      % Sizes
-      testCase.verifySize(ssA.Z, [3 13]);
-      testCase.verifySize(ssA.T, [13 13 3]);
-      testCase.verifySize(ssA.c, [13 3]);
-      testCase.verifySize(ssA.R, [13 1 3]);
-      
-      % Make sure 0 and 1 elements in the right places
-      testCase.verifyEqual(ssA.T(12:13, 12:13, 1), zeros(2, 2));
-      testCase.verifyEqual(ssA.T(12:13, 12:13, 2), [1 0; 0 0]);
-      testCase.verifyEqual(ssA.T(12:13, 12:13, 3), eye(2));
-      
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z(2, 12), ssGen.Z(2,1));
-      testCase.verifyEqual(ssA.Z(3, 13), ssGen.Z(3,1));
-      testCase.verifyEqual(ssA.Z(2, 1), 0);
-      testCase.verifyEqual(ssA.Z(3, 1), 0);
-      
-      % Make sure the smoother works
-      [~, ll] = ssA.filter(Y');
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-    end
-    
-    function testAvgAccumulatorTwoAccum(testCase)
-      p = 10; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
-      
-      Y = generateData(ssGen, timeDim)';
-
-      aggY = Y;
-      aggY(:, 2:3) = Accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
-
-      accum = Accumulator.GenerateRegular(aggY, {'', 'avg', 'avg'}, [1 3 3]);
-      ssA = accum.augmentStateSpace(ssGen);
-            
-%       testCase.verifyEqual();
-    end
-    
-    function testAvgAccumulatorAddLags(testCase)
-      p = 10; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
-      
-      Y = generateData(ssGen, timeDim)';
-
-      aggY = Y;
-      aggY(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 6, 'avg');
-
-      % Not really the right horizon for this data, but we need a test for lags
-      accum = Accumulator.GenerateRegular(aggY, {'', 'avg', ''}, [1 6 1]);
-      ssA = accum.augmentStateSpace(ssGen);
-            
-      testCase.verifyEqual(ssA.T(2:5, 1:4, 1), eye(4));
-    end
-    
-    function testAvgAccumulatorSmoother(testCase)
-      p = 10; m = 1; timeDim = 599;
-      ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = [0.5 0.3];
-      
-      Y = generateData(ssGen, timeDim)';
-
-      aggY = Y;
-      aggY(:, 2:3) = Accumulator_test.aggregateY(Y(:, 2:3), 3, 'avg');
-      aggY(:, 4) = Accumulator_test.aggregateY(Y(:, 4), 12, 'avg');
-
-      accum = Accumulator.GenerateRegular(aggY, {'', 'avg', 'avg', 'avg'}, [1 3 3 12]);
-      ssA = accum.augmentStateSpace(ssGen);
-            
-      % Sizes
-      testCase.verifySize(ssA.Z, [p 13]);
-      testCase.verifySize(ssA.T, [13 13 12]);
-      testCase.verifySize(ssA.c, [13 12]);
-      testCase.verifySize(ssA.R, [13 1 12]);
-      
-      % Make sure 0 and 1 elements in the right places
-      testCase.verifyEqual(ssA.T(12, 12, 1:4), zeros(1, 1, 4));
-      testCase.verifyEqual(ssA.T(1:1+m, 1:1+m, :), repmat(ssGen.T(1:1+m, 1:1+m), [1 1 12]));
-      
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z(2, 12), ssGen.Z(2,1));
-      testCase.verifyEqual(ssA.Z(3, 13), ssGen.Z(3,1));
-      testCase.verifyEqual(ssA.Z(2:3, 1), zeros(2, 1));
-      
-      % Make sure the smoother works
-      [~, ll] = ssA.filter(Y');
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-      
-%       latentAlpha = ssGen.smooth(Y);
-%       alpha = ssA.smooth(aggY);
-%       testCase.verifyGreaterThan(corr(alpha(1,:)', latentAlpha(1,:)'), 0.96);
-%       testCase.verifyEqual(alpha(1,:), latentAlpha(1,:), 'AbsTol', 0.75, 'RelTol', 0.5);
-    end
-    
-    function testMultipleStateProcess(testCase)
-      p = 7; timeDim = 205;
-      m1 = generateARmodel(p, 1, true);
-      m1.T(1,:) = [0.85 0.05];
-      m2 = generateARmodel(p, 2, true);
-      m2.T(1,:) = [0.85 0.05 -0.2];
-      m = m1.m + m2.m;
-      ssGen = StateSpace([m1.Z m2.Z], zeros(p,1), m1.H, ...
-        blkdiag(m1.T, m2.T), zeros(m, 1), blkdiag(m1.R, m2.R), blkdiag(m1.Q, m2.Q));
-      
-      [Y, trueAlpha] = generateData(ssGen, timeDim);
-
-      aggY = Y';
-      aggY(:, 3) = Accumulator_test.aggregateY(Y(3, :)', 3, 'sum');
-      aggY(:, 6) = Accumulator_test.aggregateY(Y(4, :)', 3, 'avg');
-      aggY(:, 7) = Accumulator_test.aggregateY(Y(4, :)', 12, 'avg');
-
-      accum = Accumulator.GenerateRegular(aggY, ...
-        {'', '', 'sum', '', '', 'avg', 'avg'}, [1 1 3 1 1 1 1]);
-      ssA = accum.augmentStateSpace(ssGen);
-        
-      % Sizes
-      testCase.verifySize(ssA.Z, [p m+6]);
-      testCase.verifySize(ssA.T, [m+6 m+6 12]);
-      testCase.verifySize(ssA.c, [m+6 12]);
-      testCase.verifySize(ssA.R, [m+6 2 12]);
-      
-      % Make sure 0 and 1 elements in the right places - not sure about this
-%       testCase.verifyEqual(ssA.T(12, 12, 1), zeros(1, 1, 4));
-%       testCase.verifyEqual(ssA.T(1:1+m, 1:1+m, :), repmat(ssGen.T(1:1+m, 1:1+m), [1 1 12]));
-      
-      % Make sure Z elements got moved
-      testCase.verifyEqual(ssA.Z([3 6 7], [1 3]), zeros(3, 2));
-      testCase.verifyEqual(ssA.Z(3, [6 7]), ssGen.Z(3, [1 3]));
-      testCase.verifyEqual(ssA.Z(6, [8 9]), ssGen.Z(6, [1 3]));
-      testCase.verifyEqual(ssA.Z(7, [10 11]), ssGen.Z(7, [1 3]));
-      
-      % Make sure the smoother works
-      [aFilt, ll] = ssA.filter(Y);
-      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
-      
-    end
-    
-    function testAccumExistingTVP(testCase)
-      % Check to make sure we can add an accumulator to a StateSpace that's got
-      % slices of T, c or R. Easiest way to test this is to add 2 accumulators
-      % to a StateSpace separately.
-    end
-    
-%     function testDetroit(testCase)
-%       import matlab.unittest.constraints.IsFinite;
-%       detroit = testCase.deai;
-%       
-%       ss0 = StateSpace(detroit.Z, detroit.d, detroit.H, ...
-%         detroit.T, detroit.c, detroit.R, detroit.Q);
-%       
-%       deaiAccum = Accumulator(detroit.Harvey.xi, detroit.Harvey.psi', detroit.Harvey.Horizon');
-%       ss0A = deaiAccum.augmentStateSpace(ss0);
-%       
-%       [~, ll] = ss0A.filter(detroit.Y);
-%       
-%       testCase.verifyThat(ll, IsFinite);
-%     end
-    
     %% ThetaMap tests
     function testThetaMapAR(testCase)
       p = 2; m = 1; timeDim = 599;
@@ -253,9 +656,9 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       Y = generateData(ssGen, timeDim)';
       Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
-
+      
       accum = Accumulator.GenerateRegular(Y, {'', 'sum'}, [1 3]);
-
+      
       ssA = accum.augmentStateSpace(ssGen);
       
       TssE = ssGen.T;
@@ -280,9 +683,9 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       ssNew = tm.theta2system(thetaTest);
       ssNewAug = accum.augmentStateSpace(ssNew);
-      testCase.verifyEqual(ssTestAug, ssNewAug);      
+      testCase.verifyEqual(ssTestAug, ssNewAug);
     end
-   
+    
     function testThetaMapARAllAvg(testCase)
       p = 2; m = 1; timeDim = 599;
       ssGen = generateARmodel(p, m, false);
@@ -291,7 +694,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       Y = generateData(ssGen, timeDim)';
       Y(:, 2) = Accumulator_test.aggregateY(Y(:, 2), 3, 'avg');
       accum = Accumulator.GenerateRegular(Y, {'', 'avg'}, [1 3]);
-
+      
       % Create augmented StateSpace
       ssA = accum.augmentStateSpace(ssGen);
       
@@ -299,7 +702,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       tm = ThetaMap.ThetaMapAll(ssGen);
       tm.index.Z(:, 2) = 0;
       tm.index.T(2, :) = 0;
-      tm.fixed.T(2, 1) = 1;   
+      tm.fixed.T(2, 1) = 1;
       tm.index.c(2) = 0;
       tm.index.R(2, 1) = 0;
       tm = tm.validateThetaMap();
@@ -310,7 +713,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       % Test theta -> system
       thetaGen = tm.system2theta(ssGen);
-
+      
       ssTestAug = tm2.theta2system(thetaGen);
       testCase.verifyEqual(ssTestAug.Z, ssA.Z, 'AbsTol', 1e-14);
       testCase.verifyEqual(ssTestAug.d, ssA.d, 'AbsTol', 1e-14);
@@ -324,8 +727,9 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       thetaTestAug = tm2.system2theta(ssTestAug);
       testCase.verifyEqual(thetaGen, thetaTestAug);
       thetaAug = tm2.system2theta(ssA);
-      testCase.verifyEqual(thetaGen, thetaAug); 
+      testCase.verifyEqual(thetaGen, thetaAug);
     end
-    
+
   end
+  
 end
