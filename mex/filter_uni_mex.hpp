@@ -40,7 +40,7 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
   double logli;
   int dt, ii;
   size_t iInd;
-  mat F, Fd, Fstar, LogL, Pti, Pstarti, Pdti, Tii, a, ati, v;
+  mat F, Fd, Fstar, LogL, Pti, Pstarti, Pdti, Tii, a, ati, v, Ptemp;
   rowvec Zjj;
   uvec ind;
   uword jj;
@@ -219,8 +219,9 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
     a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1);
       // P(:,:,ii+1) = Tii * Pti * Tii' + ...
       //     R(:,:,tauR(ii)) * Q(:,:,tauQ(ii)) * R(:,:,tauR(ii))'
-    P.slice(ii) = Tii * Pti * trans(Tii) + 
-    R.slice((uword) tauR(ii)-1) * Q.slice((uword) tauQ(ii)-1) * trans(R.slice((uword) tauR(ii)-1));
+    Ptemp = Tii * Pti * trans(Tii) + 
+      R.slice((uword) tauR(ii)-1) * Q.slice((uword) tauQ(ii)-1) * trans(R.slice((uword) tauR(ii)-1));
+    P.slice(ii) = 0.5 * (Ptemp + Ptemp.t());
   }
 
   // logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL))

@@ -307,7 +307,7 @@ classdef StateSpace < AbstractStateSpace
     function [obj, y, factorC, oldTau] = prepareFilter(obj, y)
       % Make sure data matches observation dimensions
       obj.validateKFilter();
-      obj = obj.checkSample(y);
+      [obj, y] = obj.checkSample(y);
       
       % Set initial values
       obj = obj.setDefaultInitial();
@@ -830,8 +830,8 @@ classdef StateSpace < AbstractStateSpace
         Tii = obj.T(:,:,obj.tau.T(iT+1));
         
         a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1));
-        P(:,:,iT+1) = Tii * Pti * Tii' + ...
-          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
+        P(:,:,iT+1) = AbstractSystem.enforceSymmetric(Tii * Pti * Tii' + ...
+          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))');
       end
       
       % Consider changing to
@@ -984,8 +984,8 @@ classdef StateSpace < AbstractStateSpace
         Tii = obj.T(:,:,obj.tau.T(iT+1));
         
         a(:,iT+1) = Tii * ati(:,iT,obj.p+1) + obj.c(:,obj.tau.c(iT+1));
-        P(:,:,iT+1) = Tii * Pti(:,:,iT,obj.p+1) * Tii' + ...
-          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))';
+        P(:,:,iT+1) = AbstractSystem.enforceSymmetric(Tii * Pti(:,:,iT,obj.p+1) * Tii' + ...
+          obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))');
       end
       
       ati(:,obj.n+1,:) = repmat(a(:,obj.n+1), [1 1 obj.p+1]);
@@ -1053,7 +1053,8 @@ classdef StateSpace < AbstractStateSpace
         eta(:,iT) = obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))' * r(:,iT);
         
         rti = obj.T(:,:,obj.tau.T(iT))' * rti;
-        Nti = obj.T(:,:,obj.tau.T(iT))' * Nti * obj.T(:,:,obj.tau.T(iT));
+        Nti = AbstractSystem.enforceSymmetric(...
+          obj.T(:,:,obj.tau.T(iT))' * Nti * obj.T(:,:,obj.tau.T(iT)));
       end
       
       r1 = zeros(obj.m, fOut.dt+1);
