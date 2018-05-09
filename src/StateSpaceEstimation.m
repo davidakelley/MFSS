@@ -131,9 +131,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %
       % [ss, flag] = ss.estimate(...) also returns the fmincon flag
       
-      if size(y, 1) ~= obj.p && size(y,2) == obj.p
-        y = y';
-      end
+      [obj, y] = obj.checkSample(y);
         
       if nargin < 3 || isempty(ss0)
         [theta0U, theta0, ss0] = obj.initializeRandom(y);
@@ -146,6 +144,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           theta0 = ss0;
           validateattributes(theta0, {'numeric'}, ...
             {'vector', 'numel', obj.ThetaMapping.nTheta}, 'estimate', 'theta0');
+          ss0 = obj.ThetaMapping.theta2system(theta0);
         end
         assert(all(isfinite(theta0)), 'Non-finite values in starting point.');
         
@@ -155,7 +154,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m, ss0);
       outputFcn = @(thetaU, oVals, st) ...
           progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
-        
+      
       assert(isnumeric(y), 'y must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
@@ -293,7 +292,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Run smoother, plot smoothed state
       if obj.diagnosticPlot
         progress.alpha = ss_out.smooth(y);
-        progress.updateFigure();
+        if progress.visible && isvalid(progress.figHandle)
+          progress.updateFigure();
+        end
       end
       
       % Get diagnostic info on estimation progress
@@ -357,22 +358,20 @@ classdef StateSpaceEstimation < AbstractStateSpace
         a(:,1:fOut.dt) = nan;
         
         if ~isnan(rawLogli) && imag(rawLogli) ~= 0
-          error();
-          keyboard;
+          % Imaginary logliklihood, throw to catch condition
+          error('StateSpaceEstimation:imaginaryLL', 'Imaginary likelihood evaluation.');
         end
         
         % Put filtered state in figure for plotting
         progress.a = a;  
         progress.ss = ss1;
-      catch ex
+        
+      catch 
+        % Set output to nan to indicate the likelihood evaluation failed
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
         
         progress.nanIterations = progress.nanIterations + 1;
-      end
-      
-      if rawLogli > 0
-        keyboard;
       end
       
       negLogli = -rawLogli;

@@ -112,7 +112,7 @@ classdef EstimationProgress < handle
       stopCond = ~isempty(obj.stopStatus);
       
       % Update plot
-      if obj.visible
+      if obj.visible && isvalid(obj.figHandle)
         obj.updateFigure();
       end
     end
@@ -161,7 +161,7 @@ classdef EstimationProgress < handle
       end
       
       % Update likelihood value plot
-      if obj.visible
+      if obj.visible && isvalid(obj.figHandle)
         oldline = copyobj(obj.plotVal, obj.axVal);
         % Set markers off, color line based on solver
         oldline.Marker = 'none';

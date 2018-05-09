@@ -127,6 +127,11 @@ classdef (Abstract) AbstractSystem
   
   methods (Static)
     %% General utility functions
+    function mat = enforceSymmetric(mat)
+      % Force a matrix to be symmetric. Corrects for small rounding errors in recursions.
+      mat = 0.5 * (mat + mat');
+    end
+    
     function [Finv, logDetF] = pseudoinv(F, tol)
       % Returns the pseudo-inverse and log determinent of F
       %

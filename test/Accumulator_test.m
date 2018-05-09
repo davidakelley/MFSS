@@ -87,13 +87,13 @@ classdef Accumulator_test < matlab.unittest.TestCase
       newc = accum.augmentParamc(ss.c, aug);
       
       % There should be 2 slices of c
-      testCase.verifySize(newc, [3 2]);
+      testCase.verifySize(newc, [3 1]);
       
       % The first 2 states shouldn't have changed
-      testCase.verifyEqual(newc(1:2, :), repmat(ss.c, [1 2]));
+      testCase.verifyEqual(newc(1:2, :), ss.c);
       
       % The last state should use the existing elements of c
-      testCase.verifyEqual(newc(3, :), repmat(ss.c(1), [1 2]));
+      testCase.verifyEqual(newc(3, :), ss.c(1));
     end
     
     function testSumAugmentedR(testCase)
@@ -104,13 +104,13 @@ classdef Accumulator_test < matlab.unittest.TestCase
       newR = accum.augmentParamR(ss.R, aug);
       
       % There should be 2 slices of R
-      testCase.verifySize(newR, [3 1 2]);
+      testCase.verifySize(newR, [3 1]);
       
       % The first 2 states shouldn't have changed
-      testCase.verifyEqual(newR(1:2, :, :), repmat(ss.R, [1 1 2]));
+      testCase.verifyEqual(newR(1:2, :, :), ss.R);
       
       % The last state should use the existing elements of R
-      testCase.verifyEqual(newR(3, :, :), repmat(ss.R(1, :), [1 1 2]));
+      testCase.verifyEqual(newR(3, :, :), ss.R(1, :));
     end
     
     function testSumAugmentedZ(testCase)

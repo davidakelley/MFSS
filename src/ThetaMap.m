@@ -301,19 +301,34 @@ classdef ThetaMap < AbstractSystem
       
       vectorize = @(ssObj) ThetaMap.vectorizeStateSpace(ssObj, ...
         ~obj.usingDefaulta0, ~obj.usingDefaultP0);
-      ssParamValues = vectorize(ss);
+      ssParamVec = vectorize(ss);
       lbValues = vectorize(obj.LowerBound);
       ubValues = vectorize(obj.UpperBound);
       indexValues = vectorize(obj.index);
       vecTransIndexes = vectorize(obj.transformationIndex);
 
-      assert(all(lbValues < ssParamValues | ~isfinite(ssParamValues) | ...
-        indexValues == 0), 'system2theta:LBound', ...
-        'System violates lower bound of ThetaMap.');
-      assert(all(ubValues > ssParamValues | ~isfinite(ssParamValues) | ...
-        indexValues == 0), 'system2theta:UBound', ...
-        'System violates upper bound of ThetaMap.');
-            
+      lowerViolation = ~(lbValues < ssParamVec | ~isfinite(ssParamVec) | indexValues == 0);
+      upperViolation = ~(ubValues > ssParamVec | ~isfinite(ssParamVec) | indexValues == 0);
+      
+      if any(lowerViolation)
+        lowerViolParams = ss.systemParam(cellfun(@(x) ...
+          ~isempty(intersect(obj.index.(x)(:), ...
+          unique(indexValues(lowerViolation)))), ss.systemParam));
+        lowerViolStr = strjoin(lowerViolParams, ', ');
+        error('system2theta:LBound', ...
+          'Parameter(s) in %s violate lower bound.', lowerViolStr);
+      end
+      
+      if any(upperViolation)
+        upperViolParams = ss.systemParam(cellfun(@(x) ...
+          ~isempty(intersect(obj.index.(x)(:), ...
+          unique(indexValues(upperViolation)))), ss.systemParam));
+        upperViolStr = strjoin(upperViolParams, ', ');
+        
+        error('system2theta:UBound', ...
+          'Parameter(s) in %s violate upper bound.', upperViolStr);
+      end
+      
       % Loop over psi, identify elements determined by each psi element and
       % compute the inverse of the transformation to get the value
       psi = nan(obj.nPsi, 1);
@@ -321,7 +336,7 @@ classdef ThetaMap < AbstractSystem
         iIndexes = indexValues == iPsi;
         nParam = sum(iIndexes);
 
-        iParamValues = ssParamValues(iIndexes);
+        iParamValues = ssParamVec(iIndexes);
         iTransformIndexes = vecTransIndexes(iIndexes);
         
         % Get the optimal theta value for each parameter, make sure they match

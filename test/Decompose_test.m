@@ -270,6 +270,8 @@ classdef Decompose_test < matlab.unittest.TestCase
 
     function testARp1_diffuse_r(testCase)
       % Nonstationary AR(p) test
+      rng(123);
+      
       ss = generateARmodel(1, 4, true);
       ss.H = 1;
       ss.Q = 1;
@@ -584,6 +586,8 @@ classdef Decompose_test < matlab.unittest.TestCase
     
     function testARpM_diffuse_const_alpha(testCase)
       % Do a multivariate non-stationary AR(p) test with constants
+      rng(123);
+      
       ss = generateARmodel(5, 3, false);
       ss.d = [-1; 2; .5; -.2; 0];
       ss.c = [-1; .5; 0; 0];
@@ -631,6 +635,8 @@ classdef Decompose_test < matlab.unittest.TestCase
     
     function testARpM_diffuse_a0_alpha(testCase)
       % Do a multivariate non-stationary AR(p) test with explicit a0
+      rng(123);
+      
       ss = generateARmodel(5, 3, false);      
       ss.a0 = [10; 9.9; 9.9; 9.9];
       ss.T(1,1) = 1.01 - sum(ss.T(1,2:end));

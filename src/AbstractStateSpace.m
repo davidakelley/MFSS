@@ -181,7 +181,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       end
     end
     
-    function obj = checkSample(obj, y)
+    function [obj, y] = checkSample(obj, y)
       % Check the data timing against the time-varrying parameters
       % 
       % Args: 
@@ -190,6 +190,10 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % TODO: 
       %     - check that we're only observing accumulated series when we should
       
+      if size(y, 1) ~= obj.p && size(y,2) == obj.p
+        y = y';
+      end
+        
       assert(size(y, 1) == obj.p, ...
         'Number of series does not match observation equation.');
       

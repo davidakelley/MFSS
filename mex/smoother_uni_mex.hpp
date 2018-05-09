@@ -40,7 +40,7 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
   mat a0, mat A0, mat R0, mat Q0, _Tau tau, _Fout fOut) {
 
   cube N, P, Pd, K, Kd, V;
-  mat alpha, eta, r, rti, Nti, Lti, r1, r0ti, r1ti, N0ti, N1ti, N2ti, Ldti, Lstarti, L0ti, a, v, F, Fd, Pstar0, Pd0;
+  mat alpha, eta, r, rti, Nti, Lti, r1, r0ti, r1ti, N0ti, N1ti, N2ti, Ldti, Lstarti, L0ti, a, v, F, Fd, Pstar0, Pd0, Ntemp;
   vec a0tilde;
 
   int dt;
@@ -109,7 +109,8 @@ _smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, 
 
     Tii = T.slice((uword) tauT(ii-1) - 1);
     rti = trans(Tii) * rti;
-    Nti = trans(Tii) * Nti * Tii;
+    Ntemp = trans(Tii) * Nti * Tii;
+    Nti = 0.5 * (Ntemp + Ntemp.t());
   }
 
   r1 = zeros(m, dt+1);
