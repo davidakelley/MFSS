@@ -1,5 +1,14 @@
 function make_toolbox(major, minor)
 % Build script to create the toolbox.
+%
+% To create the toolbox: 
+%   1. Add the /src and /build paths to your Matlab path. Make sure you haven't added
+%   anything else to your Matlab path. 
+%   2. Run this file, calling it with a new major and minor build number unless you are
+%   creating a bug-fix release. 
+%   3. Test that the toolbox works by removing the earlier added paths, installing the
+%   toolbox and running a model.
+%   4. Commit the changes to git with a commit that starts with the version number.
 
 buildDir = fileparts(mfilename('fullpath'));
 
@@ -58,12 +67,12 @@ if major ~= oldMajor || minor ~= oldMinor
     'No change in documentation version.');
 end
 
-docs_status = compile_docs;
-if docs_status == 0
-  fprintf('Successfully compiled documentation.\n');
-else
-  disp('Error in compiling documentation. Run ''make html'' in the docs folder.');
-end
+% docs_status = compile_docs;
+% if docs_status == 0
+%   fprintf('Successfully compiled documentation.\n');
+% else
+%   disp('Error in compiling documentation. Run ''make html'' in the docs folder.');
+% end
 
 %% Iterate version number in prj file
 % Save new .prj file with updated version numbers
