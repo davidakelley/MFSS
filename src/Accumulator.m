@@ -271,8 +271,7 @@ classdef Accumulator < AbstractSystem
       % drop the calendars for the sum accumulators and just use those with Type == 0.
       cSpec = struct;
       ctypes = [ss.tau.c used.Calendar(:,used.Types == 0)];
-      [~, iA_c, iC_c] = unique(ctypes, 'rows');
-      cSpec.newtau = iA_c(iC_c);
+      [~, iA_c, cSpec.newtau] = unique(ctypes, 'rows');
       cSpec.cal = used.Calendar(sort(iA_c),:);
       cSpec.oldtau = ss.tau.c(sort(iA_c));
       augSpec.c = cSpec;
@@ -282,8 +281,7 @@ classdef Accumulator < AbstractSystem
       % drop the calendars for the sum accumulators and just use those with Type == 0.
       Rspec = struct;
       Rtypes = [ss.tau.R used.Calendar(:,used.Types == 0)];
-      [~, iA_R, iC_R] = unique(Rtypes, 'rows');
-      Rspec.newtau = iA_R(iC_R);
+      [~, iA_R, Rspec.newtau] = unique(Rtypes, 'rows');
       Rspec.cal = used.Calendar(sort(iA_R),:);
       Rspec.oldtau = ss.tau.c(sort(iA_R));      
       augSpec.R = Rspec;
@@ -682,9 +680,8 @@ classdef Accumulator < AbstractSystem
             
             if iHor > 1
               % Triangle accumulator - we need to add 1/cal to each accumulated
-              % state element's loading on the high-frequency component.
-              
-              % What is LagRowPos? What is this doing?
+              % state element's loading on the high-frequency component to account for the
+              % lags that need to be added for the average.
               iCols = aug.T.LagRowPos(aug.baseFreqState(iAccum) == states, 1:iHor - 1);
               
               newT(iState, iCols, iT) = newT(iState, iCols, iT) + (1/iCal);
