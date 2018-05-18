@@ -729,7 +729,29 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       thetaAug = tm2.system2theta(ssA);
       testCase.verifyEqual(thetaGen, thetaAug);
     end
-
+    function testOutOfOrder(testCase)
+      % Set up a model with sum and average accumulator out of order, make sure it gets
+      % set up in the reverse order. 
+      
+      ssGen = generateARmodel(3, 2, false);
+      
+      % Series 3 should have an average accumulator. Series 2 should have a sum.
+      accum = Accumulator([3 2], [repmat((1:3)', [40 1]) repmat([0; 1; 1], [40 1])], ...
+        repmat(3, [120 2]));
+      % Because they get ordered according to how the observations are ordered, state 4
+      % should be the sum accumulator, state 5 should be the average accumulator. 
+      ssAug = accum.augmentStateSpace(ssGen);
+      
+      testCase.verifyEqual(reshape(ssAug.T(4,1:3,:), [3 3])', repmat(ssGen.T(1,1:3), [3 1]));
+      testCase.verifyEqual(squeeze(ssAug.T(4,4,:)), [0; 1; 1]);
+      
+      testCase.verifyEqual(reshape(ssAug.T(5,1:3,:), [3 3])', ...
+        (ssGen.T(1,1:3) + [1 1 0]) ./ repmat([1; 2; 3], [1 3]), 'AbsTol', 1e-14);
+      testCase.verifyEqual(squeeze(ssAug.T(5,5,:)), [0; 0.5; 2/3]);      
+    end
+    
   end
+  
+  
   
 end

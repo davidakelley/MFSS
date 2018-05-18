@@ -305,10 +305,15 @@ classdef Accumulator < AbstractSystem
 
       % Find the different accumulators we need: anything that has the same
       % (state, type, horizon, calendar) doesn't need to be done twice. 
+      [~, inxOrder] = sort(obj.index);
+      sortTypes = obj.accumulatorTypes(inxOrder);
+      sortHorizon = obj.horizon(:,inxOrder);
+      sortCalendar = obj.calendar(:,inxOrder);
+      
       possibleAggregateDefs = [statesToBeAugmentedOrdered'; ...
-        obj.accumulatorTypes(lowFreqObsInxOrdered)'; ...
-        obj.horizon(:, lowFreqObsInxOrdered); ...
-        obj.calendar(:, lowFreqObsInxOrdered)];
+        sortTypes(lowFreqObsInxOrdered)'; ...
+        sortHorizon(:, lowFreqObsInxOrdered); ...
+        sortCalendar(:, lowFreqObsInxOrdered)];
       [~, iA_neededDefs, iC_usedDefs] = unique(possibleAggregateDefs', 'rows');
       
       % The definitions were already sorted in the order we want them. Make sure we
@@ -502,7 +507,7 @@ classdef Accumulator < AbstractSystem
     function [lowFreqObsIndex, statesToAggregate] = findUsedAccum(obj, ssZ)
       % Find the elements of Z that care about the accumulators - anything
       % that loads onto an observation that has an associated accumulator
-      usedZaccumLoc = any(ssZ(obj.index,:,:) ~= 0, 3);
+      usedZaccumLoc = any(ssZ(sort(obj.index),:,:) ~= 0, 3);
       [lowFreqObsIndex, statesToAggregate] = find(usedZaccumLoc);
       
       % Make sure we return column vectors since find gives row vectors for row
