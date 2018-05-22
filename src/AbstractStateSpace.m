@@ -13,6 +13,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     % Observation equation parameters
     Z
     d
+    beta 
     H
     
     % State equation parameters
@@ -56,7 +57,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     Q0Private
     
     % Lists of variables used across methods
-    systemParam = {'Z', 'd', 'H', 'T', 'c', 'R', 'Q'};
+    systemParam = {'Z', 'd', 'beta', 'H', 'T', 'c', 'R', 'Q'};
     symmetricParams = {'H', 'Q', 'Q0', 'P'};    % Include P0? P?
   end
   
@@ -124,14 +125,14 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
  
   methods
     %% Constructor
-    function obj = AbstractStateSpace(Z, d, H, T, c, R, Q)
+    function obj = AbstractStateSpace(Z, d, beta, H, T, c, R, Q)
       % Constructor
       % Inputs: Parameters matricies or a structure of parameters
       if nargin == 1
         % Structure of parameter values or AbstractStateSpace object passed
         parameters = Z;
-      elseif nargin == 7
-        parameters = struct('Z', Z, 'd', d, 'H', H, ...
+      elseif nargin == 8
+        parameters = struct('Z', Z, 'd', d, 'beta', beta, 'H', H, ...
           'T', T, 'c', c, 'R', R, 'Q', Q);
       elseif nargin == 0
         return;
@@ -145,7 +146,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     %% Utility methods
     function param = parameters(obj, index)
       % Getter for cell array of parameters
-      param = {obj.Z, obj.d, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.Q0}; 
+      param = {obj.Z, obj.d, obj.beta, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.Q0}; 
       if nargin > 1
         param = param{index};
       end
@@ -181,7 +182,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       end
     end
     
-    function [obj, y] = checkSample(obj, y)
+    function [obj, y, x] = checkSample(obj, y, x)
       % Check the data timing against the time-varrying parameters
       % 
       % Args: 
@@ -193,16 +194,30 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if size(y, 1) ~= obj.p && size(y,2) == obj.p
         y = y';
       end
-        
+      if nargin > 2 && ~isempty(x) && size(x, 1) ~= obj.k && size(x,2) == obj.k
+        x = x';
+      elseif nargin < 3 || isempty(x)
+        x = zeros(obj.k, size(y,2));
+      end
+      
       assert(size(y, 1) == obj.p, ...
-        'Number of series does not match observation equation.');
+        'Number of series in y does not match observation equation.');
+      assert(size(x, 1) == obj.k, ...
+        'Number of exogenous series in x does not match observation equation.');
       
       if ~obj.timeInvariant
         % System with TVP, make sure length of taus matches data.
         assert(size(y, 2) == obj.n);
+        if ~isempty(x) 
+          assert(size(x, 2) == obj.n);
+        end
       else
         % No TVP, set n then set tau as ones vectors of that length.
         obj.n = size(y, 2);
+        if ~isempty(x) 
+          assert(size(x, 2) == obj.n);
+        end
+
         obj = obj.setInvariantTau();
       end
     end    
@@ -210,9 +225,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     function validateStateSpace(obj)
       % Check dimensions of inputs to Kalman filter.
       if obj.timeInvariant
-        maxTaus = ones([7 1]);
+        maxTaus = ones([8 1]);
       else
-        maxTaus = structfun(@max, obj.tau);
+        maxTaus = cellfun(@(name) max(obj.tau.(name)), obj.systemParam);
       end
       
       validate = @(x, sz, name) validateattributes(x, {'numeric'}, ...
@@ -221,13 +236,14 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % Measurement equation
       validate(obj.Z, [obj.p obj.m maxTaus(1)], 'Z');
       validate(obj.d, [obj.p maxTaus(2)], 'd');
-      validate(obj.H, [obj.p obj.p maxTaus(3)], 'H');
+      validate(obj.beta, [obj.p obj.k maxTaus(3)], 'beta');
+      validate(obj.H, [obj.p obj.p maxTaus(4)], 'H');
       
       % State equation
-      validate(obj.T, [obj.m obj.m maxTaus(4)], 'T');
-      validate(obj.c, [obj.m maxTaus(5)], 'c');
-      validate(obj.R, [obj.m obj.g maxTaus(6)], 'R');
-      validate(obj.Q, [obj.g obj.g maxTaus(7)], 'Q');
+      validate(obj.T, [obj.m obj.m maxTaus(5)], 'T');
+      validate(obj.c, [obj.m maxTaus(6)], 'c');
+      validate(obj.R, [obj.m obj.g maxTaus(7)], 'R');
+      validate(obj.Q, [obj.g obj.g maxTaus(8)], 'Q');
     end
     
   end
@@ -243,8 +259,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % its own calendar, no redundant matrices are saved in the workspace.
       
       if isa(parameters, 'StateSpace')
-        [pZ, pd, pH, pT, pc, pR, pQ] = parameters.getInputParameters();
-        parameters = struct('Z', pZ, 'd', pd, 'H', pH, ...
+        [pZ, pd, pbeta, pH, pT, pc, pR, pQ] = parameters.getInputParameters();
+        parameters = struct('Z', pZ, 'd', pd, 'beta', pbeta, 'H', pH, ...
           'T', pT, 'c', pc, 'R', pR, 'Q', pQ);
       end
       structParams = structfun(@isstruct, parameters);
@@ -255,20 +271,24 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.timeInvariant = false;
       
         tauLens = [length(parameters.Z.tauZ), length(parameters.d.taud), ...
-          length(parameters.H.tauH), length(parameters.T.tauT), ...
-          length(parameters.c.tauc), length(parameters.R.tauR), ...
-          length(parameters.Q.tauQ)];
+          length(parameters.beta.taubeta), length(parameters.H.tauH), ...
+          length(parameters.T.tauT), length(parameters.c.tauc), ...
+          length(parameters.R.tauR), length(parameters.Q.tauQ)];
         
-        % subtract = cellfun(@(x) any(strcmpi(x, {'T', 'c', 'R', 'Q'})), ...
-        %   obj.systemParam(structParams));
-        subtract = structParams' & [0 0 0 1 1 1 1];
+        subtract = structParams' & [0 0 0 0 1 1 1 1];
         nCandidates = tauLens - subtract;
         assert(all(nCandidates == nCandidates(1)), ['Bad tau specification. ' ... 
-          'tau vectors for Z, d & H should have n elements. ' ...
+          'tau vectors for Z, d, beta & H should have n elements. ' ...
           'tau vectors for T, c, R & Q should have n+1 elements.']);
         obj.n = nCandidates(1);
       end
-      
+            
+      % Set dimensions:
+      %   p - number of observables
+      %   m - number of state variables
+      %   g - number of shocks
+      %   k - number of exogenous variables
+           
       % Z system matrix
       if isstruct(parameters.Z)
         obj = obj.setTimeVarrying(length(parameters.Z.tauZ));
@@ -281,9 +301,16 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
           obj.tau.Z = ones(obj.n, 1);
         end
       end
-      
+      obj.p = size(obj.Z, 1);
+      obj.m = size(obj.Z, 2);
+
       % d system matrix
-      if isstruct(parameters.d)
+      if isempty(parameters.d)
+        obj.d = zeros(obj.p, 1);
+        if ~obj.timeInvariant
+          obj.tau.d = ones(obj.n, 1);
+        end
+      elseif isstruct(parameters.d)
         obj = obj.setTimeVarrying(length(parameters.d.taud));
         assert(numel(parameters.d.taud) == obj.n);
         obj.tau.d = parameters.d.taud;
@@ -298,6 +325,29 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
           obj.tau.d = ones(obj.n, 1);
         end
       end
+      
+      % beta system matrix
+      if isempty(parameters.beta)
+        obj.beta = zeros(obj.p, 0);
+        if ~obj.timeInvariant
+          obj.tau.beta = ones(obj.n, 1);
+        end
+      elseif isstruct(parameters.beta)
+        obj = obj.setTimeVarrying(length(parameters.beta.taubeta));
+        assert(numel(parameters.beta.taubeta) == obj.n);
+        obj.tau.beta = parameters.beta.taubeta;
+        obj.beta = parameters.beta.betat;
+      elseif size(parameters.beta, 3) > 1
+        obj = obj.setTimeVarrying(size(parameters.beta, 3));
+        obj.tau.beta = 1:obj.n;
+        obj.beta = parameters.beta;
+      else
+        obj.beta = parameters.beta;
+        if ~obj.timeInvariant
+          obj.tau.beta = ones(obj.n, 1);
+        end
+      end
+      obj.k = size(obj.beta, 2);
       
       % H system matrix
       if isstruct(parameters.H)
@@ -326,7 +376,12 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       end
       
       % c system matrix
-      if isstruct(parameters.c)
+      if isempty(parameters.c)
+        obj.c = zeros(obj.m, 1);
+        if ~obj.timeInvariant
+          obj.tau.c = ones(obj.n+1, 1);
+        end
+      elseif isstruct(parameters.c)
         obj = obj.setTimeVarrying(length(parameters.c.tauc) - 1);
         assert(numel(parameters.c.tauc) == obj.n+1);
         obj.tau.c = parameters.c.tauc;
@@ -342,19 +397,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         end
       end
       
-      % R system matrix
-      if isstruct(parameters.R)
-        obj = obj.setTimeVarrying(length(parameters.R.tauR) - 1);
-        assert(numel(parameters.R.tauR) == obj.n+1);
-        obj.tau.R = parameters.R.tauR;
-        obj.R = parameters.R.Rt;
-      else
-        obj.R = parameters.R;
-        if ~obj.timeInvariant
-          obj.tau.R = ones(obj.n+1, 1);
-        end
-      end
-      
       % Q system matrix
       if isstruct(parameters.Q)
         obj = obj.setTimeVarrying(length(parameters.Q.tauQ) - 1);
@@ -367,20 +409,35 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
           obj.tau.Q = ones(obj.n+1, 1);
         end
       end
+      obj.g = size(obj.Q, 1);
+      
+      % R system matrix
+      if isempty(parameters.R)
+        assert(obj.m == obj.g, ...
+          'Shock dimension does not match state dimension with no R matrix specified.');
+        obj.R = eye(obj.m);
+        if ~obj.timeInvariant
+          obj.tau.R = ones(obj.n+1, 1);
+        end
+      elseif isstruct(parameters.R)
+        obj = obj.setTimeVarrying(length(parameters.R.tauR) - 1);
+        assert(numel(parameters.R.tauR) == obj.n+1);
+        obj.tau.R = parameters.R.tauR;
+        obj.R = parameters.R.Rt;
+      else
+        obj.R = parameters.R;
+        if ~obj.timeInvariant
+          obj.tau.R = ones(obj.n+1, 1);
+        end
+      end
       
       if ~obj.timeInvariant
-        tauDims = [length(obj.tau.Z) length(obj.tau.d) length(obj.tau.H) ...
+        tauDims = [length(obj.tau.Z) length(obj.tau.d) ...
+          length(obj.tau.beta) length(obj.tau.H) ...
           length(obj.tau.T)-1 length(obj.tau.c)-1 ...
           length(obj.tau.R)-1 length(obj.tau.Q)-1];
         assert(all(tauDims == obj.n));
       end
-      
-      % Set dimensions:
-      %   p - number of observables
-      %   m - number of state variables
-      %   g - number of shocks
-      obj.p = size(obj.Z(:,:,end), 1);
-      [obj.m, obj.g] = size(obj.R(:,:,end));
     end
     
     function obj = setTimeVarrying(obj, n)
@@ -396,7 +453,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     
     function obj = setInvariantTau(obj)
       % Set the tau structure for TVP.
-      taus = [repmat({ones([obj.n 1])}, [3 1]); ...
+      taus = [repmat({ones([obj.n 1])}, [4 1]); ...
         repmat({ones([obj.n+1 1])}, [4 1])];
       
       if ~isempty(obj.tau)

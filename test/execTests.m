@@ -5,8 +5,8 @@ function result = execTests(tests)
 
 % David Kelley, 2016 
 
-defaultTests = {'basic', 'mex', 'Accumulator', ...
-  'gradient', 'ThetaMap', 'ml', 'decomp'};
+defaultTests = {'basic', 'kalman', 'Accumulator', ...
+  'ThetaMap', 'ml', 'decomp'};
 if nargin == 0
   tests = defaultTests;
 end
@@ -22,18 +22,18 @@ import matlab.unittest.plugins.CodeCoveragePlugin
 %% Run tests
 testDir = fullfile(baseDir, 'test');
 
-basicTests = TestSuite.fromFile(fullfile(testDir, 'AbstractSystem_test.m'));
-mexTests = [TestSuite.fromFile(fullfile(testDir, 'mex_univariate_test.m')), ...
-            TestSuite.fromFile(fullfile(testDir, 'mex_multivariate_test.m'))];
+basicTests = [TestSuite.fromFile(fullfile(testDir, 'AbstractSystem_test.m')), ...
+  TestSuite.fromFile(fullfile(testDir, 'AbstractStateSpace_test.m'))];
+kalmanTests = TestSuite.fromFile(fullfile(testDir, 'kalman_test.m'));
 accumulatorTests = [TestSuite.fromFile(fullfile(testDir, 'Accumulator_test.m')), ...
                     TestSuite.fromFile(fullfile(testDir, 'Accumulator_IntegrationTest.m'))];
-gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_test.m'));
+% gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_IntegrationTest.m'));
 thetaMapTests = TestSuite.fromFile(fullfile(testDir, 'ThetaMap_test.m'));
 mlTests = TestSuite.fromFile(fullfile(testDir, 'estimate_test.m'));
 decompTests = TestSuite.fromFile(fullfile(testDir, 'Decompose_test.m'));
 
-alltests = {basicTests mexTests accumulatorTests ...
-  gradientTests thetaMapTests mlTests decompTests};
+alltests = {basicTests kalmanTests accumulatorTests ...
+   thetaMapTests mlTests decompTests};
 selectedTests = alltests(ismember(defaultTests, tests));
 suite = [selectedTests{:}];
 

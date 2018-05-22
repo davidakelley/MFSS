@@ -60,7 +60,7 @@ classdef Decompose_test < matlab.unittest.TestCase
     function testNile_a(testCase)
       % Use estimated model from DK
       % This is non-stationary.
-      ss = StateSpace(1, 0, 15099, 1, 0, 1, 1469.1);
+      ss = StateSpace(1, 15099, 1, 1469.1);
       y = testCase.data.nile';
       
       a = ss.filter(y);
@@ -180,7 +180,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Prep from decompose_smoothed
       ss.validateKFilter();
       ss = ss.checkSample(y);
-      [ssUni, yUni, C] = ss.prepareFilter(y);
+      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
       
       comp = ssUni.build_smoother_weight_parts(yUni, fOut);
 
@@ -209,9 +209,9 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y);
       ssMulti = ss; 
-      [ssUni, yUni, C] = ss.prepareFilter(y);
+      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
       
-      fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, [], fOut, ssMulti, C);
       rWeights = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       for iT = 1:ss.n
@@ -241,12 +241,12 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get decomposition 
       % Prep from decompose_smoothed
       ss.validateKFilter();
-      ss = ss.checkSample(y);
+      ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, C] = ss.prepareFilter(y);
+      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
       
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, [], fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -287,12 +287,12 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get decomposition 
       % Prep from decompose_smoothed
       ss.validateKFilter();
-      ss = ss.checkSample(y);
+      ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, C] = ss.prepareFilter(y);
+      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
       
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, [], fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -332,12 +332,12 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get decomposition 
       % Prep from decompose_smoothed
       ss.validateKFilter();
-      ss = ss.checkSample(y);
+      ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, C] = ss.prepareFilter(y);
+      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
       
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, [], fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -374,12 +374,12 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get decomposition 
       % Prep from decompose_smoothed
       ss.validateKFilter();
-      ss = ss.checkSample(y);
+      ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, C] = ss.prepareFilter(y);
+      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
 
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, [], fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -460,7 +460,7 @@ classdef Decompose_test < matlab.unittest.TestCase
     
     function testNile_alpha(testCase)
       % Use estimated model from DK
-      ss = StateSpace(1, 0, 15099, 1, 0, 1, 1469.1);
+      ss = StateSpace(1, 15099, 1, 1469.1);
       y = testCase.data.nile';
       
       alpha = ss.smooth(y);

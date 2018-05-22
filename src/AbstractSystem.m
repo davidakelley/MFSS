@@ -17,6 +17,7 @@ classdef (Abstract) AbstractSystem
     p % Number of observed series
     m % Number of states
     g % Number of shocks
+    k % Number of exogenous series
     
     timeInvariant % Indicator for TVP models
   end
@@ -57,7 +58,7 @@ classdef (Abstract) AbstractSystem
   end
   
   methods (Static, Hidden)
-    %% Method to handle static property
+    %% Methods to handle static properties
     function returnVal = getsetGlobalUseMex(newVal)
       % Static function to mimic a static class property of whether the mex
       % functions should be used (avoids overhead of checking for them every time)
@@ -115,6 +116,10 @@ classdef (Abstract) AbstractSystem
       assert(obj.p == sys.p, 'Observation dimension mismatch (p).');
       assert(obj.m == sys.m, 'State dimension mismatch (m).');
       assert(obj.g == sys.g, 'Shock dimension mismatch (g).');
+      if ~isempty(sys.k)
+        assert(obj.k == sys.k, 'Shock dimension mismatch (k).');
+      end
+
       assert(obj.timeInvariant == sys.timeInvariant, ...
         'Mismatch in time varrying parameters.');
       if ~obj.timeInvariant

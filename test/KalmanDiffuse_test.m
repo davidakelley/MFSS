@@ -28,13 +28,10 @@ classdef KalmanDiffuse_test < matlab.unittest.TestCase
       sigma_gr = 1;
       
       Z = [1 0; 0 1];
-      d = [0; 0];
       H = [0 0; 0 0];
       T = [1 0.01; 0 phi];
-      c = [0; 0];
-      R = eye(2);
       Q = diag([sigma_level sigma_gr]);
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       [y, alpha] = generateData(ss, 600);
       
       y(1,1:300) = nan;
@@ -45,9 +42,10 @@ classdef KalmanDiffuse_test < matlab.unittest.TestCase
       sskappa.P0(~isfinite(sskappa.P0)) = 1e8;
       alphaHatKappa = sskappa.smooth(y);
       
-      testCase.verifyEqual(fOut.dt, 101);
+      testCase.verifyEqual(fOut.dt, 301);
       testCase.verifyEqual(alpha(2,:), alphaHat(2,:), 'AbsTol', 1e-15);
-      testCase.verifyEqual(alpha(1,:), alphaHat(1,:), 'AbsTol', 10 * sigma_level);
+      %testCase.verifyEqual(alpha(1,1:300), alphaHat(1,1:300), 'AbsTol', 1e-14);
+      testCase.verifyEqual(alpha(1,301:end), alphaHat(1,301:end), 'AbsTol', 1e-14);
     end
     
   end

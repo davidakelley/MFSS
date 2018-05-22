@@ -54,6 +54,7 @@ classdef Accumulator < AbstractSystem
       obj.m = [];
       obj.p = max(index);
       obj.g = [];
+      obj.k = [];
       obj.n = size(obj.calendar, 1) - 1;
       obj.timeInvariant = false;
     end
@@ -406,6 +407,8 @@ classdef Accumulator < AbstractSystem
       Z.tauZ = ssLag.tau.Z;
       d.dt = ssLag.d;
       d.taud = ssLag.tau.d;
+      beta.betat = ssLag.beta;
+      beta.taubeta = ssLag.tau.beta;
       H.Ht = ssLag.H;
       H.tauH = ssLag.tau.H;
       
@@ -419,7 +422,7 @@ classdef Accumulator < AbstractSystem
       Q.tauQ = ssLag.tau.Q;
       
       % Create new system
-      ssNew = StateSpace(Z, d, H, T, c, R, Q);
+      ssNew = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R);
     end
     
     %% ThetaMap system augmentation methods
@@ -620,9 +623,11 @@ classdef Accumulator < AbstractSystem
       Z.Zt(:, 1:ss.m, :) = ss.Z;
       Z.tauZ = ss.tau.Z;
       
-      % d and H - do nothing
+      % d, beta and H - do nothing
       d.dt = ss.d;
       d.taud = ss.tau.d;
+      beta.betat = ss.beta;
+      beta.taubeta = ss.tau.beta;
       H.Ht = ss.H;
       H.tauH = ss.tau.H;
       
@@ -649,7 +654,7 @@ classdef Accumulator < AbstractSystem
       Q.tauQ = ss.tau.Q;
       
       % Create new system
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R);
     end
     
     function newT = augmentParamT(T, aug)

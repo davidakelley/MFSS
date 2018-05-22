@@ -25,5 +25,5 @@ c = zeros(m, 1);
 R = [1; zeros(lags, 1)];
 Q = diag(rand(g));
 
-ssOut = StateSpace(Z, d, H, T, c, R, Q);
+ssOut = StateSpace(Z, H, T, Q, 'R', R);
 end

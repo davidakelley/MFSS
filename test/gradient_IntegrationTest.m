@@ -26,10 +26,10 @@ classdef gradient_IntegrationTest < matlab.unittest.TestCase
       tm = ThetaMap.ThetaMapAll(ss);
       
       tic;
-      [~, analytic] = ss.gradient(y, tm);
+      [~, analytic] = ss.gradient(y, [], tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, tm, y);
       time_n = toc;
       fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...
         'Analytic gradient took %3.2f%% of the time as the numeric version.\n'],...
@@ -73,10 +73,10 @@ classdef gradient_IntegrationTest < matlab.unittest.TestCase
       tm = ThetaMap.ThetaMapAll(ss);
       
       tic;
-      [~, analytic] = ss.gradient(y, tm);
+      [~, analytic] = ss.gradient(y, [], tm);
       time_a = toc;
       tic;
-      numeric = numericGradient(ss, tm, y, 1e-8);
+      numeric = numericGradient(ss, [], tm, y, 1e-8);
       time_n = toc;
       
       fprintf(['\nModel: %d series, %d states, t = %d, nTheta = %d\n' ...

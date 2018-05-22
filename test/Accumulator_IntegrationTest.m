@@ -299,15 +299,11 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       % observation they're used for. 
       
       Z = reshape((1:8)', [4 2]);
-      d = zeros(4,1);
-      H = eye(4);
-      
+      H = eye(4);      
       T = diag([.99 -.5]);
-      c = [0; 0];
-      R = eye(2);
       Q = eye(2);
       
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       % Generate data for y and aggregate the first and 3rd series
       y = generateData(ss, 300);
       y(1,:) = reshape([nan(100,2) mean(reshape(y(1,:), [100 3]), 2)]', [], 1)';
@@ -350,15 +346,12 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       % test as above but a different ordering to make sure we did it right. 
             
       Z = reshape((1:8)', [4 2]);
-      d = zeros(4,1);
       H = eye(4);
       
       T = diag([.99 -.5]);
-      c = [0; 0];
-      R = eye(2);
       Q = eye(2);
       
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       % Generate data for y and aggregate the first and 3rd series
       y = generateData(ss, 300);
       y(1,:) = reshape([nan(50,5) sum(reshape(y(1,:), [50 6]), 2)]', [], 1)';
@@ -399,15 +392,12 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
     function testSameStateAvgAccumulators(testCase)
       % Test that accumlators in the first and third observations work
       Z = [1; .5; 1];
-      d = zeros(3,1);
       H = diag(ones(3,1));
       
       T = diag(.99);
-      c = 0;
-      R = 1;
       Q = 1;
       
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       % Generate data for y and aggregate the first and 3rd series
       y = generateData(ss, 300);
       y(1,:) = reshape([nan(100,2) mean(reshape(y(1,:), [100 3]), 2)]', [], 1)';
@@ -444,15 +434,12 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
     function testMultipleObsAccum(testCase)
       % Test that accumlators in the first and third observations work      
       Z = [1 2; 3 4; 5 6];
-      d = zeros(3,1);
       H = diag(ones(3,1));
       
       T = diag([.99 -.1]);
-      c = zeros(2,1);
-      R = [1 0; 0 1];
       Q = diag([1 1]);
       
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       % Generate data for y and aggregate the first and 3rd series
       y = generateData(ss, 300);
       y(1,:) = reshape([nan(100,2) sum(reshape(y(1,:), [3 100]))']', [], 1)';
@@ -492,15 +479,12 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
     function testSeparatedAccumulators(testCase)
       % Test that accumlators in the first and third observations work      
       Z = [0 1; .5 1; 1 1];
-      d = zeros(3,1);
       H = diag(ones(3,1));
       
       T = diag([.99 -.1]);
-      c = zeros(2,1);
-      R = [1 0; 0 1];
       Q = diag([1 1]);
       
-      ssGen = StateSpace(Z, d, H, T, c, R, Q);
+      ssGen = StateSpace(Z, H, T, Q);
       % Generate data for y and aggregate the first and 3rd series
       y = generateData(ssGen, 300);
       y(1,:) = reshape([nan(100,2) mean(reshape(y(1,:), [100 3]), 2)]', [], 1)';
@@ -602,8 +586,8 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       m2 = generateARmodel(p, 2, true);
       m2.T(1,:) = [0.85 0.05 -0.2];
       m = m1.m + m2.m;
-      ssGen = StateSpace([m1.Z m2.Z], zeros(p,1), m1.H, ...
-        blkdiag(m1.T, m2.T), zeros(m, 1), blkdiag(m1.R, m2.R), blkdiag(m1.Q, m2.Q));
+      ssGen = StateSpace([m1.Z m2.Z], m1.H, ...
+        blkdiag(m1.T, m2.T), blkdiag(m1.Q, m2.Q), 'R',  blkdiag(m1.R, m2.R));
       ssGen.Z(6,[1 3]) = [1 1];
       ssGen.H(6,6) = 0;
       
@@ -663,8 +647,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       TssE = ssGen.T;
       TssE(1,:) = [nan nan];
-      ssE = StateSpaceEstimation(ssGen.Z, ssGen.d, ssGen.H, ...
-        TssE, ssGen.c, ssGen.R, ssGen.Q);
+      ssE = StateSpaceEstimation(ssGen.Z, ssGen.H, TssE, ssGen.Q, 'R', ssGen.R);
       tm = ssE.ThetaMapping;
       
       tm2 = accum.augmentThetaMap(tm);
@@ -729,6 +712,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       thetaAug = tm2.system2theta(ssA);
       testCase.verifyEqual(thetaGen, thetaAug);
     end
+    
     function testOutOfOrder(testCase)
       % Set up a model with sum and average accumulator out of order, make sure it gets
       % set up in the reverse order. 

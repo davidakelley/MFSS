@@ -33,15 +33,12 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     function thetaSystemThetaSimple(testCase)
       % Test that we can go from a theta to a system and back.
       Z = 1;
-      d = 0;
       H = 3;
       T = 1;
-      c = 0;
-      R = 1;
       Q = 5;
       
       % Create ThetaMap
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       tm = ThetaMap.ThetaMapAll(ss);
       
       % Convert from theta -> ss -> thetaMap
@@ -55,15 +52,12 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     function systemThetaSystemSimple(testCase)
       % Test that we can go from a StateSpace to a theta vector and back.
       Z = 1;
-      d = 0;
       H = 3;
       T = 1;
-      c = 0;
-      R = 1;
       Q = 5;
       
       % Create ThetaMap
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       tm = ThetaMap.ThetaMapAll(ss);
       
       % Convert from StateSpace -> theta -> StateSpace
@@ -82,15 +76,12 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     function thetaSystemTheta_a0P0(testCase)
       % Theta -> StateSpace -> Theta with explicit initial values
       Z = 1;
-      d = 0;
       H = 3;
       T = 1;
-      c = 0;
-      R = 1;
       Q = 5;
       
       % Set up StateSpace with initial values
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       ss = ss.setInvariantTau;
       ss.a0 = 0;
       ss.P0 = 10;
@@ -109,15 +100,12 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     function systemThetaSystem_a0P0(testCase)
       % StateSpace -> Theta -> StateSpace with explicit initial values
       Z = 1;
-      d = 0;
       H = 3;
       T = 1;
-      c = 0;
-      R = 1;
       Q = 5;
       
       % Set up StateSpace with initial values
-      ss = StateSpace(Z, d, H, T, c, R, Q);
+      ss = StateSpace(Z, H, T, Q);
       ss = ss.setInvariantTau;
       ss = ss.setDefaultInitial;
       

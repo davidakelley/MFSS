@@ -36,9 +36,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     fminsearchMaxIter = 500;
     
-    % Indicator for use of analytic gradient
-    useAnalyticGrad = false;
-
     % Indicator to use more accurate, slower gradient
     useInternalNumericGrad = true;
     
@@ -77,20 +74,16 @@ classdef StateSpaceEstimation < AbstractStateSpace
       obj.ThetaMapping = obj.ThetaMapping.updateInitial([], newP0);      
     end
     
-    function obj = set.useAnalyticGrad(obj, newGrad)
-      obj.useAnalyticGrad = newGrad;
-      if ~isempty(obj.ThetaMapping) %#ok<MCSUP>
-        obj.ThetaMapping.useAnalyticGrad = newGrad; %#ok<MCSUP>
-      end
-    end
   end
   
   methods
     %% Constructor
-    function obj = StateSpaceEstimation(Z, d, H, T, c, R, Q, varargin)
-      obj = obj@AbstractStateSpace(Z, d, H, T, c, R, Q);
-      
+    function obj = StateSpaceEstimation(Z, H, T, Q, varargin)
       inP = inputParser;
+      inP.addParameter('d', []);
+      inP.addParameter('beta', []);
+      inP.addParameter('c', []);
+      inP.addParameter('R', []);
       inP.addParameter('a0', [], @isnumeric);
       inP.addParameter('P0', [], @isnumeric);
       inP.addParameter('LowerBound', [], @(x) isa(x, 'StateSpace'));
@@ -98,6 +91,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       inP.addParameter('ThetaMap', [], @(x) isa(x, 'ThetaMap'));
       inP.parse(varargin{:});
       inOpts = inP.Results;
+
+      obj = obj@AbstractStateSpace(Z, inOpts.d, inOpts.beta, H, T, inOpts.c, inOpts.R, Q);
 
       % Initial ThetaMap generation - will be augmented to include restrictions
       if ~isempty(inOpts.ThetaMap)
@@ -121,7 +116,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     %% Estimation methods
-    function [ss_out, diagnostic, gradient] = estimate(obj, y, ss0)
+    function [ss_out, diagnostic, gradient] = estimate(obj, y, ss0, x)
       % Estimate missing parameter values via maximum likelihood.
       %
       % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
@@ -131,10 +126,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %
       % [ss, flag] = ss.estimate(...) also returns the fmincon flag
       
-      [obj, y] = obj.checkSample(y);
+      if nargin < 4
+        x = [];
+      end
+      
+      [obj, y, x] = obj.checkSample(y, x);
         
       if nargin < 3 || isempty(ss0)
-        [theta0U, theta0, ss0] = obj.initializeRandom(y);
+        [theta0U, theta0, ss0] = obj.initializeRandom(y, x);
       else
         % Initialization
         if isa(ss0, 'StateSpace')
@@ -156,6 +155,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
           progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
       
       assert(isnumeric(y), 'y must be numeric.');
+      assert(isnumeric(x), 'x must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
         'All parameters known. Unable to estimate.');
@@ -174,7 +174,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Optimizer options
       optFMinCon = optimoptions(@fmincon, ...
         'Algorithm', 'interior-point', ...
-        'SpecifyObjectiveGradient', obj.useAnalyticGrad || obj.useInternalNumericGrad, ...
+        'SpecifyObjectiveGradient', obj.useInternalNumericGrad, ...
         'UseParallel', obj.useParallel && ~obj.useInternalNumericGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
@@ -187,7 +187,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       optFMinUnc = optimoptions(@fminunc, ...
         'Algorithm', 'quasi-newton', ...
-        'SpecifyObjectiveGradient', obj.useAnalyticGrad || obj.useInternalNumericGrad, ...
+        'SpecifyObjectiveGradient', obj.useInternalNumericGrad, ...
         'UseParallel', obj.useParallel && ~obj.useInternalNumericGrad, ...
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
@@ -222,11 +222,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, true);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
             [thetaUHat, logli, outflag, ~, gradient] = fminunc(...
               minfunc, theta0U, optFMinUnc);
           case 'fmincon'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, true);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
             try
             [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(... 
               minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
@@ -245,13 +245,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
               end 
             end
           case 'fminsearch'
-            tempGrad = obj.useAnalyticGrad;
-            obj.useAnalyticGrad = false;
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, progress, false);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
 
             [thetaUHat, logli, outflag] = fminsearch(...
               minfunc, theta0U, optFMinSearch);
-            obj.useAnalyticGrad = tempGrad;
             
             gradient = [];
         end
@@ -304,7 +301,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
-    function [negLogli, gradient] = minimizeFun(obj, thetaU, y, progress, calcGrad)
+    function [negLogli, gradient] = minimizeFun(obj, thetaU, y, x, progress, calcGrad)
       % Get the likelihood of
       theta = obj.ThetaMapping.restrictTheta(thetaU);
       ss1 = obj.ThetaMapping.theta2system(theta);
@@ -342,14 +339,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
             1 + (2 * obj.numericGradPrec * obj.ThetaMapping.nTheta * obj.useInternalNumericGrad);
 
            % Calculate likelihood and gradient
-          [rawLogli, thetaGradient, fOut] = ss1.gradient(y, obj.ThetaMapping, theta);
+          [rawLogli, thetaGradient, fOut] = ss1.gradient(y, x, obj.ThetaMapping, theta);
 
           GthetaUtheta = obj.ThetaMapping.thetaUthetaGrad(thetaU);
           rawGradient = GthetaUtheta * thetaGradient;
         else
           progress.totalEvaluations = progress.totalEvaluations + 1;
 
-          [~, rawLogli, fOut] = ss1.filter(y);
+          [~, rawLogli, fOut] = ss1.filter(y, x);
           rawGradient = [];          
         end
         
@@ -437,7 +434,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
     end
     
-    function [theta0U, theta0, ss0] = initializeRandom(obj, y)
+    function [theta0U, theta0, ss0] = initializeRandom(obj, y, x)
       % Generate default initialization
       
       % The default initialization
@@ -453,7 +450,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         try
           theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,iAttempt));
           ss0 = obj.ThetaMapping.theta2system(theta0);
-          [~, iLogli(iAttempt)] = ss0.filter(y);
+          [~, iLogli(iAttempt)] = ss0.filter(y, x);
         catch
         end
       end
@@ -465,7 +462,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         theta0U = iTheta0U(:, thetaOrder(iGradAtt));
         theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,thetaOrder(iGradAtt)));
         ss0 = obj.ThetaMapping.theta2system(theta0);
-        [ll0, grad0] = ss0.gradient(y, obj.ThetaMapping);
+        [ll0, grad0] = ss0.gradient(y, x, obj.ThetaMapping);
         
         if isfinite(ll0) && all(isfinite(grad0))
           break

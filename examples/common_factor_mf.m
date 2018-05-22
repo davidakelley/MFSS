@@ -12,15 +12,15 @@ Q = nan;
 
 % Create estimation object
 ssE = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+
+ssLB = ssE.ThetaMapping.theta2system(-inf(ssE.ThetaMapping.nTheta,1));
+ssLB.T = -1;
+ssUB = ssE.ThetaMapping.theta2system(inf(ssE.ThetaMapping.nTheta,1));
+ssUB.T = 1;
+ssE.ThetaMapping = ssE.ThetaMapping.addRestrictions(ssLB, ssUB);
+
 ssEA = accum.augmentStateSpaceEstimation(ssE);
-% 
-% % Create initial values
-% Z0 = ones(2,1);
-% H0 = eye(2);
-% T0 = 1;
-% Q0 = 1;
-% ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0);
-% ss0A = accum.augmentStateSpace(ss0);
+% ss0A = accum.augmentStateSpace(StateSpace([1;1], [0;0], eye(2), 2, 0, 1, 1));
 
 % Estimate
-ssML = ssEA.estimate(y');   
+ssML = ssEA.estimate(y');

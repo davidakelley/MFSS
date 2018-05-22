@@ -30,10 +30,7 @@ mex(flags{:}, fullfile(srcFolder, 'smoother_uni.cpp'), blaslib, lapacklib);
 fprintf('\n');
 
 % Test
-results_uni = runtests(fullfile(baseDir, 'test', 'mex_univariate_test.m'));
-results_multi = runtests(fullfile(baseDir, 'test', 'mex_multivariate_test.m'));
-
-% Report
-if all(~[results_uni.Failed]) && all(~[results_multi.Failed]) 
+results = runtests(fullfile(baseDir, 'test', 'kalman_test.m'));
+if all(~[results.Failed])
   fprintf('\nCompleted mex comilation. All tests pass.\n');
 end

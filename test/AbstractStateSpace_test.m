@@ -17,7 +17,7 @@ classdef AbstractStateSpace_test < matlab.unittest.TestCase
   methods (Test)  
     function testLagsInStateSelf(testCase)
       % Test that a unit loading doesn't mess up LagsInState
-      ss = StateSpace(1, 0, 1, 1, 0, 0, 1);
+      ss = StateSpace(1, 1, 1, 1);
      
       ss = ss.setInvariantTau();
       lags = ss.LagsInState(1);

@@ -15,11 +15,11 @@ using namespace arma ;
 
 
 struct _Tau {
-  vec Z, d, H, T, c, R, Q;
+  vec Z, d, beta, H, T, c, R, Q;
 };
 
 struct _Ss {
-  cube Z, H, T, R, Q;
+  cube Z, beta, H, T, R, Q;
   mat d, c, a0, A0, R0, Q0;
   _Tau tau;
 };
@@ -33,7 +33,7 @@ struct _filter {
 
 const double PI = 3.1415926535897931;
 
-_filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube Q, 
+_filter filter_uni_mex(mat y, mat x, cube Z, mat d, cube beta, cube H, cube T, mat c, cube R, cube Q, 
   mat a0, mat A0, mat R0, mat Q0, _Tau tau) {
 
   cube K, Kd, Kstar, P, Pd, Pstar;
@@ -45,8 +45,8 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
   uvec ind;
   uword jj;
 
-  vec tauZ, taud, tauH, tauT, tauc, tauR, tauQ;
-  tauZ = tau.Z;   taud = tau.d;   tauH = tau.H;
+  vec tauZ, taud, taubeta, tauH, tauT, tauc, tauR, tauQ;
+  tauZ = tau.Z;   taud = tau.d;   tauH = tau.H;   taubeta = tau.beta; 
   tauT = tau.T;   tauc = tau.c;   tauR = tau.R;   tauQ = tau.Q;
   
   int p = Z.n_rows;
@@ -115,7 +115,8 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 
       // v(jj,ii) = y(jj, ii) - Zjj * ati - d(jj,taud(ii))
-      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati) - as_scalar(d(jj, (uword) taud(ii-1)-1));
+      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati) - as_scalar(d(jj, (uword) taud(ii-1)-1)) 
+        - as_scalar(beta.slice((uword) taubeta(ii-1)-1).row(jj) * x.col(ii-1));
 
       // Fd(jj,ii) = Zjj * Pdti * Zjj'
       Fd(jj, ii-1) = as_scalar(Zjj * Pdti * trans(Zjj));
@@ -194,7 +195,8 @@ _filter filter_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube
       Zjj = Z.slice((uword) tauZ(ii-1)-1).row(jj);
 
         // v(jj,ii) = y(jj,ii) - Zjj * ati - d(jj,taud(ii))
-      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati) - as_scalar(d(jj, (uword) taud(ii-1)-1));
+      v(jj, ii-1) = y(jj, ii-1) - as_scalar(Zjj * ati) - as_scalar(d(jj, (uword) taud(ii-1)-1))
+        - as_scalar(beta.slice((uword) taubeta(ii-1)-1).row(jj) * x.col(ii-1));
 
         // F(jj,ii) = Zjj * Pti * Zjj' + H(jj,jj,tauH(ii))
       F(jj, ii-1) = as_scalar(Zjj * Pti * trans(Zjj) + H(jj, jj, (uword) tauH(ii-1)-1));

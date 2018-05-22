@@ -5,7 +5,6 @@ theta = tm.system2theta(ss);
 delta = -ss.delta;
 
 %% Gradient of likelihood
-ss.useAnalyticGrad = false;
 [~, numeric, fOutFix] = ss.gradient(y, tm);
 
 ss = ss.prepareFilter(y);

@@ -72,9 +72,6 @@ classdef ThetaMap < AbstractSystem
     
     thetaLowerBound
     thetaUpperBound
-    
-    % Indicator for use of analytic gradient
-    useAnalyticGrad = false;
   end
   
   properties (SetAccess = protected)
@@ -126,7 +123,6 @@ classdef ThetaMap < AbstractSystem
       
       obj.usingDefaulta0 = ~opts.explicita0;
       obj.usingDefaultP0 = ~opts.explicitP0;
-      obj.useAnalyticGrad = opts.useAnalyticGrad;
 
       obj.p = fixed.p;
       obj.m = fixed.m;
@@ -189,7 +185,8 @@ classdef ThetaMap < AbstractSystem
         ss.(ss.systemParam{iP})(isnan(ss.(ss.systemParam{iP}))) = 0;
       end
       
-      fixed = StateSpace(ss.Z, ss.d, ss.H, ss.T, ss.c, ss.R, ss.Q);
+      fixed = StateSpace(ss.Z, ss.H, ss.T, ss.Q, ...
+        'd', ss.d, 'beta', ss.beta, 'c', ss.c, 'R', ss.R);
       fixed.tau = ss.tau;
       a0Fixed = ss.a0;
       a0Fixed(isnan(a0Fixed)) = 0;
@@ -260,7 +257,7 @@ classdef ThetaMap < AbstractSystem
       end
       
       % Create StateSpace using parameters just constructed
-      ss = StateSpace(knownParams{:});
+      ss = obj.cellParams2ss(knownParams);
       
       % Set initial values 
       % I think I need stationaryStates to be tracked by ThetaMap here. 
@@ -284,8 +281,6 @@ classdef ThetaMap < AbstractSystem
       
       ss.a0 = a0;
       ss.P0 = P0;    
-      
-      ss.useAnalyticGrad = obj.useAnalyticGrad;
     end
     
     function theta = system2theta(obj, ss)
@@ -737,7 +732,7 @@ classdef ThetaMap < AbstractSystem
         % Reset the indexes of any transformations found to be duplicate
         possibleParamNames = [obj.transformationIndex.systemParam, {'a0', 'Q0'}];
         paramNames = possibleParamNames(...
-          [true(1,7) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
+          [true(1,8) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
         for iP = 1:length(paramNames)
           dupInds = arrayfun(@(x) any(x == duplicatesForRemoval), ...
             obj.transformationIndex.(paramNames{iP}));
@@ -1021,7 +1016,6 @@ classdef ThetaMap < AbstractSystem
       inP = inputParser();
       inP.addParameter('explicita0', false);
       inP.addParameter('explicitP0', false);
-      inP.addParameter('useAnalyticGrad', false);
       
       inP.parse(argin{:});
       opts = inP.Results;
@@ -1079,7 +1073,7 @@ classdef ThetaMap < AbstractSystem
       end
       
       possibleParamNames = [indexSS.systemParam, {'a0', 'Q0'}];
-      paramNames = possibleParamNames([true(1,7) explicita0 explicitP0]);
+      paramNames = possibleParamNames([true(1,8) explicita0 explicitP0]);
  
       if ~isempty(missingInx)
         for iP = 1:length(paramNames)
@@ -1138,7 +1132,9 @@ classdef ThetaMap < AbstractSystem
         indexCounter = indexCounter + nRequiredTheta;
       end
       
-      index = StateSpace(paramEstimIndexes{:});
+      index = StateSpace(paramEstimIndexes{[1 4 5 8]}, ...
+        'd', paramEstimIndexes{2}, 'beta', paramEstimIndexes{3}, ...
+        'c', paramEstimIndexes{6}, 'R', paramEstimIndexes{7});
       if ~isempty(ss.a0)
         a0 = zeros(size(ss.a0));
         nRequiredTheta = sum(isnan(ss.a0));
@@ -1287,7 +1283,9 @@ classdef ThetaMap < AbstractSystem
       % Outputs
       %   ssNew:      StateSpace constructed with new parameters
       
-      ssNew = StateSpace(cellParams{:});
+      ssNew = StateSpace(cellParams{[1 4 5 8]}, ...
+        'd', cellParams{2}, 'beta', cellParams{3}, ...
+        'c', cellParams{6}, 'R', cellParams{7});
     end
     
     function vecParam = vectorizeStateSpace(ss, explicita0, explicitP0)
@@ -1305,10 +1303,10 @@ classdef ThetaMap < AbstractSystem
       
       param = ss.parameters;
       if ~explicita0
-        param{8} = [];
+        param{9} = [];
       end
       if ~explicitP0
-        param{9} = [];
+        param{10} = [];
       end
       
       vectors = cellfun(@(x) x(:), param, 'Uniform', false);

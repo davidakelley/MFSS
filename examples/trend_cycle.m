@@ -89,9 +89,9 @@ ssE.ThetaMapping.PsiTransformation{nPsi+3} = @(theta) -theta(1) * sin(theta(2));
 
 % ... and give the gradient of the elements of psi as a vector w.r.t. the theta
 % elements we're using.
-ssE.ThetaMapping.PsiGradient{nPsi+1} = @(theta) [cos(theta(2)), -theta(1) * sin(theta(2))]';
-ssE.ThetaMapping.PsiGradient{nPsi+2} = @(theta) [sin(theta(2)), theta(1) * cos(theta(2))]';
-ssE.ThetaMapping.PsiGradient{nPsi+3} = @(theta) [-sin(theta(2)), -theta(1) * cos(theta(2))]';
+% ssE.ThetaMapping.PsiGradient{nPsi+1} = @(theta) [cos(theta(2)), -theta(1) * sin(theta(2))]';
+% ssE.ThetaMapping.PsiGradient{nPsi+2} = @(theta) [sin(theta(2)), theta(1) * cos(theta(2))]';
+% ssE.ThetaMapping.PsiGradient{nPsi+3} = @(theta) [-sin(theta(2)), -theta(1) * cos(theta(2))]';
 
 % We need to get back to theta from psi. The inverse functions to do so must
 % take the whole psi vector and an index of which psi elements are used by
@@ -99,16 +99,13 @@ ssE.ThetaMapping.PsiGradient{nPsi+3} = @(theta) [-sin(theta(2)), -theta(1) * cos
 %
 % Note that if we generated initial values for the theta vector instead of the
 % state space parameters, this step would be unnecessary.
-ssE.ThetaMapping.PsiInverse{nTheta+1} = @(psi, inx) sqrt(psi(inx(1)).^2 + psi(inx(2)).^2);
-ssE.ThetaMapping.PsiInverse{nTheta+2} = @(psi, inx) atan(psi(inx(2)) ./ psi(inx(1)));
+% ssE.ThetaMapping.PsiInverse{nTheta+1} = @(psi, inx) sqrt(psi(inx(1)).^2 + psi(inx(2)).^2);
+% ssE.ThetaMapping.PsiInverse{nTheta+2} = @(psi, inx) atan(psi(inx(2)) ./ psi(inx(1)));
 
 % Assign the elements of psi to the state space parameters. We could also modify
 % the transofrmation performed on the elements of psi at this point but this
 % model doesn't require so.
-ssE.ThetaMapping.index.T(3,3) = nPsi + 1;
-ssE.ThetaMapping.index.T(3,4) = nPsi + 2;
-ssE.ThetaMapping.index.T(4,3) = nPsi + 3;
-ssE.ThetaMapping.index.T(4,4) = nPsi + 1;
+ssE.ThetaMapping.index.T(3:4,3:4) = [nPsi+1, nPsi+2; nPsi+3, nPsi+1];
 
 % We also need to restrict the variance on the cycle to be determined by the
 % same element of psi
@@ -119,10 +116,10 @@ ssE.ThetaMapping = ssE.ThetaMapping.validateThetaMap();
 
 % Initialization - parameters got orderd by the log of the 3 variances, 
 % rho, lambda. Note that this initialization is intentionally quite poor
-theta0 = ssE.ThetaMapping.system2theta(ssTrue);
+% theta0 = ssE.ThetaMapping.system2theta(ssTrue);
 
 % With the model set up, we're able to estimate the parameters
-ssOpt = ssE.estimate(y, theta0);
+ssOpt = ssE.estimate(y);
 
 %% Compare true parameters to estimated parameters
 trueTheta = ssE.ThetaMapping.system2theta(ssTrue);

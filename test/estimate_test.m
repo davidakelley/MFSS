@@ -33,20 +33,16 @@ classdef estimate_test < matlab.unittest.TestCase
       nile = testCase.data.nile';
       
       Z = 1;
-      d = 0;
       H = nan;
       T = 1;
-      c = 0;
-      R = 1;
       Q = nan;
       
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ss = StateSpaceEstimation(Z, H, T, Q);
       
       H0 = 1000;
       P0 = 1000;
-      ss0 = StateSpace(Z, d, H0, T, c, R, P0);
+      ss0 = StateSpace(Z, H0, T, P0);
       
-      ss.useAnalyticGrad = false;
       ssE = ss.estimate(nile, ss0);
       
       % Using values from Dubrin & Koopman (2012), p. 37
@@ -58,16 +54,11 @@ classdef estimate_test < matlab.unittest.TestCase
       nile = testCase.data.nile';
       
       Z = 1;
-      d = 0;
       H = nan;
       T = 1;
-      c = 0;
-      R = 1;
       Q = nan;
       
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
-      
-      ss.useAnalyticGrad = false;
+      ss = StateSpaceEstimation(Z, H, T, Q);
       ssE = ss.estimate(nile);
       
       % Using values from Dubrin & Koopman (2012), p. 37
@@ -79,20 +70,17 @@ classdef estimate_test < matlab.unittest.TestCase
       nile = testCase.data.nile';
       
       Z = 1;
-      d = 0;
       H = nan;
       T = 1;
-      c = 0;
-      R = 1;
       Q = nan;
       
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ss = StateSpaceEstimation(Z, H, T, Q);
       ss.a0 = 0;
       ss.P0 = 1e6;
       
       H0 = 1000;
       P0 = 1000;
-      ss0 = StateSpace(Z, d, H0, T, c, R, P0);
+      ss0 = StateSpace(Z, H0, T, P0);
       ss0.a0 = 0;
       ss0.P0 = 1e6;
       
@@ -103,57 +91,26 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssE.Q, 1469.1, 'RelTol', 1e-2);
     end
     
-    function testNileGradient(testCase)
-      nile = testCase.data.nile';
-
-      Z = 1;
-      d = 0;
-      H = nan;
-      T = 1;
-      c = 0;
-      R = 1;
-      Q = nan;
-      
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
-      
-      H0 = 1000;
-      Q0 = 1000;
-      ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
-
-      ss.useAnalyticGrad = false;
-      ssE_ng = ss.estimate(nile, ss0);
-      
-      ss.useAnalyticGrad = true;
-      ssE = ss.estimate(nile, ss0);
-
-      testCase.verifyEqual(ssE.H, ssE_ng.H, 'RelTol', 5e-4);
-      testCase.verifyEqual(ssE.Q, ssE_ng.Q, 'RelTol',  5e-4);
-    end
-    
     function testMatlab(testCase)
       % Test against Matlab's native implementation of state space models
-      nile = testCase.data.nile';
+      nile = testCase.data.nile;
       
       Z = 1;
-      d = 0;
       H = nan;
       T = 1;
-      c = 0;
-      R = 1;
       Q = nan;
       
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ss = StateSpaceEstimation(Z, H, T, Q);
       
       H0 = 1000;
       Q0 = 1000;
-      ss0 = StateSpace(Z, d, H0, T, c, R, Q0);
+      ss0 = StateSpace(Z, H0, T, Q0);
       
-      ss.useAnalyticGrad = false;
       ssE = ss.estimate(nile, ss0);
       
-      A = 1; B = nan; C = 1; D = nan;
+      A = T; B = nan; C = Z; D = nan;
       mdl = ssm(A, B, C, D);
-      estmdl = estimate(mdl, nile', [1000; 1000], 'display', 'off');
+      estmdl = estimate(mdl, nile, [1000; 1000], 'display', 'off');
 
       testCase.verifyEqual(ssE.H, estmdl.D^2, 'RelTol', 1e-2);
       testCase.verifyEqual(ssE.Q, estmdl.B^2, 'RelTol',  1e-2);
@@ -169,15 +126,13 @@ classdef estimate_test < matlab.unittest.TestCase
       
       % Estimated system
       Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
-      d = zeros(p, 1);
       H = nan(p, p);
       
       T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
-      c = zeros(m, 1);
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
-      ssE = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
       
       % Initialization
       pcaWeight = pca(y');
@@ -188,10 +143,10 @@ classdef estimate_test < matlab.unittest.TestCase
       T0 = ssE.T;
       T0(isnan(T0)) = 0.5./m;
       Q0 = 1;
-      ss0 = StateSpace(Z0, d, H0, T0, c, R, Q0);
+      ss0 = StateSpace(Z0, H0, T0, Q0, 'R', R);
       
       ssML = ssE.estimate(y, ss0);
-      [~, grad] = ssML.gradient(y, ssE.ThetaMapping);
+      [~, grad] = ssML.gradient(y, [], ssE.ThetaMapping);
       testCase.verifyLessThanOrEqual(abs(grad), 1e-4);
     end
     
@@ -204,15 +159,13 @@ classdef estimate_test < matlab.unittest.TestCase
       
       % Estimated system
       Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
-      d = zeros(p, 1);
       H = diag(nan(p, 1));
       
       T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
-      c = zeros(m, 1);
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
-      ssE = StateSpaceEstimation(Z, d, H, T, c, R, Q);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
       
       ssML = ssE.estimate(y);
       testCase.verifyEqual(ssTrue.T, ssML.T, 'AbsTol', 0.1);
@@ -226,44 +179,30 @@ classdef estimate_test < matlab.unittest.TestCase
       
       % Estimated system
       Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
-      d = zeros(p, 1);
       H = nan(p, p);
       
       T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
-      c = zeros(m, 1);
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
-      % Bounds: constrain 0 < T < 1
-      Zlb = Z; Zlb(:) = -Inf;
-      dlb = d; dlb(:) = -Inf;
-      Hlb = H; Hlb(:) = 0;
-      Tlb = T; Tlb(:) = -1;
-      clb = c; clb(:) = -Inf;
-      Rlb = R; Rlb(:) = -Inf;
-      Qlb = Q; Qlb(:) = 0;
-      ssLB = StateSpace(Zlb, dlb, Hlb, Tlb, clb, Rlb, Qlb);
-      
-      Zub = Z; Zub(:) = Inf;
-      dub = d; dub(:) = Inf;
-      Hub = H; Hub(:) = Inf;
-      Tub = T; Tub(:) = 1;
-      cub = c; cub(:) = Inf;
-      Rub = R; Rub(:) = Inf;
-      Qub = Q; Qub(:) = Inf;
-      ssUB = StateSpace(Zub, dub, Hub, Tub, cub, Rub, Qub);
-
-      ss = StateSpaceEstimation(Z, d, H, T, c, R, Q, ...
-        'LowerBound', ssLB, 'UpperBound', ssUB);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
      
+      % Bounds: constrain 0 < T < 1
+      ssLB = ssE.ThetaMapping.LowerBound;
+      ssLB.T = -1;
+      
+      ssUB = ssE.ThetaMapping.UpperBound;
+      ssUB.T = 1;
+      ssE.ThetaMapping = ssE.ThetaMapping.addRestrictions(ssLB, ssUB);
+      
       ss0 = ssTrue;
       ss0.T = 0.2;
       
       % The warnings thrown in this example don't worry me but I don't know how to
       % addresse them right now, so they stay.
-      [ssE, ~, ~] = ss.estimate(y, ss0);
-      testCase.verifyLessThanOrEqual(ssE.T, Tub);
-      testCase.verifyGreaterThanOrEqual(ssE.T, Tlb);
+      [ssE, ~, ~] = ssE.estimate(y, ss0);
+      testCase.verifyLessThanOrEqual(ssE.T, 1);
+      testCase.verifyGreaterThanOrEqual(ssE.T, -1);
     end
   end
 end
