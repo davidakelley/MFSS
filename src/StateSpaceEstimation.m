@@ -62,7 +62,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     function obj = set.a0(obj, newa0)
       obj.a0Private = newa0;
-      obj.ThetaMapping = obj.ThetaMapping.updateInitial(newa0, []);
+      obj.ThetaMapping = obj.ThetaMapping.updateInitial(newa0, obj.P0Private);
     end
     
     function P0 = get.P0(obj)
@@ -71,7 +71,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     
     function obj = set.P0(obj, newP0)
       obj.P0Private = newP0;
-      obj.ThetaMapping = obj.ThetaMapping.updateInitial([], newP0);      
+      obj.ThetaMapping = obj.ThetaMapping.updateInitial(obj.a0Private, newP0);      
     end
     
   end

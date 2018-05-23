@@ -540,9 +540,6 @@ classdef ThetaMap < AbstractSystem
         
         paramGradTheta(:,:,iSlice) = GthetaPsi * paramGradPsi;
       end
-      
-
-      
     end
     
     function obj = addRestrictions(obj, ssLB, ssUB)
