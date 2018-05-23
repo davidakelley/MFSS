@@ -550,7 +550,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       % Test smoother
       alpha = ssA.smooth(Y);
-      testCase.verifyEqual(alpha(3,3:3:end)', Y(3:3:end,2), 'AbsTol', 1e-10);
+      testCase.verifyEqual(alpha(3:3:end,3), Y(3:3:end,2), 'AbsTol', 1e-10);
     end
     
     function testAvgSmoother(testCase)
@@ -576,7 +576,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       % Test smoother
       alpha = ssA.smooth(aggY);
-      testCase.verifyEqual(alpha(end,3:3:end)', aggY(3:3:end,2), 'AbsTol', 1e-10);
+      testCase.verifyEqual(alpha(3:3:end,end), aggY(3:3:end,2), 'AbsTol', 1e-10);
     end
     
     function testCommonStateProcess(testCase)
@@ -607,7 +607,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       
       % Test smoother
       alpha = ssA.smooth(aggY);
-      testCase.verifyEqual(sum(alpha(end-1:end,3:3:end)', 2), ...
+      testCase.verifyEqual(sum(alpha(3:3:end, end-1:end), 2), ...
         aggY(3:3:end,6), 'AbsTol', 1e-10);
     end
     
