@@ -1,5 +1,5 @@
 <deployment-project plugin="plugin.toolbox" plugin-version="1.0">
-  <configuration file="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\..\toolbox.prj" location="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\.." name="toolbox" target="target.toolbox" target-name="Package Toolbox">
+  <configuration file="C:\Users\g1dak02\Documents\MATLAB\mfss\build\..\toolbox.prj" location="C:\Users\g1dak02\Documents\MATLAB\mfss\build\.." name="toolbox" target="target.toolbox" target-name="Package Toolbox">
     <param.appname>MFSS</param.appname>
     <param.authnamewatermark />
     <param.email />
@@ -7,7 +7,7 @@
     <param.summary>Mixed-Frequency State Space Modeling Toolbox</param.summary>
     <param.description />
     <param.screenshot />
-    <param.version>1.9.2</param.version>
+    <param.version>2.0.0</param.version>
     <param.output>${PROJECT_ROOT}\MFSS.mltbx</param.output>
     <param.products.name>
       <item>MATLAB</item>
@@ -77,7 +77,7 @@
     <fileset.depfun.excluded />
     <fileset.package />
     <build-deliverables>
-      <file location="C:\Users\g1dak02\Documents\MATLAB\MFSS\build\.." name="MFSS.mltbx" optional="false">C:\Users\g1dak02\Documents\MATLAB\MFSS\build\..\MFSS.mltbx</file>
+      <file location="C:\Users\g1dak02\Documents\MATLAB\mfss\build\.." name="MFSS.mltbx" optional="false">C:\Users\g1dak02\Documents\MATLAB\mfss\build\..\MFSS.mltbx</file>
     </build-deliverables>
     <workflow />
     <matlab>

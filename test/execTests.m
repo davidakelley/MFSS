@@ -27,7 +27,7 @@ basicTests = [TestSuite.fromFile(fullfile(testDir, 'AbstractSystem_test.m')), ..
 kalmanTests = TestSuite.fromFile(fullfile(testDir, 'kalman_test.m'));
 accumulatorTests = [TestSuite.fromFile(fullfile(testDir, 'Accumulator_test.m')), ...
                     TestSuite.fromFile(fullfile(testDir, 'Accumulator_IntegrationTest.m'))];
-% gradientTests = TestSuite.fromFile(fullfile(testDir, 'gradient_IntegrationTest.m'));
+
 thetaMapTests = TestSuite.fromFile(fullfile(testDir, 'ThetaMap_test.m'));
 mlTests = TestSuite.fromFile(fullfile(testDir, 'estimate_test.m'));
 decompTests = TestSuite.fromFile(fullfile(testDir, 'Decompose_test.m'));

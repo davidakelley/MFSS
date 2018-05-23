@@ -45,7 +45,7 @@ else
 end
 
 if newMajorVersion
-  assert(nargin < 2 | minor == oldMinor, 'Minor release set to 0 for new major release.');
+  assert(nargin < 2 | minor == 0, 'Minor release must be set to 0 for new major release.');
   minor = 0;
 end
 if newMajorVersion || newMinorVersion
