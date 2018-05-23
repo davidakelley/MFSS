@@ -133,6 +133,10 @@ classdef StateSpace < AbstractStateSpace
         [alpha, smootherOut] = obj.smoother_m(yCheck, filterOut);
       end
       
+      if ~all(size(y) == size(yCheck))
+        % Time in the first dimension
+        alpha = alpha';
+      end
       smootherOut.logli = logli;
     end
     
