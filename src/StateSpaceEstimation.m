@@ -404,22 +404,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end         
       ceqx = 0;
       
-      % And the gradients 
-      warning off MATLAB:nearlySingularMatrix
-      warning off MATLAB:singularMatrix
-      % G = obj.ThetaMapping.parameterGradients(theta);
-      % deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
-      %   det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
-      if ~obj.ThetaMapping.usingDefaultP0
-        % [~, G.P0] = obj.ThetaMapping.initialValuesGradients(ss1, G, theta);
-        % This is suspect. Need to rewrite G.P0 first.
-        % deltaCX = [deltaCX det(ss1.Q0) * G.P0 * vec(ss1.R0 / ss1.Q0 * ss1.R0')];
-      end
-      warning on MATLAB:nearlySingularMatrix
-      warning on MATLAB:singularMatrix
-      
-      % deltaCeqX = sparse(0);
-      
       % Constrain a submatrix of T to be stationary: 
       % c(x) should be abs(max(eig(T))) - 1
       if ~isempty(obj.stationaryStates)

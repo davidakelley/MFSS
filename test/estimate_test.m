@@ -119,7 +119,7 @@ classdef estimate_test < matlab.unittest.TestCase
     function testGeneratedSmallGradientZero(testCase)
       % Make sure that the gradient at the estimated parameters is close to zero
       p = 2; m = 1; timeDim = 500;
-      rng(1007648153)
+      rng(100753)
       ssTrue = generateARmodel(p, m-1, false);
       ssTrue.T = 1;
       y = generateData(ssTrue, timeDim);
@@ -151,9 +151,10 @@ classdef estimate_test < matlab.unittest.TestCase
     end
     
     function testGenerated_noInit(testCase)
-      % Make sure that the gradient at the estimated parameters is close to zero
+      % Make sure that we get close to a tough model to estimate. 
+      % This test is sensitive to the actual generated values, thus the random seed. 
       p = 4; m = 2; timeDim = 500;
-      rng(1007648153)
+      rng(1001)
       ssTrue = generateARmodel(p, m-1, true);
       y = generateData(ssTrue, timeDim);
       

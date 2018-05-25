@@ -29,7 +29,6 @@ classdef ThetaMap < AbstractSystem
   %   - transformations: A cell array of function handles. Each function should
   %   take a scalar input and return a scalar output. While not technically
   %   disallowed, all transformations should be monotonic. 
-  %   - derivatives: A cell array of derivatives for each transformation.
   %   - inverses: A cell array of inverses for each transformation.
   %   - transformationIndex: A StateSpace object of integer indexes. Fixed
   %   elements must be denoted with a zero. Elements that depend on theta can
@@ -56,16 +55,12 @@ classdef ThetaMap < AbstractSystem
     transformationIndex
     % Cell array of transformations of psi to get parameter values
     transformations
-    % Derivatives of transformations
-    derivatives
     % Inverses of transformations
     inverses
     
     % Psi functions
     PsiTransformation
-    % Gradient of Psi functions
-    PsiGradient
-    % Inverse of Psi (optional)
+    % Inverse of Psi
     PsiInverse
     % Indexes of theta that determine each element of Psi
     PsiIndexes
@@ -95,13 +90,13 @@ classdef ThetaMap < AbstractSystem
   methods
     %% Constructor
     function obj = ThetaMap(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses, varargin)
+        transformations, inverses, varargin)
       % Generate map from elements of theta to StateSpace parameters
       
       opts = ThetaMap.parseInputs(varargin);
       
       ThetaMap.validateInputs(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses, opts);
+        transformations, inverses, opts);
       
       % Set dimensions
       obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, opts.explicita0, opts.explicitP0));
@@ -113,11 +108,9 @@ classdef ThetaMap < AbstractSystem
       obj.transformationIndex = transformationIndex;
       
       obj.transformations = transformations;
-      obj.derivatives = derivatives;
       obj.inverses = inverses;
       
       obj.PsiTransformation = repmat({@(theta) theta}, [obj.nTheta 1]);
-      obj.PsiGradient = repmat({@(theta) 1}, [obj.nTheta 1]);
       obj.PsiInverse = repmat({@(psi, inx) psi(inx(1))}, [obj.nTheta 1]);
       obj.PsiIndexes = num2cell(1:obj.nTheta);
       
@@ -173,7 +166,6 @@ classdef ThetaMap < AbstractSystem
       transformationIndex = ThetaMap.TransformationIndexStateSpace(ss);
       
       transformations = {@(x) x};
-      derivatives = {@(x) 1};
       inverses = {@(x) x};
       
       explicita0 = ~isempty(ss.a0);
@@ -197,7 +189,7 @@ classdef ThetaMap < AbstractSystem
       
       % Create object
       tm = ThetaMap(fixed, index, transformationIndex, ...
-        transformations, derivatives, inverses, ...
+        transformations, inverses, ...
         'explicita0', explicita0, 'explicitP0', explicitP0);
     end
     
@@ -352,129 +344,6 @@ classdef ThetaMap < AbstractSystem
       end
     end
     
-    %% Gradient functions
-    function G = parameterGradients(obj, theta)
-      % Create the gradient of the parameter matricies at a given value of theta
-      % 
-      % Inputs
-      %   theta: Vector of varried parameters
-      % Outputs
-      %   G:     Structure of gradients for each state space parameter. Each 
-      %          gradient will be nTheta X (elements in a slice) X max(tau_x).
-      
-      % Since every element of the parameter matricies is a function of a 
-      % single element of theta and we have derivatives of those functions, 
-      % we can simply apply those derivatives to each point to get the full 
-      % gradients.
-      % Also, we don't need to worry about symmetric v. nonsymmetric
-      % matricies since the index matricies are symmetric.
-
-      % FIXME: Handle exact initial values
-      
-      % Handle input
-      assert(isnumeric(theta) || isa(theta, 'StateSpace'), ...
-        ['Invalid input: pass either a theta vector of length %d ' ...
-        'or a conforming StateSpace object.'], obj.nTheta);
-      if isa(theta, 'StateSpace')
-        ss = theta;
-        theta = obj.system2theta(ss);
-      end
-      
-      psi = obj.constructPsi(theta);
-      GthetaPsi = obj.thetaPsiGrad(theta);
-      
-      % Construct structure of gradients
-      nParameterMats = length(obj.fixed.systemParam);
-      structConstructTemp = [obj.fixed.systemParam; cell(1, nParameterMats)];
-      G = struct(structConstructTemp{:});
-
-      % Construct the new parameter matricies
-      for iP = 1:nParameterMats
-        iName = obj.fixed.systemParam{iP};
-        G.(iName) = obj.explicitParamGrad(psi, GthetaPsi, iName);
-      end  
-    end
-    
-    function [Ga0, GP0] = initialValuesGradients(obj, ss, G, theta)
-      % Get the gradients of the initial values.
-      % 
-      % Inputs
-      %   ss:  StateSpace where the gradient should be taken
-      %   G:   Structure of gradients from ThetaMap.parameterGradients
-      % Outputs
-      %   Ga0: Gradient of a0
-      %   GP0: Gradient of P0
-      
-      % If we're using the default a0 or P0, calculate those gradients as
-      % functions of the parameters. For the diffuse case, the gradients will be
-      % zeros. 
-      
-      % Handle inputs
-      assert(isnumeric(ss) || isa(ss, 'StateSpace'), ...
-        ['Invalid input: pass either a theta vector of length %d ' ...
-        'or a conforming StateSpace object.'], obj.nTheta);
-     
-      if isempty(ss.tau)
-        ss = ss.setInvariantTau();
-      end
-      
-      psi = obj.constructPsi(theta);
-      GthetaPsi = obj.thetaPsiGrad(theta);
-            
-      % Determine which case we have
-      if obj.usingDefaulta0 || obj.usingDefaultP0
-        T1 = ss.T(:,:,ss.tau.T(1));
-        R1 = ss.R(:,:,ss.tau.R(1));
-        Q1 = ss.Q(:,:,ss.tau.Q(1));
-        stationaryStateFlag = all(eig(T1) < 1);
-      else
-        stationaryStateFlag = false;
-      end
-      
-      % Ga0
-      if ~obj.usingDefaulta0
-        Ga0 = obj.explicitParamGrad(psi, GthetaPsi, 'a0');
-      elseif obj.usingDefaulta0 && ~stationaryStateFlag
-        % Diffuse case - a0 is always the zero vector and so will not change
-        % with any of the theta parameters
-        Ga0 = zeros(obj.nTheta, obj.m);
-      else
-        % See documentation for calculation of the initial conditions gradients
-        IminusTinv = inv(eye(obj.m) - T1);
-        IminusTPrimeInv = inv((eye(obj.m) - T1)');
-        Ga0 = G.T(:,:,ss.tau.T(1)) * kron(IminusTinv, IminusTPrimeInv) * ...
-          kron(ss.c(:,ss.tau.c(1)), eye(obj.m)) + ...
-          G.c(:,:,ss.tau.c(1)) / (eye(obj.m) - T1)';
-      end
-      
-      % GP0
-      if ~obj.usingDefaultP0 
-        % Need G(P0) = G(R0 * Q0 * R0') = G(Q0) * kron(R0', R0') since G(R0) = 0
-        GQ0 = obj.explicitParamGrad(psi, GthetaPsi, 'Q0');
-        GP0 = GQ0 * kron(ss.R0', ss.R0');
-      elseif obj.usingDefaultP0 && ~stationaryStateFlag
-        % Diffuse case - P0 is always a large diagonal matrix that doesn't
-        % change with parameter values so its gradient is all zeros
-        GP0 = zeros(obj.nTheta, obj.m^2);
-      else
-        % See documentation for calculation of the initial conditions gradients
-        Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
-        vec = @(M) reshape(M, [], 1);
-        
-        rawGTkronT = ThetaMap.GAkronA(T1);
-        GTkronT = zeros(obj.nTheta, obj.m^4);
-        usedT = logical(obj.index.T(:,:,ss.tau.T(1)));
-        GTkronT(obj.index.T(usedT), :) = rawGTkronT(vec(usedT), :);
-        
-        IminusTkronTInv = sparse(inv(eye(obj.m^2) - kron(T1, T1)));
-
-        GP0 = GTkronT * kron(IminusTkronTInv, IminusTkronTInv') * ...
-          sparse(kron(vec(R1 * Q1 * R1'), eye(obj.m^2))) + ...
-          (G.R(:,:,ss.tau.R(1)) * (kron(Q1 * R1', eye(obj.m))) * Nm + ...
-          G.Q(:,:,ss.tau.Q(1)) * kron(R1', R1')) * IminusTkronTInv';
-      end
-    end
-
     %% Theta restrictions
     function transformedTheta = restrictTheta(obj, theta)
       % Create restricted version of theta
@@ -497,7 +366,7 @@ classdef ThetaMap < AbstractSystem
     function GtransformedTheta = thetaUthetaGrad(obj, thetaU)
       % Construct G_{theta^U}(theta)
       
-      [~, thetaUDeriv] = obj.getThetaTransformations();
+      [~, ~, thetaUDeriv] = obj.getThetaTransformations();
       GtransformedTheta = zeros(obj.nTheta);
       for iTheta = 1:obj.nTheta
         GtransformedTheta(iTheta, iTheta) = thetaUDeriv{iTheta}(thetaU(iTheta));
@@ -505,43 +374,6 @@ classdef ThetaMap < AbstractSystem
     end
     
     %% Utility functions
-    function paramGradTheta = explicitParamGrad(obj, psi, GthetaPsi, iName)
-      % Get the gradient of a parameter as a function of theta.
-      
-      % Allocate: all parameter gradients are 3D (inc. vectors)
-      if any(strcmpi(iName, {'d', 'c'}))
-        nSlices = size(obj.index.(iName), 2);
-        nSliceElems = numel(obj.index.(iName)(:,1));
-      else
-        nSlices = size(obj.index.(iName), 3);
-        nSliceElems = numel(obj.index.(iName)(:,:,1));
-      end
-      
-      % Create gradients of each slice w.r.t. psi then theta
-      paramGradTheta = zeros(obj.nTheta, nSliceElems, nSlices);
-      for iSlice = 1:nSlices
-        paramGradPsi = zeros(obj.nPsi, nSliceElems);
-        
-        % Move through each parameter element determined by theta and compute
-        % the derivative:
-        if any(strcmpi(iName, {'d', 'c'}))
-          freeValues = reshape(find(logical(obj.index.(iName)(:,iSlice))), 1, []);
-        else
-          freeValues = reshape(find(logical(obj.index.(iName)(:,:,iSlice))), 1, []);
-        end
-        
-        for jF = freeValues
-          freeIndex = obj.index.(iName)(jF);
-          [iRow, jCol] = ind2sub(size(obj.index.(iName)(:,:,1)), jF);
-          jDeriv = obj.derivatives{obj.transformationIndex.(iName)(iRow, jCol, iSlice)};
-          jTheta = psi(freeIndex);
-          paramGradPsi(freeIndex, jF) = jDeriv(jTheta);
-        end
-        
-        paramGradTheta(:,:,iSlice) = GthetaPsi * paramGradPsi;
-      end
-    end
-    
     function obj = addRestrictions(obj, ssLB, ssUB)
       % Restrict the possible StateSpaces that can be created by altering the
       % transformations used
@@ -568,12 +400,11 @@ classdef ThetaMap < AbstractSystem
       for iP = 1:length(obj.LowerBound.systemParam)
         iParam = obj.LowerBound.systemParam{iP};
         
-        [trans, deriv, inver, transInx, lbMat, ubMat] = ...
+        [trans, inver, transInx, lbMat, ubMat] = ...
           obj.restrictParamMat(ssLB, ssUB, iParam);
         
         % Add transformations
         obj.transformations = [obj.transformations trans];
-        obj.derivatives = [obj.derivatives deriv];
         obj.inverses = [obj.inverses inver];
         
         obj.transformationIndex.(iParam) = transInx;
@@ -590,12 +421,11 @@ classdef ThetaMap < AbstractSystem
           obj.LowerBound.a0 = -Inf(size(a0));
           obj.UpperBound.a0 = Inf(size(a0)); 
         end
-        [trans, deriv, inver, transInx, lbMat, ubMat] = ...
+        [trans, inver, transInx, lbMat, ubMat] = ...
           obj.restrictParamMat(ssLB, ssUB, 'a0');
         
         % Add transformations
         obj.transformations = [obj.transformations trans];
-        obj.derivatives = [obj.derivatives deriv];
         obj.inverses = [obj.inverses inver];
         
         obj.transformationIndex.a0 = transInx;
@@ -618,12 +448,10 @@ classdef ThetaMap < AbstractSystem
           obj.UpperBound.P0 = P0;      
         end
         
-        [trans, deriv, inver, transInx, lbMat, ubMat] = ...
-          obj.restrictParamMat(ssLB, ssUB, 'Q0');
+        [trans, inver, transInx, lbMat, ubMat] = obj.restrictParamMat(ssLB, ssUB, 'Q0');
         
         % Add transformations
         obj.transformations = [obj.transformations trans];
-        obj.derivatives = [obj.derivatives deriv];
         obj.inverses = [obj.inverses inver];
         
         obj.transformationIndex.Q0 = transInx;
@@ -686,7 +514,6 @@ classdef ThetaMap < AbstractSystem
       
       % Delete unused transformations and gradients
       obj.PsiTransformation(deletedTheta) = [];
-      obj.PsiGradient(deletedTheta) = [];
       
       obj.PsiInverse(unique([deletedIndexes{:}])) = [];
       
@@ -707,7 +534,6 @@ classdef ThetaMap < AbstractSystem
         ThetaMap.eliminateUnusedIndexes(obj.transformationIndex, ...
         ~obj.usingDefaulta0, ~obj.usingDefaultP0);
       obj.transformations(unusedTransforms) = [];
-      obj.derivatives(unusedTransforms) = [];
       obj.inverses(unusedTransforms) = [];
       
       % Remove duplicate transformations: 
@@ -745,7 +571,6 @@ classdef ThetaMap < AbstractSystem
         
         % Remove duplicates
         obj.transformations(duplicatesForRemoval) = [];
-        obj.derivatives(duplicatesForRemoval) = [];
         obj.inverses(duplicatesForRemoval) = [];
       end
     end
@@ -757,8 +582,8 @@ classdef ThetaMap < AbstractSystem
       % that this causes a0 and P0 to be freely estimated. 
       
       % Get the identity transformation to add later
-      [trans, deriv, inverse] = obj.boundedTransform(-Inf, Inf);
-      [transB, derivB, inverseB] = obj.boundedTransform(eps * 1e6, Inf);
+      [trans, inverse] = obj.boundedTransform(-Inf, Inf);
+      [transB, inverseB] = obj.boundedTransform(eps * 1e6, Inf);
         
       % Alter a0
       if ~isempty(a0) 
@@ -783,7 +608,6 @@ classdef ThetaMap < AbstractSystem
         obj.transformationIndex.a0 = a0transIndex;
         
         obj.transformations = [obj.transformations {trans}];
-        obj.derivatives = [obj.derivatives {deriv}];
         obj.inverses = [obj.inverses {inverse}];
         
         a0LB = -Inf * ones(size(a0));
@@ -824,7 +648,6 @@ classdef ThetaMap < AbstractSystem
         obj.transformationIndex.P0 = P0transIndex;
 
         obj.transformations = [obj.transformations {trans, transB}];
-        obj.derivatives = [obj.derivatives {deriv, derivB}];
         obj.inverses = [obj.inverses {inverse, inverseB}];
         
         % Restrict diagonal to be positive
@@ -880,17 +703,7 @@ classdef ThetaMap < AbstractSystem
       end      
     end
     
-    function Gpsi = thetaPsiGrad(obj, theta)
-      % Construct G_{theta}(psi)
-
-      Gpsi = zeros(obj.nTheta, obj.nPsi);
-      for iPsi = 1:obj.nPsi
-        psiInx = obj.PsiIndexes{iPsi};
-        Gpsi(psiInx, iPsi) = obj.PsiGradient{iPsi}(theta(psiInx));
-      end
-    end
-    
-    function constructed = constructParamMat(obj, psi, matName)
+   function constructed = constructParamMat(obj, psi, matName)
       % Create parameter value matrix from fixed and varried values
       
       % Get fixed values
@@ -917,12 +730,12 @@ classdef ThetaMap < AbstractSystem
       thetaDeriv= cell(obj.nTheta, 1);
       thetaInv = cell(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
-        [thetaTrans{iTheta}, thetaDeriv{iTheta}, thetaInv{iTheta}] = obj.boundedTransform(...
+        [thetaTrans{iTheta}, thetaInv{iTheta}] = obj.boundedTransform(...
           obj.thetaLowerBound(iTheta), obj.thetaUpperBound(iTheta));
       end
     end
     
-    function [newTrans, newDeriv, newInver, transInx, newLBmat, newUBmat] = ...
+    function [newTrans, newInver, transInx, newLBmat, newUBmat] = ...
         restrictParamMat(obj, ssLB, ssUB, iParam)
       % Get the new version of a parameter after new restrictions
       
@@ -939,27 +752,21 @@ classdef ThetaMap < AbstractSystem
       % old ones later in checkThetaMap 
       transInx = obj.transformationIndex.(iParam);
       newTrans = cell(1, numel(newLBmat));
-      newDeriv = cell(1, numel(newLBmat));
       newInver = cell(1, numel(newLBmat));
       
       additionalTrans = 0;
       for iElem = 1:numel(newLBmat)
         if newLBmat(iElem) ~= oldLBmat(iElem) || newUBmat(iElem) ~= oldUBmat(iElem)
           additionalTrans = additionalTrans + 1;
-          
-          [trans, deriv, inver] = ...
-            ThetaMap.boundedTransform(newLBmat(iElem), newUBmat(iElem));
-          
+          [trans, inver] = ThetaMap.boundedTransform(newLBmat(iElem), newUBmat(iElem));
           transInx(iElem) = length(obj.transformations) + additionalTrans;
           
           newTrans{iElem} = trans;
-          newDeriv{iElem} = deriv;
           newInver{iElem} = inver;
         end
       end
       
       newTrans(cellfun(@isempty, newTrans)) = [];
-      newDeriv(cellfun(@isempty, newDeriv)) = [];
       newInver(cellfun(@isempty, newInver)) = [];
     end
     
@@ -1018,7 +825,7 @@ classdef ThetaMap < AbstractSystem
       opts = inP.Results;
     end
     
-    function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses, opts)
+    function validateInputs(fixed, index, transformationIndex, transformations, inverses, opts)
       % Validate inputs
       assert(isa(fixed, 'StateSpace'));
       assert(isa(index, 'StateSpace'));
@@ -1035,9 +842,7 @@ classdef ThetaMap < AbstractSystem
       
       assert(length(transformations) >= nTransform, ...
         'Insufficient transformations provided for indexes given.');
-      assert(length(transformations) == length(derivatives), ...
-        'Derivatives must be provided for every transformation.');
-      assert(length(inverses) == length(derivatives), ...
+      assert(length(transformations) == length(inverses), ...
         'Inverses must be provided for every transformation.');
 
       index.checkConformingSystem(transformationIndex);
@@ -1196,16 +1001,15 @@ classdef ThetaMap < AbstractSystem
   
   methods (Static, Hidden)
     %% Helper functions
-    function [trans, deriv, inver] = boundedTransform(lowerBound, upperBound)
+    function [trans, inver, deriv] = boundedTransform(lowerBound, upperBound)
       % Generate a restriction transformation from a lower and upper bound
-      % Also returns the derivative and inverse of the transformation
+      % Also returns the inverse of the transformation
       % 
       % Inputs
       %   lowerBound: Scalar lower bound
       %   upperBound: Scalar upper bound
       % Outputs
       %   trans: transformation mapping [-Inf, Inf] to the specified interval
-      %   deriv: the derivative of trans
       %   inver: the inverse of trans      
       
       if isfinite(lowerBound) && isfinite(upperBound)
@@ -1214,12 +1018,12 @@ classdef ThetaMap < AbstractSystem
         deriv = @(x) (exp(x) * (upperBound - lowerBound)) ./ ((exp(x) + 1).^2);
         inver = @(x) -log(((upperBound - lowerBound) ./ (x - lowerBound)) - 1);
       elseif isfinite(lowerBound)
-        % Exponential 
+        % Exponential
         trans = @(x) exp(x) + lowerBound;
         deriv = @(x) exp(x);
         inver = @(x) log(x - lowerBound);
       elseif isfinite(upperBound)
-        % Negative exponential 
+        % Negative exponential
         trans = @(x) -exp(x) + upperBound;
         deriv = @(x) -exp(x);
         inver = @(x) log(upperBound - x);
@@ -1228,7 +1032,7 @@ classdef ThetaMap < AbstractSystem
         trans = @(x) x;
         deriv = @(x) 1;
         inver = @(x) x;
-      end      
+      end
     end
     
     function result = isequalTransform(fn1, fn2)
