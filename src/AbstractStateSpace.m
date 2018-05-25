@@ -137,7 +137,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       elseif nargin == 0
         return;
       else
-        error('Input error.');
+        error('MFSS:inputError', 'Input error.');
       end
       
       obj = obj.setSystemParameters(parameters);
@@ -197,11 +197,16 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if nargin > 2 && ~isempty(x) && size(x, 1) ~= obj.k && size(x,2) == obj.k
         x = x';
       elseif nargin < 3 || isempty(x)
+        if ~isempty(obj.beta)
+          error('MFSS:noX', 'Model specified with beta and no x data provided.')
+        end
         x = zeros(obj.k, size(y,2));
       end
       
+      assert(isnumeric(y), 'MFSS:nonnumericY', 'Input data y must be numeric.');
       assert(size(y, 1) == obj.p, ...
         'Number of series in y does not match observation equation.');
+      assert(isnumeric(x), 'MFSS:nonnumericX', 'Input data x must be numeric.');
       assert(size(x, 1) == obj.k, ...
         'Number of exogenous series in x does not match observation equation.');
       
@@ -446,7 +451,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         obj.n = n;
       else
         if obj.n ~= n
-          error('TVP calendar length mismatch.');
+          error('MFSS:TVPmismatch', 'TVP calendar length mismatch.');
         end
       end
     end
