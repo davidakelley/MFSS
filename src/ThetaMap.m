@@ -37,10 +37,6 @@ classdef ThetaMap < AbstractSystem
   %   theta(i) before placing it in the appropriate parameter matrix.
   %
   % David Kelley, 2016-2017
-  %
-  % TODO (1/17/17)
-  % ---------------
-  %   - Write documentation on initial values derivation
   
   properties 
     % StateSpace containing all fixed elements. 
@@ -86,7 +82,7 @@ classdef ThetaMap < AbstractSystem
     usingDefaulta0 = true;
     usingDefaultP0 = true;
   end
-  
+  cal
   methods
     %% Constructor
     function obj = ThetaMap(fixed, index, transformationIndex, ...
@@ -1112,37 +1108,6 @@ classdef ThetaMap < AbstractSystem
       
       vectors = cellfun(@(x) x(:), param, 'Uniform', false);
       vecParam = vertcat(vectors{:});
-    end
-    
-    function Gkron = GAkronA(A)
-      % Return G_theta(kron(A,A)) for a matrix A with elements determined by a
-      % theta vector with an element for each entry in A.
-      % 
-      % Inputs
-      %   A:     A square matrix
-      % Outputs
-      %   Gkron: The gradient of kron(A, A) ordered column-wise
-      
-      % David Kelley & Bill Kluender, 2016
-      % The gradient can be broken up into two main components: 
-      %   - A set of progressing diagonals 
-      %   - A set of rows that repeat on the primary block diagonal
-      % The only way we were able to figure this out was to write out examples
-      % by hand and then run some numerical tests. 
-       
-      assert(size(A, 1) == size(A, 2), 'Input must be square.');
-      m = size(A, 1);
-      
-      % Diagonals
-      submatDiags = arrayfun(@(x) kron(eye(m), kron(A(:, x)', eye(m))), 1:m, ...
-        'Uniform', false);      
-      diagonals = horzcat(submatDiags{:});
-      
-      % Rows
-      submatRows = arrayfun(@(x) kron(eye(m), A(:, x)'), 1:m, 'Uniform', false);
-      rows = kron(eye(m), horzcat(submatRows{:}));
-
-      Gkron = diagonals + rows;
     end
   end
 end
