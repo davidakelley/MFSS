@@ -288,7 +288,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Run smoother, plot smoothed state
       if obj.diagnosticPlot
-        progress.alpha = ss_out.smooth(y);
+        progress.alpha = ss_out.smooth(y, x);
         if progress.visible && isvalid(progress.figHandle)
           progress.updateFigure();
         end
