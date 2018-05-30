@@ -555,7 +555,7 @@ classdef StateSpace < AbstractStateSpace
       grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
     end
     
-    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, tm, theta)
+    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, x, tm, theta)
       % Compute numeric gradient using central differences
       [~, ll, fOut] = obj.filter(y, x);
       
