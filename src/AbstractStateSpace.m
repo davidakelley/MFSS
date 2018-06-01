@@ -209,6 +209,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       assert(isnumeric(x), 'MFSS:nonnumericX', 'Input data x must be numeric.');
       assert(size(x, 1) == obj.k, ...
         'Number of exogenous series in x does not match observation equation.');
+      assert(~any(any(isnan(x))), 'MFSS:nanX', 'Input data x must be not nan.');
       
       if ~obj.timeInvariant
         % System with TVP, make sure length of taus matches data.

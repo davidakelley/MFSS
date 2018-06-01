@@ -82,7 +82,7 @@ classdef ThetaMap < AbstractSystem
     usingDefaulta0 = true;
     usingDefaultP0 = true;
   end
-  cal
+  
   methods
     %% Constructor
     function obj = ThetaMap(fixed, index, transformationIndex, ...
