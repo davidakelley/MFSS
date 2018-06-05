@@ -119,16 +119,16 @@ classdef estimate_test < matlab.unittest.TestCase
     function testGeneratedSmallGradientZero(testCase)
       % Make sure that the gradient at the estimated parameters is close to zero
       p = 2; m = 1; timeDim = 500;
-      rng(100753)
+      rng(10001)
       ssTrue = generateARmodel(p, m-1, false);
-      ssTrue.T = 1;
+      ssTrue.T = .5;
       y = generateData(ssTrue, timeDim);
       
       % Estimated system
       Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
       H = nan(p, p);
       
-      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      T = [.5; [eye(m-1) zeros(m-1, 1)]];
       R = zeros(m, 1); R(1, 1) = 1;
       Q = nan;
       
@@ -144,8 +144,9 @@ classdef estimate_test < matlab.unittest.TestCase
       T0(isnan(T0)) = 0.5./m;
       Q0 = 1;
       ss0 = StateSpace(Z0, H0, T0, Q0, 'R', R);
-      
+      ssE.solver = 'fmincon';
       ssML = ssE.estimate(y, ss0);
+      
       [~, grad] = ssML.gradient(y, [], ssE.ThetaMapping);
       testCase.verifyLessThanOrEqual(abs(grad), 1e-4);
     end
@@ -171,6 +172,62 @@ classdef estimate_test < matlab.unittest.TestCase
       ssML = ssE.estimate(y);
       testCase.verifyEqual(ssTrue.T, ssML.T, 'AbsTol', 0.1);
     end   
+    
+    function testGenerated_gradType(testCase)
+      % This is a pretty simple model without restrictions on it - the single-direction
+      % gradient fmincon uses by default and the internal gradient that checks both
+      % directions should give the same answers here. 
+      
+      p = 4; m = 2; timeDim = 500;
+      rng(1001)
+      ssTrue = generateARmodel(p, m-1, true);
+      y = generateData(ssTrue, timeDim);
+      
+      % Estimated system
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      H = diag(nan(p, 1));
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssE.solver = 'fmincon';
+      
+      ssE.useInternalNumericGrad = false;
+      thetaExternal = ssE.ThetaMapping.system2theta(ssE.estimate(y));
+      ssE.useInternalNumericGrad = true;
+      thetaInternal = ssE.ThetaMapping.system2theta(ssE.estimate(y));
+      
+      testCase.verifyEqual(thetaInternal, thetaExternal, 'AbsTol', 0.1);
+    end
+    
+    function testGenerated_thetaRestrict(testCase)
+      % Test that a restriction on theta is obeyed. 
+      
+      p = 2; m = 1; timeDim = 500;
+      rng(1001)
+      ssTrue = generateARmodel(p, m-1, true);
+      y = generateData(ssTrue, timeDim);
+      
+      % Estimated system
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      H = diag(nan(p, 1));
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssE.solver = 'fmincon';
+      
+      ssE.ThetaMapping.thetaUpperBound(1) = 0;
+      
+      ssE.useInternalNumericGrad = false;
+      theta = ssE.ThetaMapping.system2theta(ssE.estimate(y));
+      
+      testCase.verifyLessThanOrEqual(theta(1), 0);
+    end
     
     function testBounds(testCase)
       p = 2; m = 1; timeDim = 500;

@@ -5,9 +5,23 @@ theta = tm.system2theta(ss);
 delta = -ss.delta;
 
 %% Gradient of likelihood
-[~, numeric, fOutFix] = ss.gradient(y, tm);
+[~, logl_fix] = ss.filter(y);
 
-ss = ss.prepareFilter(y);
+theta = tm.system2theta(ss);
+for iT = 1:tm.nTheta
+  iTheta = theta;
+  iTheta(iT) = iTheta(iT) + delta;
+  
+  ssTest = tm.theta2system(iTheta);
+  [~, logl_delta] = ssTest.filter(y);
+  
+  numeric(iT) = (logl_delta - logl_fix) ./ delta;
+end
+
+% %% Gradient of likelihood
+% [~, numeric, fOutFix] = ss.gradient(y, [], tm);
+
+ss = ss.prepareFilter(y, []);
 
 %% Gradients of parameters
 G = [];

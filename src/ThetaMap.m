@@ -352,7 +352,7 @@ classdef ThetaMap < AbstractSystem
     end
     
     function untransformedTheta = unrestrictTheta(obj, theta)
-      [~, ~, thetaInverses] = obj.getThetaTransformations();
+      [~, thetaInverses] = obj.getThetaTransformations();
       untransformedTheta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
         untransformedTheta(iTheta) = thetaInverses{iTheta}(theta(iTheta));
@@ -361,7 +361,6 @@ classdef ThetaMap < AbstractSystem
     
     function GtransformedTheta = thetaUthetaGrad(obj, thetaU)
       % Construct G_{theta^U}(theta)
-      
       [~, ~, thetaUDeriv] = obj.getThetaTransformations();
       GtransformedTheta = zeros(obj.nTheta);
       for iTheta = 1:obj.nTheta
@@ -721,12 +720,12 @@ classdef ThetaMap < AbstractSystem
       
     end
     
-    function [thetaTrans, thetaDeriv, thetaInv] = getThetaTransformations(obj)
+    function [thetaTrans, thetaInv, thetaDeriv] = getThetaTransformations(obj)
       thetaTrans = cell(obj.nTheta, 1);
-      thetaDeriv= cell(obj.nTheta, 1);
       thetaInv = cell(obj.nTheta, 1);
+      thetaDeriv = cell(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
-        [thetaTrans{iTheta}, thetaInv{iTheta}] = obj.boundedTransform(...
+        [thetaTrans{iTheta}, thetaInv{iTheta}, thetaDeriv{iTheta}] = obj.boundedTransform(...
           obj.thetaLowerBound(iTheta), obj.thetaUpperBound(iTheta));
       end
     end

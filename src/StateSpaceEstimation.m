@@ -37,7 +37,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     fminsearchMaxIter = 500;
     
     % Indicator to use more accurate, slower gradient
-    useInternalNumericGrad = true;
+    useInternalNumericGrad = false;
     
     % Allowable flags in estimation
     flagsAllowed = -1:5;
@@ -222,31 +222,31 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, obj.useInternalNumericGrad);
             [thetaUHat, logli, outflag, ~, gradient] = fminunc(...
               minfunc, theta0U, optFMinUnc);
           case 'fmincon'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, obj.useInternalNumericGrad);
             try
-            [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(... 
-              minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
+              [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(...
+                minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
             catch ex
               switch ex.identifier
                 case 'optim:barrier:GradUndefAtX0'
                   if iter > 1
                     warning('StateSpaceEstimation:estimate:badInitialGrad', ...
-                      ['Gradient contains Inf, NaN, or complex values. ' ... 
+                      ['Gradient contains Inf, NaN, or complex values. ' ...
                       'Returning previous solver output']);
                   else
                     rethrow(ex);
                   end
                 otherwise
                   rethrow(ex);
-              end 
+              end
             end
           case 'fminsearch'
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
-
+            
             [thetaUHat, logli, outflag] = fminsearch(...
               minfunc, theta0U, optFMinSearch);
             
@@ -308,7 +308,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       ss1 = ss1.setDefaultInitial();
       
       if any(diag(ss1.H) < 0)
-        keybaord;
+        error('Negative variance');
       end
       
       % Really enforce constraints
