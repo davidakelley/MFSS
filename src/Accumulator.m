@@ -96,16 +96,15 @@ classdef Accumulator < AbstractSystem
       % the regular indexes. They also need to take into acount the appropriate
       % divisions by the calendar vector elements that will result in additional
       % transformations.
-      [transIndexNew, transNew, derivNew, invNew] = obj.augmentTransIndex(tm, aug);
+      [transIndexNew, transNew, invNew] = obj.augmentTransIndex(tm, aug);
       
       % Construct the new ThetaMap
       tmNew = ThetaMap(fixedNew, indexNew, transIndexNew, ...
-        transNew, derivNew, invNew, ...
+        transNew, invNew, ...
         'explicita0', ~tm.usingDefaulta0, 'explicitP0', ~tm.usingDefaultP0);
       
       % The new ThetaMap should have the same theta -> psi properties as the old
       tmNew.PsiTransformation = tm.PsiTransformation;
-      tmNew.PsiGradient = tm.PsiGradient;
       tmNew.PsiInverse = tm.PsiInverse;
       tmNew.PsiIndexes = tm.PsiIndexes;
       % Have to use internal ThetaMap method to set nTheta
@@ -455,7 +454,7 @@ classdef Accumulator < AbstractSystem
       
     end
     
-    function [transIndex, trans, deriv, inv] = augmentTransIndex(obj, tm, aug)
+    function [transIndex, trans, inv] = augmentTransIndex(obj, tm, aug)
       % Augment transformation index: create a new StateSpace of indexes with
       % the associated transformations to enforce the accumulators.
       %
@@ -480,7 +479,7 @@ classdef Accumulator < AbstractSystem
       factorT = Accumulator.augmentParamT(ones(aug.m.withLag), aug) - addendT; % FIXME: dimensions
       isAugElemT = false(size(transIndex.T));
       isAugElemT(augStates, 1:aug.m.original, :) = true;
-      [transIndex.T, newTransT, newDerivT, newInvT] = Accumulator.computeNewTrans(...
+      [transIndex.T, newTransT, newInvT] = Accumulator.computeNewTrans(...
         transIndex.T, factorT, addendT, find(isAugElemT), tm, nTrans); %#ok<FNDSB>
       
       % Modify c transformations (similar structure to T transformations)
@@ -488,7 +487,7 @@ classdef Accumulator < AbstractSystem
       factorc = Accumulator.augmentParamc(ones(aug.m.withLag, 1), aug) - addendc;
       isAugElemc = false(size(transIndex.c));
       isAugElemc(augStates, :) = true;
-      [transIndex.c, newTransc, newDerivc, newInvc] = Accumulator.computeNewTrans(...
+      [transIndex.c, newTransc, newInvc] = Accumulator.computeNewTrans(...
         transIndex.c, factorc, addendc, find(isAugElemc), tm, ...
         nTrans + length(newTransT)); %#ok<FNDSB>
       
@@ -497,12 +496,11 @@ classdef Accumulator < AbstractSystem
       factorR = Accumulator.augmentParamR(ones(aug.m.withLag, tm.g), aug) - addendR;
       isAugElemR = false(size(transIndex.R));
       isAugElemR(augStates, :, :) = true;
-      [transIndex.R, newTransR, newDerivR, newInvR] = Accumulator.computeNewTrans(...
+      [transIndex.R, newTransR, newInvR] = Accumulator.computeNewTrans(...
         transIndex.R, factorR, addendR, find(isAugElemR), tm, ...
         nTrans + length(newTransT) + length(newTransc)); %#ok<FNDSB>
       
       trans = [tm.transformations newTransT newTransc newTransR];
-      deriv = [tm.derivatives newDerivT newDerivc newDerivR];
       inv = [tm.inverses newInvT newInvc newInvR];
     end
     
@@ -762,13 +760,12 @@ classdef Accumulator < AbstractSystem
     end
     
     %% ThetaMap augmentation methods
-    function [newParamMat, newTrans, newDeriv, newInv] = ...
+    function [newParamMat, newTrans, newInv] = ...
         computeNewTrans(augParamMat, factor, addend, indexElems, tm, nTrans)
       % Compose new functions that take into account the linear transformation
       % occuring in the augmentation.
       
       newTrans = cell(1, numel(indexElems));
-      newDeriv = cell(1, numel(indexElems));
       newInv = cell(1, numel(indexElems));
       
       newParamMat = augParamMat;
@@ -785,10 +782,9 @@ classdef Accumulator < AbstractSystem
           continue
         end
         
-        [newTrans{iTrans}, newDeriv{iTrans}, newInv{iTrans}] = ...
+        [newTrans{iTrans}, newInv{iTrans}] = ...
           Accumulator.createTransforms(tm.transformations{iTransInd}, ...
-          tm.derivatives{iTransInd}, tm.inverses{iTransInd}, ...
-          factor(iElem), addend(iElem));
+          tm.inverses{iTransInd}, factor(iElem), addend(iElem));
         
         % Move transformationIndex of the element we just changed
         newParamMat(iElem) = nTrans + 1;
@@ -797,19 +793,15 @@ classdef Accumulator < AbstractSystem
       
       % Concentrate out unused new transformations
       newTrans = newTrans(~cellfun(@isempty, newTrans));
-      newDeriv = newDeriv(~cellfun(@isempty, newDeriv));
       newInv = newInv(~cellfun(@isempty, newInv));
     end
     
-    function [newT, newD, newI] = createTransforms(oldT, oldD, oldI, A, B)
-      % Create new transformations, derivatives and inverses from the linear
+    function [newT, newI] = createTransforms(oldT, oldI, A, B)
+      % Create new transformations and inverses from the linear
       % scaling factor A and addend B.
       
       % Compose transformation by multiplying then adding
       newT = Accumulator.composeLinearFunc(oldT, A, B);
-      
-      % Compose the derivative with the chain rule
-      newD = Accumulator.composeLinearFunc(oldD, A, 0);
       
       % "Undo" the linear transformation with its inverse
       newI = @(y) oldI((y - B) ./ A);

@@ -159,7 +159,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [dataContrib, paramContrib, weights] = decompose_filtered(obj, y, x)
+    function [dataContrib, paramContrib, exogContrib, weights] = decompose_filtered(obj, y, x)
       % Decompose the smoothed states by data contributions
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
@@ -167,13 +167,14 @@ classdef StateSpace < AbstractStateSpace
       if nargin < 3
         x = [];
       end
+      [obj, y, x] = obj.checkSample(y, x);
       
       % Get quantities from filter
       [~, ~, fOut] = obj.filter(y, x);
 
       % Transform to the univariate form of the state space
       obj.validateKFilter();
-      obj = obj.checkSample(y);
+      obj = obj.checkSample(y, x);
       ssMulti = obj;
       [obj, ~, ~, C] = obj.prepareFilter(y, x);
       
@@ -186,6 +187,7 @@ classdef StateSpace < AbstractStateSpace
       % sum(weights.y,4);
       dataContrib = zeros(obj.m, obj.p, obj.n+1);
       paramContrib = zeros(obj.m, obj.n+1);
+      exogContrib = zeros(obj.m, obj.k, obj.n+1);
       for iT = 1:obj.n+1
         if any(~cellfun(@isempty, weights.y(iT,:)))
           dataContrib(:,:,iT) = sum(cat(3, ...
@@ -195,6 +197,11 @@ classdef StateSpace < AbstractStateSpace
         if any(~cellfun(@isempty, weights.d(iT,:)))
           paramContrib(:,iT) = ...
             sum(sum(cat(3, weights.d{iT, ~cellfun(@isempty, weights.d(iT,:))}), 3), 2);
+        end
+        
+        if any(~cellfun(@isempty, weights.x(iT,:)))
+          exogContrib(:,:,iT) = sum(cat(3, ...
+            weights.x{iT, ~cellfun(@isempty, weights.x(iT,:))}), 3);
         end
         
         if any(~cellfun(@isempty, weights.c(iT,:)))
@@ -208,7 +215,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [dataContrib, paramContrib, weights] = decompose_smoothed(obj, y, x)
+    function [dataContrib, paramContrib, exogContrib, weights] = decompose_smoothed(obj, y, x)
       % Decompose the smoothed states by data contributions
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
@@ -216,7 +223,8 @@ classdef StateSpace < AbstractStateSpace
       if nargin < 3
         x = [];
       end
-      
+      [obj, y, x] = obj.checkSample(y, x);
+
       % Get output from the filter
       [~, ~, fOut] = obj.filter(y, x);
 
@@ -233,6 +241,7 @@ classdef StateSpace < AbstractStateSpace
       % dimensions for the parameters. 
       dataContrib = zeros(obj.m, obj.p, obj.n);
       paramContrib = zeros(obj.m, obj.n);
+      exogContrib = zeros(obj.m, obj.k, obj.n);
       for iT = 1:obj.n
         if any(~cellfun(@isempty, weights.y(iT,:)))
           dataContrib(:,:,iT) = sum(cat(3, ...
@@ -252,6 +261,12 @@ classdef StateSpace < AbstractStateSpace
         if ~isempty(weights.a0{iT})
           paramContrib(:,iT) = paramContrib(:,iT) + sum(weights.a0{iT}, 2);
         end
+        
+        if any(~cellfun(@isempty, weights.x(iT,:)))
+          exogContrib(:,:,iT) = sum(cat(3, ...
+            weights.x{iT, ~cellfun(@isempty, weights.x(iT,:))}), 3);
+        end
+        
       end
     end
     
@@ -555,7 +570,7 @@ classdef StateSpace < AbstractStateSpace
       grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
     end
     
-    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, tm, theta)
+    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, x, tm, theta)
       % Compute numeric gradient using central differences
       [~, ll, fOut] = obj.filter(y, x);
       
@@ -952,6 +967,7 @@ classdef StateSpace < AbstractStateSpace
       omega = cell(obj.n+1, obj.n);
       omegac = cell(obj.n+1, obj.n+1);
       omegad = cell(obj.n+1, obj.n);
+      omegax = cell(obj.n+1, obj.n);
       omegaa0 = cell(obj.n+1, 1);
 
       Im = eye(obj.m);
@@ -994,17 +1010,24 @@ classdef StateSpace < AbstractStateSpace
         ind = ~isnan(y(:,iJ));
         
         % Determine effect of data/parameters the period after observation
-        omega_temp = Kstar(:,ind,iJ) / C(ind,ind,obj.tau.H(iJ)) * diag(y(ind,iJ));
+        KCinv = Kstar(:,ind,iJ) / C(ind,ind,obj.tau.H(iJ));
+        
+        omega_temp = KCinv * diag(y(ind,iJ));
         if any(any(abs(omega_temp) > eps2))
           omega{iJ+1,iJ} = zeros(obj.m, obj.p);
           omega{iJ+1,iJ}(:,ind) = omega_temp;
         end
         
-        omegad_temp = -Kstar(:,ind,iJ) / C(ind,ind,obj.tau.H(iJ)) * ...
-          diag(ssMulti.d(ind, ssMulti.tau.d(iJ)));
+        omegad_temp = -KCinv * diag(ssMulti.d(ind, ssMulti.tau.d(iJ)));
         if any(any(abs(omegad_temp) > eps2))
           omegad{iJ+1,iJ} = zeros(obj.m, obj.p);
           omegad{iJ+1,iJ}(:,ind) = omegad_temp;
+        end
+        
+        omegax_temp = -KCinv * ssMulti.beta(ind, :, ssMulti.tau.beta(iJ)) * diag(x(:,iJ));
+        if any(any(abs(omegax_temp) > eps2))
+          omegax{iJ+1,iJ} = zeros(obj.m, obj.k);
+          omegax{iJ+1,iJ} = omegax_temp;
         end
         
         omegac_temp = diag(obj.c(:,obj.tau.c(iJ)));
@@ -1017,10 +1040,12 @@ classdef StateSpace < AbstractStateSpace
       
       % Propogate effect forward to other time periods of states
       for iJ = 1:obj.n
+        % c (part 1)
         if ~isempty(omegac{iJ,iJ})
           omegac{iJ+1,iJ} = Lstar(:,:,iJ+1) * omegac{iJ,iJ};
         end
         
+        % y
         for iT = iJ+1:obj.n
           if ~isempty(omega{iT,iJ})
             omega_temp = Lstar(:,:,iT+1)  * omega{iT,iJ};
@@ -1030,6 +1055,8 @@ classdef StateSpace < AbstractStateSpace
             omega{iT+1,iJ} = omega_temp;
           end
         end
+        
+        % d
         for iT = iJ+1:obj.n
           if ~isempty(omegad{iT,iJ})
             omegad_temp = Lstar(:,:,iT+1) * omegad{iT,iJ};
@@ -1039,6 +1066,19 @@ classdef StateSpace < AbstractStateSpace
             omegad{iT+1,iJ} = omegad_temp;
           end
         end
+        
+        % x
+        for iT = iJ+1:obj.n
+          if ~isempty(omegax{iT,iJ})
+            omegax_temp = Lstar(:,:,iT+1) * omegax{iT,iJ};
+            if all(abs(omegax_temp) < eps2)
+              break
+            end
+            omegax{iT+1,iJ} = omegax_temp;
+          end
+        end
+        
+        % c (part 2)
         for iT = iJ+1:obj.n
           if ~isempty(omegac{iT,iJ})
             omegac_temp = Lstar(:,:,iT+1) * omegac{iT,iJ};
@@ -1060,7 +1100,8 @@ classdef StateSpace < AbstractStateSpace
         omegaa0{iT} = omegaa0_temp;        
       end
       
-      fWeights = struct('y', {omega}, 'd', {omegad}, 'c', {omegac}, 'a0', {omegaa0});
+      fWeights = struct('y', {omega}, 'd', {omegad}, 'x', {omegax}, ...
+        'c', {omegac}, 'a0', {omegaa0});
     end
     
     function sWeights = smoother_weights(obj, y, x, fOut, ssMulti, C)
@@ -1085,15 +1126,17 @@ classdef StateSpace < AbstractStateSpace
       
       % Filter weights (a_t)
       fWeight = obj.filter_weights(y, x, fOut, ssMulti, C);
-      [rWeight, r1Weight] = obj.r_weights(y, fOut, fWeight, ssMulti, C);
+      [rWeight, r1Weight] = obj.r_weights(y, x, fOut, fWeight, ssMulti, C);
       
       % Calculate smoothed state weights
       omega = cell(obj.n+1, obj.n);
       omegac = cell(obj.n+1, obj.n+1);
       omegad = cell(obj.n+1, obj.n);
+      omegax = cell(obj.n+1, obj.n);
       omegaa0 = cell(obj.n+1, 1);
       
       zeroMP = zeros(obj.m, obj.p);
+      zeroMK = zeros(obj.m, obj.k);
       zeroMM = zeros(obj.m, obj.m);
       
       % Diffuse filter
@@ -1134,6 +1177,24 @@ classdef StateSpace < AbstractStateSpace
             temp_r1d = zeroMP;
           end
           omegad{iT,iJ} = temp_yd + temp_r0d + temp_r1d;
+          
+          % omegax
+          if ~isempty(fWeight.x{iT,iJ})
+            temp_yx = fWeight.x{iT,iJ};
+          else
+            temp_yx = zeroMK;            
+          end
+          if ~isempty(rWeight.x{iT,iJ}) 
+            temp_r0x = fOut.P(:,:,iT) * rWeight.x{iT,iJ};
+          else
+            temp_r0x = zeroMK;
+          end
+          if ~isempty(r1Weight.x{iT,iJ})
+            temp_r1x = fOut.Pd(:,:,iT) * r1Weight.x{iT,iJ};
+          else
+            temp_r1x = zeroMK;
+          end
+          omegax{iT,iJ} = temp_yx + temp_r0x + temp_r1x;
           
           % omegac
           if ~isempty(fWeight.c{iT,iJ})
@@ -1192,6 +1253,14 @@ classdef StateSpace < AbstractStateSpace
             omegad{iT,iJ} = fOut.P(:,:,iT) * rWeight.d{iT,iJ};
           end
           
+          if ~isempty(fWeight.x{iT,iJ}) && ~isempty(rWeight.x{iT,iJ})
+            omegax{iT,iJ} = fWeight.x{iT,iJ} + fOut.P(:,:,iT) * rWeight.x{iT,iJ};
+          elseif ~isempty(fWeight.x{iT,iJ})
+            omegax{iT,iJ} = fWeight.x{iT,iJ};
+          elseif ~isempty(rWeight.x{iT,iJ})
+            omegax{iT,iJ} = fOut.P(:,:,iT) * rWeight.x{iT,iJ};
+          end
+          
           if ~isempty(fWeight.c{iT,iJ}) && ~isempty(rWeight.c{iT,iJ})
             omegac{iT,iJ} = fWeight.c{iT,iJ} + fOut.P(:,:,iT) * rWeight.c{iT,iJ};
           elseif ~isempty(fWeight.c{iT,iJ}) 
@@ -1211,10 +1280,11 @@ classdef StateSpace < AbstractStateSpace
         end
       end
       
-      sWeights = struct('y', {omega}, 'd', {omegad}, 'c', {omegac}, 'a0', {omegaa0});
+      sWeights = struct('y', {omega}, 'd', {omegad}, 'x', {omegax}, ...
+        'c', {omegac}, 'a0', {omegaa0});
     end
     
-    function [r, r1] = r_weights(obj, y, fOut, fWeight, ssMulti, C)
+    function [r, r1] = r_weights(obj, y, x, fOut, fWeight, ssMulti, C)
       % Ordering:
       %    (state, observation, effectPeriod, contributionPeriod)
       
@@ -1223,15 +1293,15 @@ classdef StateSpace < AbstractStateSpace
       % Compute the decomposition of r and r^0
       rComp = struct('Ay', comp.Ay, 'Aa', comp.Aa, ...
         'M', comp.Mdagger, 'Lown', comp.Ldagger, 'Lother', []);
-      r = r_weight_recursion(obj, y, ssMulti, C, fWeight, rComp, obj.n, []);
+      r = r_weight_recursion(obj, y, x, ssMulti, C, fWeight, rComp, obj.n, []);
       
       % Compute the decomposition of r^1
       r1Comp = struct('Ay', comp.Ay, 'Aa', comp.Aa, ...
         'M', comp.Minfty, 'Lown', comp.Linfty, 'Lother', comp.Lzero);
-      r1 = r_weight_recursion(obj, y, ssMulti, C, fWeight, r1Comp, fOut.dt, r);
+      r1 = r_weight_recursion(obj, y, x, ssMulti, C, fWeight, r1Comp, fOut.dt, r);
     end
     
-    function weights = r_weight_recursion(obj, y, ssMulti, C, fWeights, sOut2, T, otherOmega)
+    function weights = r_weight_recursion(obj, y, x, ssMulti, C, fWeights, sOut2, T, otherOmega)
       % The recursions for the weights are similar regardless of if its for r,
       % r^0 or r^1. This function generalizes it so that they all can all be
       % performed by changing the inputs. 
@@ -1242,6 +1312,7 @@ classdef StateSpace < AbstractStateSpace
       omegar = cell(T, obj.n);
       omegarc = cell(T, obj.n+1);
       omegard = cell(T, obj.n);
+      omegarx = cell(T, obj.n);
       omegara0 = cell(T, 1);
       
       if isempty(sOut2.Lother)
@@ -1249,16 +1320,16 @@ classdef StateSpace < AbstractStateSpace
       end
        
       zeroMP = zeros(obj.m, obj.p);
+      zeroMK = zeros(obj.m, obj.k);
       zeroMM = zeros(obj.m, obj.m);
       
-      eps3 = eps^2;
+      eps2 = eps^2;
       
       % Iterate over periods affected
       for iT = T:-1:1
         
         % Iterate over observed data
         for iJ = obj.n:-1:1
-          
           % The effect of future v_t on r_t, recursively.
           % In order for this to work we need to make sure we have done
           % omegar_{t+1,j} before omegar_{t,j}. There shouldn't be any concern
@@ -1272,6 +1343,11 @@ classdef StateSpace < AbstractStateSpace
             forwardEffectd = sOut2.Lown(:,:,iT)' * omegard{iT+1,iJ};
           else
             forwardEffectd = zeroMP;
+          end
+          if iT ~= T && ~isempty(omegarx{iT+1,iJ})
+            forwardEffectx = sOut2.Lown(:,:,iT)' * omegarx{iT+1,iJ};
+          else
+            forwardEffectx = zeroMK;
           end
           if iT ~= T && ~isempty(omegarc{iT+1,iJ})
             forwardEffectc = sOut2.Lown(:,:,iT)' * omegarc{iT+1,iJ};
@@ -1290,6 +1366,11 @@ classdef StateSpace < AbstractStateSpace
           else
             forwardEffectOtherd = zeroMP;
           end
+          if ~isempty(otherOmega) && iT ~= obj.n && ~isempty(otherOmega.x{iT+1,iJ})
+            forwardEffectOtherx = sOut2.Lother(:,:,iT)' * otherOmega.x{iT+1,iJ};
+          else
+            forwardEffectOtherx = zeroMK;
+          end
           if ~isempty(otherOmega) && iT ~= obj.n && ~isempty(otherOmega.c{iT+1,iJ})
             forwardEffectOtherc = sOut2.Lother(:,:,iT)' * otherOmega.c{iT+1,iJ};
           else
@@ -1307,6 +1388,11 @@ classdef StateSpace < AbstractStateSpace
           else
             filterEffectd = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.d{iT,iJ};
           end
+          if iT < iJ || isempty(fWeights.x{iT,iJ})
+            filterEffectx = zeroMK;
+          else
+            filterEffectx = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.x{iT,iJ};
+          end
           if iT < iJ || isempty(fWeights.c{iT,iJ})
             filterEffectc = zeroMM;
           else
@@ -1317,25 +1403,33 @@ classdef StateSpace < AbstractStateSpace
           % Note that there's no c here because it was already included in a_t.
           contempEffect = zeroMP;
           contempEffectd = zeroMP;
+          contempEffectx = zeroMK;
           if iT == iJ
             validY = ~isnan(y(:,iJ));
             contempEffect(:,validY) = sOut2.M(:,:,iT) * sOut2.Ay(:,validY,iT) ...
               / C(validY,validY,obj.tau.H(iT)) * diag(y(validY,iJ));
             contempEffectd(:,validY) = -sOut2.M(:,:,iT) * sOut2.Ay(:,validY,iT) ...
               / C(validY,validY,obj.tau.H(iT)) * diag(ssMulti.d(validY,ssMulti.tau.d(iJ)));
+            contempEffectx(:,:) = -sOut2.M(:,:,iT) * sOut2.Ay(:,validY,iT) ...
+              / C(validY,validY,obj.tau.H(iT)) * ...
+              ssMulti.beta(validY,:,ssMulti.tau.beta(iJ)) * diag(x(:,iT));
           end
           
           % No filter effect since the filter does nothing when j == t.
           omegar_temp = forwardEffect + forwardEffectOther + filterEffect + contempEffect;
-          if any(any(abs(omegar_temp) > eps3))
+          if any(any(abs(omegar_temp) > eps2))
             omegar{iT,iJ} = omegar_temp;
           end
           omegard_temp = forwardEffectd + forwardEffectOtherd + filterEffectd + contempEffectd;
-          if any(any(abs(omegard_temp) > eps3))
+          if any(any(abs(omegard_temp) > eps2))
             omegard{iT,iJ} = omegard_temp;
           end
+          omegarx_temp = forwardEffectx + forwardEffectOtherx + filterEffectx + contempEffectx;
+          if any(any(abs(omegarx_temp) > eps2))
+            omegarx{iT,iJ} = omegarx_temp;
+          end
           omegarc_temp = forwardEffectc + forwardEffectOtherc + filterEffectc;
-          if any(any(abs(omegarc_temp) > eps3))
+          if any(any(abs(omegarc_temp) > eps2))
             omegarc{iT,iJ} = omegarc_temp;
           end
         end
@@ -1357,12 +1451,13 @@ classdef StateSpace < AbstractStateSpace
           filterEffecta0 = zeroMM;
         end
         omegara0_temp = forwardEffecta0 + forwardEffectOthera0 + filterEffecta0;
-        if any(any(abs(omegara0_temp) > eps3))
+        if any(any(abs(omegara0_temp) > eps2))
           omegara0{iT} = omegara0_temp;
         end
       end
       
-      weights = struct('y', {omegar}, 'd', {omegard}, 'c', {omegarc}, 'a0', {omegara0});
+      weights = struct('y', {omegar}, 'd', {omegard}, 'x', {omegarx}, ...
+        'c', {omegarc}, 'a0', {omegara0});
     end
     
     function components = build_smoother_weight_parts(obj, y, fOut)

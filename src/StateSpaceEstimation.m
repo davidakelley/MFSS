@@ -222,11 +222,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, obj.useInternalNumericGrad);
             [thetaUHat, logli, outflag, ~, gradient] = fminunc(...
               minfunc, theta0U, optFMinUnc);
           case 'fmincon'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, obj.useInternalNumericGrad);
             try
               [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(...
                 minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
@@ -235,18 +235,18 @@ classdef StateSpaceEstimation < AbstractStateSpace
                 case 'optim:barrier:GradUndefAtX0'
                   if iter > 1
                     warning('StateSpaceEstimation:estimate:badInitialGrad', ...
-                      ['Gradient contains Inf, NaN, or complex values. ' ... 
+                      ['Gradient contains Inf, NaN, or complex values. ' ...
                       'Returning previous solver output']);
                   else
                     rethrow(ex);
                   end
                 otherwise
                   rethrow(ex);
-              end 
+              end
             end
           case 'fminsearch'
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
-
+            
             [thetaUHat, logli, outflag] = fminsearch(...
               minfunc, theta0U, optFMinSearch);
             
@@ -288,7 +288,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Run smoother, plot smoothed state
       if obj.diagnosticPlot
-        progress.alpha = ss_out.smooth(y);
+        progress.alpha = ss_out.smooth(y, x);
         if progress.visible && isvalid(progress.figHandle)
           progress.updateFigure();
         end
@@ -308,7 +308,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       ss1 = ss1.setDefaultInitial();
       
       if any(diag(ss1.H) < 0)
-        keybaord;
+        error('Negative variance');
       end
       
       % Really enforce constraints
@@ -403,22 +403,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
         cx = [cx; scale * -det(ss1.Q0)];
       end         
       ceqx = 0;
-      
-      % And the gradients 
-      warning off MATLAB:nearlySingularMatrix
-      warning off MATLAB:singularMatrix
-      % G = obj.ThetaMapping.parameterGradients(theta);
-      % deltaCX = scale * -[det(ss1.H) * G.H * vec(inv(ss1.H)), ...
-      %   det(ss1.Q) * G.Q * vec(inv(ss1.Q))];
-      if ~obj.ThetaMapping.usingDefaultP0
-        % [~, G.P0] = obj.ThetaMapping.initialValuesGradients(ss1, G, theta);
-        % This is suspect. Need to rewrite G.P0 first.
-        % deltaCX = [deltaCX det(ss1.Q0) * G.P0 * vec(ss1.R0 / ss1.Q0 * ss1.R0')];
-      end
-      warning on MATLAB:nearlySingularMatrix
-      warning on MATLAB:singularMatrix
-      
-      % deltaCeqX = sparse(0);
       
       % Constrain a submatrix of T to be stationary: 
       % c(x) should be abs(max(eig(T))) - 1
