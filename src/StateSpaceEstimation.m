@@ -446,7 +446,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         theta0U = iTheta0U(:, thetaOrder(iGradAtt));
         theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,thetaOrder(iGradAtt)));
         ss0 = obj.ThetaMapping.theta2system(theta0);
-        [ll0, grad0] = ss0.gradient(y, x, obj.ThetaMapping);
+        [ll0, grad0] = ss0.gradient(y, x, obj.ThetaMapping, theta0);
         
         if isfinite(ll0) && all(isfinite(grad0))
           break

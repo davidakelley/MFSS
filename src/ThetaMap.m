@@ -207,23 +207,43 @@ classdef ThetaMap < AbstractSystem
       end      
       PsiIndexes = [symPsiInx; num2cell(length(symTheta)+1:nTheta)'];
       % Going from theta to psi
-      PsiTransformations = [];
-      PsiGradient = [];
+      symPsiTrans = cell(length(symPsi),1);
+      for iPsi = 1:length(symPsi)
+        mlFun = matlabFunction(symPsi(iPsi));
+        if nargin(mlFun) == 1
+          symPsiTrans{iPsi} = mlFun;
+        else
+          symPsiTrans{iPsi} = ThetaMap.vectorize(mlFun);
+        end
+      end
+      PsiTransformations = [symPsiTrans; ...
+        repmat({@(theta) theta}, [length(PsiIndexes)-length(symPsi) 1])]; 
+      % TODO: Find theta given psi.
       PsiInverses = [];
       
       % Psi to state space parameter transformations
       transformations = {@(x) x};
       inverses = {@(x) x};
       
-      
       % Get fixed elements as a StateSpace
       % Create a StateSpace with zeros (value doesn't matter) replacing nans.
-      for iP = 1:length(ssE.systemParam)
-        ssE.(ssE.systemParam{iP})(isnan(ssE.(ssE.systemParam{iP}))) = 0;
+      
+      fixed = StateSpace(zeros(size(ssE.Z)), zeros(size(ssE.H)), ...
+        zeros(size(ssE.T)), zeros(size(ssE.Q)), ...
+        'd', zeros(size(ssE.d)), 'beta', zeros(size(ssE.beta)), ...
+        'c', zeros(size(ssE.c)), 'R', zeros(size(ssE.R)));
+      
+      for iP = 1:length(fixed.systemParam)
+        if isa(ssE.(ssE.systemParam{iP}), 'sym')
+          fixedElems = isfinite(ssE.(ssE.systemParam{iP})) & ...
+            ~has(ssE.(ssE.systemParam{iP}), symTheta);
+        else
+          fixedElems = isfinite(ssE.(ssE.systemParam{iP}));
+        end        
+        fixed.(fixed.systemParam{iP})(fixedElems) = ...
+          double(ssE.(ssE.systemParam{iP})(fixedElems));
       end
       
-      fixed = StateSpace(ssE.Z, ssE.H, ssE.T, ssE.Q, ...
-        'd', ssE.d, 'beta', ssE.beta, 'c', ssE.c, 'R', ssE.R);
       fixed.tau = ssE.tau;
       a0Fixed = ssE.a0;
       a0Fixed(isnan(a0Fixed)) = 0;
@@ -237,7 +257,7 @@ classdef ThetaMap < AbstractSystem
         transformations, inverses, ...
         'explicita0', explicita0, 'explicitP0', explicitP0, ...
         'PsiIndexes', PsiIndexes, 'PsiTransformation', PsiTransformations, ...
-        'PsiGradient', PsiGradient, 'PsiInverse', PsiInverses);
+        'PsiInverse', PsiInverses);
     end
    
     function tm = ThetaMapAll(ss)
@@ -391,130 +411,6 @@ classdef ThetaMap < AbstractSystem
       end
     end
     
-    %% Gradient functions
-    %{
-    function G = parameterGradients(obj, theta)
-      % Create the gradient of the parameter matricies at a given value of theta
-      % 
-      % Inputs
-      %   theta: Vector of varried parameters
-      % Outputs
-      %   G:     Structure of gradients for each state space parameter. Each 
-      %          gradient will be nTheta X (elements in a slice) X max(tau_x).
-      
-      % Since every element of the parameter matricies is a function of a 
-      % single element of theta and we have derivatives of those functions, 
-      % we can simply apply those derivatives to each point to get the full 
-      % gradients.
-      % Also, we don't need to worry about symmetric v. nonsymmetric
-      % matricies since the index matricies are symmetric.
-
-      % FIXME: Handle exact initial values
-      
-      % Handle input
-      assert(isnumeric(theta) || isa(theta, 'StateSpace'), ...
-        ['Invalid input: pass either a theta vector of length %d ' ...
-        'or a conforming StateSpace object.'], obj.nTheta);
-      if isa(theta, 'StateSpace')
-        ss = theta;
-        theta = obj.system2theta(ss);
-      end
-      
-      psi = obj.constructPsi(theta);
-      GthetaPsi = obj.thetaPsiGrad(theta);
-      
-      % Construct structure of gradients
-      nParameterMats = length(obj.fixed.systemParam);
-      structConstructTemp = [obj.fixed.systemParam; cell(1, nParameterMats)];
-      G = struct(structConstructTemp{:});
-
-      % Construct the new parameter matricies
-      for iP = 1:nParameterMats
-        iName = obj.fixed.systemParam{iP};
-        G.(iName) = obj.explicitParamGrad(psi, GthetaPsi, iName);
-      end  
-    end
-    
-    function [Ga0, GP0] = initialValuesGradients(obj, ss, G, theta)
-      % Get the gradients of the initial values.
-      % 
-      % Inputs
-      %   ss:  StateSpace where the gradient should be taken
-      %   G:   Structure of gradients from ThetaMap.parameterGradients
-      % Outputs
-      %   Ga0: Gradient of a0
-      %   GP0: Gradient of P0
-      
-      % If we're using the default a0 or P0, calculate those gradients as
-      % functions of the parameters. For the diffuse case, the gradients will be
-      % zeros. 
-      
-      % Handle inputs
-      assert(isnumeric(ss) || isa(ss, 'StateSpace'), ...
-        ['Invalid input: pass either a theta vector of length %d ' ...
-        'or a conforming StateSpace object.'], obj.nTheta);
-     
-      if isempty(ss.tau)
-        ss = ss.setInvariantTau();
-      end
-      
-      psi = obj.constructPsi(theta);
-      GthetaPsi = obj.thetaPsiGrad(theta);
-            
-      % Determine which case we have
-      if obj.usingDefaulta0 || obj.usingDefaultP0
-        T1 = ss.T(:,:,ss.tau.T(1));
-        R1 = ss.R(:,:,ss.tau.R(1));
-        Q1 = ss.Q(:,:,ss.tau.Q(1));
-        stationaryStateFlag = all(eig(T1) < 1);
-      else
-        stationaryStateFlag = false;
-      end
-      
-      % Ga0
-      if ~obj.usingDefaulta0
-        Ga0 = obj.explicitParamGrad(psi, GthetaPsi, 'a0');
-      elseif obj.usingDefaulta0 && ~stationaryStateFlag
-        % Diffuse case - a0 is always the zero vector and so will not change
-        % with any of the theta parameters
-        Ga0 = zeros(obj.nTheta, obj.m);
-      else
-        % See documentation for calculation of the initial conditions gradients
-        IminusTinv = inv(eye(obj.m) - T1);
-        IminusTPrimeInv = inv((eye(obj.m) - T1)');
-        Ga0 = G.T(:,:,ss.tau.T(1)) * kron(IminusTinv, IminusTPrimeInv) * ...
-          kron(ss.c(:,ss.tau.c(1)), eye(obj.m)) + ...
-          G.c(:,:,ss.tau.c(1)) / (eye(obj.m) - T1)';
-      end
-      
-      % GP0
-      if ~obj.usingDefaultP0 
-        % Need G(P0) = G(R0 * Q0 * R0') = G(Q0) * kron(R0', R0') since G(R0) = 0
-        GQ0 = obj.explicitParamGrad(psi, GthetaPsi, 'Q0');
-        GP0 = GQ0 * kron(ss.R0', ss.R0');
-      elseif obj.usingDefaultP0 && ~stationaryStateFlag
-        % Diffuse case - P0 is always a large diagonal matrix that doesn't
-        % change with parameter values so its gradient is all zeros
-        GP0 = zeros(obj.nTheta, obj.m^2);
-      else
-        % See documentation for calculation of the initial conditions gradients
-        Nm = (eye(obj.m^2) + obj.genCommutation(obj.m));
-        vec = @(M) reshape(M, [], 1);
-        
-        rawGTkronT = ThetaMap.GAkronA(T1);
-        GTkronT = zeros(obj.nTheta, obj.m^4);
-        usedT = logical(obj.index.T(:,:,ss.tau.T(1)));
-        GTkronT(obj.index.T(usedT), :) = rawGTkronT(vec(usedT), :);
-        
-        IminusTkronTInv = sparse(inv(eye(obj.m^2) - kron(T1, T1)));
-
-        GP0 = GTkronT * kron(IminusTkronTInv, IminusTkronTInv') * ...
-          sparse(kron(vec(R1 * Q1 * R1'), eye(obj.m^2))) + ...
-          (G.R(:,:,ss.tau.R(1)) * (kron(Q1 * R1', eye(obj.m))) * Nm + ...
-          G.Q(:,:,ss.tau.Q(1)) * kron(R1', R1')) * IminusTkronTInv';
-      end
-    end
-    %}
     %% Theta restrictions
     function transformedTheta = restrictTheta(obj, theta)
       % Create restricted version of theta
@@ -544,45 +440,6 @@ classdef ThetaMap < AbstractSystem
     end
     
     %% Utility functions
-    %{
-    function paramGradTheta = explicitParamGrad(obj, psi, GthetaPsi, iName)
-      % Get the gradient of a parameter as a function of theta.
-      
-      % Allocate: all parameter gradients are 3D (inc. vectors)
-      if any(strcmpi(iName, {'d', 'c'}))
-        nSlices = size(obj.index.(iName), 2);
-        nSliceElems = numel(obj.index.(iName)(:,1));
-      else
-        nSlices = size(obj.index.(iName), 3);
-        nSliceElems = numel(obj.index.(iName)(:,:,1));
-      end
-      
-      % Create gradients of each slice w.r.t. psi then theta
-      paramGradTheta = zeros(obj.nTheta, nSliceElems, nSlices);
-      for iSlice = 1:nSlices
-        paramGradPsi = zeros(obj.nPsi, nSliceElems);
-        
-        % Move through each parameter element determined by theta and compute
-        % the derivative:
-        if any(strcmpi(iName, {'d', 'c'}))
-          freeValues = reshape(find(logical(obj.index.(iName)(:,iSlice))), 1, []);
-        else
-          freeValues = reshape(find(logical(obj.index.(iName)(:,:,iSlice))), 1, []);
-        end
-        
-        for jF = freeValues
-          freeIndex = obj.index.(iName)(jF);
-          [iRow, jCol] = ind2sub(size(obj.index.(iName)(:,:,1)), jF);
-          jDeriv = obj.derivatives{obj.transformationIndex.(iName)(iRow, jCol, iSlice)};
-          jTheta = psi(freeIndex);
-          paramGradPsi(freeIndex, jF) = jDeriv(jTheta);
-        end
-        
-        paramGradTheta(:,:,iSlice) = GthetaPsi * paramGradPsi;
-      end
-    end
-    %}
-    
     function obj = addRestrictions(obj, ssLB, ssUB)
       % Restrict the possible StateSpaces that can be created by altering the
       % transformations used
@@ -911,18 +768,6 @@ classdef ThetaMap < AbstractSystem
         psi(iPsi) = obj.PsiTransformation{iPsi}(theta(obj.PsiIndexes{iPsi}));        
       end      
     end
-    
-    %{
-    function Gpsi = thetaPsiGrad(obj, theta)
-      % Construct G_{theta}(psi)
-
-      Gpsi = zeros(obj.nTheta, obj.nPsi);
-      for iPsi = 1:obj.nPsi
-        psiInx = obj.PsiIndexes{iPsi};
-        Gpsi(psiInx, iPsi) = obj.PsiGradient{iPsi}(theta(psiInx));
-      end
-    end
-    %}
     
     function constructed = constructParamMat(obj, psi, matName)
 
@@ -1352,6 +1197,12 @@ classdef ThetaMap < AbstractSystem
       
       vectors = cellfun(@(x) x(:), param, 'Uniform', false);
       vecParam = vertcat(vectors{:});
+    end
+    
+    function vecFn = vectorize(scalarFn)
+      vecFn = eval(['@(theta) scalarFn(' ...
+        strjoin(arrayfun(@(x) ['theta(' num2str(x) ')'], 1:nargin(scalarFn), ...
+        'Uniform', false), ', ') ')']);
     end
   end
 end
