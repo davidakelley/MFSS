@@ -1557,7 +1557,7 @@ classdef StateSpace < AbstractStateSpace
       
       % Set all parameter values equal to the scalar provided
       for iP = 1:length(ss.systemParam)
-        ss.(ss.systemParam{iP})(:) = value;
+        ss.(ss.systemParam{iP}) = value * ones(size(ss.(ss.systemParam{iP})));
       end
       
       % Needs to be a StateSpace since we don't want a ThetaMap

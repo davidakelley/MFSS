@@ -37,22 +37,17 @@ classdef ThetaMap < AbstractSystem
   %   provided, indicating which function will be used to transform the value of
   %   theta(i) before placing it in the appropriate parameter matrix.
   %
-  % David Kelley, 2016-2017
-  %
-  % TODO (1/17/17)
-  % ---------------
-  %   - Write documentation on initial values derivation
+  % David Kelley, 2016-2018
   
   properties 
     % StateSpace containing all fixed elements. 
-    % Elements of the parameters that will be determined by theta must be set to
-    % zero.
+    % Elements of the parameters that will be determined by theta must be set to zero.
     fixed
     
-    % StateSpace of indexes of theta that determines parameter values
+    % StateSpace of indexes of psi vector that determines staste space parameter values
     index
     
-    % StateSpace of indexes of transformations applied to psi 
+    % StateSpace of indexes of transformations to psi to get state space parameters
     transformationIndex
     % Cell array of transformations of psi to get parameter values
     transformations
@@ -98,7 +93,16 @@ classdef ThetaMap < AbstractSystem
         transformations, derivatives, inverses, varargin)
       % Generate map from elements of theta to StateSpace parameters
       
-      opts = ThetaMap.parseInputs(varargin);
+      inP = inputParser();
+      inP.addParameter('explicita0', false);
+      inP.addParameter('explicitP0', false);
+      inP.addParameter('PsiTransformation', []);
+      inP.addParameter('PsiGradient', []);
+      inP.addParameter('PsiInverse', []);
+      inP.addParameter('PsiIndexes', []);
+    
+      inP.parse(varargin{:});
+      opts = inP.Results;
       
       ThetaMap.validateInputs(fixed, index, transformationIndex, ...
         transformations, derivatives, inverses, opts);
@@ -116,10 +120,26 @@ classdef ThetaMap < AbstractSystem
       obj.derivatives = derivatives;
       obj.inverses = inverses;
       
-      obj.PsiTransformation = repmat({@(theta) theta}, [obj.nTheta 1]);
-      obj.PsiGradient = repmat({@(theta) 1}, [obj.nTheta 1]);
-      obj.PsiInverse = repmat({@(psi, inx) psi(inx(1))}, [obj.nTheta 1]);
-      obj.PsiIndexes = num2cell(1:obj.nTheta);
+      if isempty(opts.PsiTransformation)
+        obj.PsiTransformation = repmat({@(theta) theta}, [obj.nTheta 1]);
+      else
+        obj.PsiTransformation = opts.PsiTransformation;
+      end
+      if isempty(opts.PsiGradient)
+        obj.PsiGradient = repmat({@(theta) 1}, [obj.nTheta 1]);
+      else
+        obj.PsiGradient = opts.PsiGradient;
+      end
+      if isempty(opts.PsiInverse)
+        obj.PsiInverse = repmat({@(psi, inx) psi(inx(1))}, [obj.nTheta 1]);
+      else
+        obj.PsiInverse = opts.PsiInverse;
+      end
+      if isempty(opts.PsiIndexes)
+        obj.PsiIndexes = num2cell(1:obj.nTheta);
+      else
+        obj.PsiIndexes = opts.PsiIndexes;
+      end
       
       obj.usingDefaulta0 = ~opts.explicita0;
       obj.usingDefaultP0 = ~opts.explicitP0;
@@ -157,7 +177,7 @@ classdef ThetaMap < AbstractSystem
   
   methods (Static)
     %% Alternate constructors
-    function tm = ThetaMapEstimation(ss)
+    function tm = ThetaMapEstimation(ssE)
       % Generate a ThetaMap where all parameters values to be estimated are
       % independent elements of theta
       % 
@@ -166,41 +186,72 @@ classdef ThetaMap < AbstractSystem
       % Outputs
       %   tm: ThetaMap
 
-      assert(isa(ss, 'AbstractStateSpace'));
+      assert(isa(ssE, 'AbstractStateSpace'));
       
       % Generate default index and transformation systems
-      index = ThetaMap.IndexStateSpace(ss);
-      transformationIndex = ThetaMap.TransformationIndexStateSpace(ss);
+      index = ThetaMap.IndexStateSpace(ssE);
+      transformationIndex = ThetaMap.TransformationIndexStateSpace(ssE);
       
+      paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
+        ssE.T(:); ssE.c(:); ssE.R(:); ssE.Q(:)];
+      
+      if isa(paramVec, 'sym')
+        % theta is ordered by symbolic variables, then nan variables
+        symTheta = symvar(paramVec);
+        % psi will be ordered by symbolic variables, then nan variables
+        symPsi = unique(paramVec(has(paramVec, symTheta) & ~isnan(paramVec)));
+      else
+        symTheta = [];
+        symPsi = [];
+      end
+      
+      % FIXME: add a0 and Q0
+      nTheta = max(ThetaMap.vectorizeStateSpace(index, false, false));
+      
+      % Theta to Psi transformations
+      % Cell of length nPsi of which theta elements determine element of Psi
+      symPsiInx = cell(length(symPsi),1);
+      for iPsi = 1:length(symPsi)
+        symPsiInx{iPsi} = find(arrayfun(@(iTheta) has(symPsi(iPsi), iTheta), symTheta));
+      end      
+      PsiIndexes = [symPsiInx; num2cell(length(symTheta)+1:nTheta)'];
+      % Going from theta to psi
+      PsiTransformations = [];
+      PsiGradient = [];
+      PsiInverses = [];
+      
+      % Psi to state space parameter transformations
       transformations = {@(x) x};
       derivatives = {@(x) 1};
       inverses = {@(x) x};
       
-      explicita0 = ~isempty(ss.a0);
-      explicitP0 = ~isempty(ss.P0);
+      explicita0 = ~isempty(ssE.a0);
+      explicitP0 = ~isempty(ssE.P0);
       
       % Get fixed elements as a StateSpace
       % Create a StateSpace with zeros (value doesn't matter) replacing nans.
-      for iP = 1:length(ss.systemParam)
-        ss.(ss.systemParam{iP})(isnan(ss.(ss.systemParam{iP}))) = 0;
+      for iP = 1:length(ssE.systemParam)
+        ssE.(ssE.systemParam{iP})(isnan(ssE.(ssE.systemParam{iP}))) = 0;
       end
       
-      fixed = StateSpace(ss.Z, ss.H, ss.T, ss.Q, ...
-        'd', ss.d, 'beta', ss.beta, 'c', ss.c, 'R', ss.R);
-      fixed.tau = ss.tau;
-      a0Fixed = ss.a0;
+      fixed = StateSpace(ssE.Z, ssE.H, ssE.T, ssE.Q, ...
+        'd', ssE.d, 'beta', ssE.beta, 'c', ssE.c, 'R', ssE.R);
+      fixed.tau = ssE.tau;
+      a0Fixed = ssE.a0;
       a0Fixed(isnan(a0Fixed)) = 0;
       fixed.a0 = a0Fixed;
-      P0Fixed = ss.P0;
+      P0Fixed = ssE.P0;
       P0Fixed(isnan(P0Fixed)) = 0;
       fixed.P0 = P0Fixed;
       
       % Create object
       tm = ThetaMap(fixed, index, transformationIndex, ...
         transformations, derivatives, inverses, ...
-        'explicita0', explicita0, 'explicitP0', explicitP0);
+        'explicita0', explicita0, 'explicitP0', explicitP0, ...
+        'PsiIndexes', PsiIndexes, 'PsiTransformation', PsiTransformations, ...
+        'PsiGradient', PsiGradient, 'PsiInverse', PsiInverses);
     end
-    
+   
     function tm = ThetaMapAll(ss)
       % Generate a ThetaMap where every element of the system parameters is 
       % included in theta
@@ -353,6 +404,7 @@ classdef ThetaMap < AbstractSystem
     end
     
     %% Gradient functions
+    %{
     function G = parameterGradients(obj, theta)
       % Create the gradient of the parameter matricies at a given value of theta
       % 
@@ -474,7 +526,7 @@ classdef ThetaMap < AbstractSystem
           G.Q(:,:,ss.tau.Q(1)) * kron(R1', R1')) * IminusTkronTInv';
       end
     end
-
+    %}
     %% Theta restrictions
     function transformedTheta = restrictTheta(obj, theta)
       % Create restricted version of theta
@@ -505,6 +557,7 @@ classdef ThetaMap < AbstractSystem
     end
     
     %% Utility functions
+    %{
     function paramGradTheta = explicitParamGrad(obj, psi, GthetaPsi, iName)
       % Get the gradient of a parameter as a function of theta.
       
@@ -541,7 +594,7 @@ classdef ThetaMap < AbstractSystem
         paramGradTheta(:,:,iSlice) = GthetaPsi * paramGradPsi;
       end
     end
-    
+    %}
     function obj = addRestrictions(obj, ssLB, ssUB)
       % Restrict the possible StateSpaces that can be created by altering the
       % transformations used
@@ -880,6 +933,7 @@ classdef ThetaMap < AbstractSystem
       end      
     end
     
+    %{
     function Gpsi = thetaPsiGrad(obj, theta)
       % Construct G_{theta}(psi)
 
@@ -889,6 +943,7 @@ classdef ThetaMap < AbstractSystem
         Gpsi(psiInx, iPsi) = obj.PsiGradient{iPsi}(theta(psiInx));
       end
     end
+    %}
     
     function constructed = constructParamMat(obj, psi, matName)
       % Create parameter value matrix from fixed and varried values
@@ -1009,15 +1064,6 @@ classdef ThetaMap < AbstractSystem
   
   methods (Static, Hidden)
     %% Constructor helpers
-    function opts = parseInputs(argin)
-      inP = inputParser();
-      inP.addParameter('explicita0', false);
-      inP.addParameter('explicitP0', false);
-      
-      inP.parse(argin{:});
-      opts = inP.Results;
-    end
-    
     function validateInputs(fixed, index, transformationIndex, transformations, derivatives, inverses, opts)
       % Validate inputs
       assert(isa(fixed, 'StateSpace'));
@@ -1092,67 +1138,83 @@ classdef ThetaMap < AbstractSystem
         'Development error. Index cannot skip elements of psi.');
     end
     
-    function index = IndexStateSpace(ss)
+    function index = IndexStateSpace(ssE)
       % Set up index StateSpace for default case where all unknown elements of 
       % the parameters are to be estimated individually
       % 
       % Inputs 
-      %   ss:         StateSpaceEstimation with nan values for elements to be 
+      %   ssE:        StateSpaceEstimation with nan or symbolic values for elements to be 
       %               determined by a ThetaMap
       % Outputs
       %   transIndex: A StateSpace with indexes for each element determined by
       %               theta that indicates the element of thete to be used
       
-      paramEstimIndexes = cell(length(ss.systemParam), 1);
-      indexCounter = 1;
+      paramEstimIndexes = cell(length(ssE.systemParam), 1);
       
-      ssZeros = StateSpace.setAllParameters(ss, 0);
-      for iP = 1:length(ss.systemParam)
-        iParam = ss.(ss.systemParam{iP});
+      paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
+        ssE.T(:); ssE.c(:); ssE.R(:); ssE.Q(:)];
+      
+      if isa(paramVec, 'sym')
+        % theta is ordered by symbolic variables, then nan variables
+        symTheta = symvar(paramVec);
+        % psi will be ordered by symbolic variables, then nan variables
+        symPsi = unique(paramVec(has(paramVec, symTheta) & ~isnan(paramVec)));
+      else
+        symPsi = [];
+      end
+      
+      indexCounter = length(symPsi)+1;
+
+      ssZeros = StateSpace.setAllParameters(ssE, 0);
+      for iP = 1:length(ssE.systemParam)
+        iParam = ssE.(ssE.systemParam{iP});
         
-        estimInds = ssZeros.(ss.systemParam{iP});
-        if ~any(strcmpi(ss.systemParam{iP}, ss.symmetricParams))
-          % Unrestricted matricies - Z, d, T, c, R
+        psiInds = ssZeros.(ssE.systemParam{iP});
+        if ~any(strcmpi(ssE.systemParam{iP}, ssE.symmetricParams))
+          % Unrestricted matricies - Z, d, beta, T, c, R
           % We need an element of theta for every missing element
-          nRequiredTheta = sum(sum(sum(isnan(iParam))));
-          estimInds(isnan(iParam)) = indexCounter:indexCounter + nRequiredTheta - 1;
+          nRequiredPsi = sum(isnan(iParam(:)));
+          psiInds(isnan(iParam)) = indexCounter:indexCounter + nRequiredPsi - 1;
         else
           % Symmetric variance matricies - H & Q. 
           % We only need as many elements of theta as there are missing elements
           % in the lower diagonal of these matricies. 
-          nRequiredTheta = sum(sum(sum(isnan(tril(iParam)))));
-          estimInds(isnan(tril(iParam))) = indexCounter:indexCounter + nRequiredTheta - 1;
-          estimInds = estimInds + estimInds' - diag(diag(estimInds));
+          nRequiredPsi = sum(sum(sum(isnan(tril(iParam)))));
+          psiInds(isnan(tril(iParam))) = indexCounter:indexCounter + nRequiredPsi - 1;
+          psiInds = psiInds + psiInds' - diag(diag(psiInds));
         end
         
-        paramEstimIndexes{iP} = estimInds;        
-        indexCounter = indexCounter + nRequiredTheta;
+        matchSym = arrayfun(@(iParamElem) any(iParamElem == symPsi), iParam);
+        psiInds(matchSym) = arrayfun(@(iParamElem) find(iParamElem == symPsi), iParam(matchSym));
+        
+        paramEstimIndexes{iP} = psiInds;        
+        indexCounter = indexCounter + nRequiredPsi;
       end
       
       index = StateSpace(paramEstimIndexes{[1 4 5 8]}, ...
         'd', paramEstimIndexes{2}, 'beta', paramEstimIndexes{3}, ...
         'c', paramEstimIndexes{6}, 'R', paramEstimIndexes{7});
-      if ~isempty(ss.a0)
-        a0 = zeros(size(ss.a0));
-        nRequiredTheta = sum(isnan(ss.a0));
-        a0(isnan(ss.a0)) = indexCounter:indexCounter + (nRequiredTheta-1);
-        indexCounter = indexCounter + nRequiredTheta;
+      if ~isempty(ssE.a0)
+        a0 = zeros(size(ssE.a0));
+        nRequiredPsi = sum(isnan(ssE.a0));
+        a0(isnan(ssE.a0)) = indexCounter:indexCounter + (nRequiredPsi-1);
+        indexCounter = indexCounter + nRequiredPsi;
         index.a0 = a0;
       end
       
-      if ~isempty(ss.P0) 
-        index.P0 = ss.P0;
+      if ~isempty(ssE.P0) 
+        index.P0 = ssE.P0;
         
-        Q0inx = zeros(size(ss.Q0));
-        nRequiredTheta = sum(sum(sum(isnan(tril(ss.Q0)))));
+        Q0inx = zeros(size(ssE.Q0));
+        nRequiredPsi = sum(sum(sum(isnan(tril(ssE.Q0)))));
 
-        Q0inx(isnan(tril(ss.P0))) = indexCounter:indexCounter + nRequiredTheta - 1;
+        Q0inx(isnan(tril(ssE.P0))) = indexCounter:indexCounter + nRequiredPsi - 1;
         Q0inx = Q0inx + Q0inx' - diag(diag(Q0inx));
         index.Q0 = Q0inx;
       end
     end
     
-    function transIndex = TransformationIndexStateSpace(ss)
+    function transIndex = TransformationIndexStateSpace(ssE)
       % Create the default transformationIndex - all parameters values are zeros
       % except where ss is nan, in which case they are ones. 
       % 
@@ -1163,30 +1225,41 @@ classdef ThetaMap < AbstractSystem
       %   transIndex: A StateSpace with indexes for each element determined by
       %               theta that indicates the transformation to be applied
       
-      transIndParams = cell(length(ss.systemParam), 1);
-
+      transIndParams = cell(length(ssE.systemParam), 1);
+      paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
+        ssE.T(:); ssE.c(:); ssE.R(:); ssE.Q(:)];
+      if isa(paramVec, 'sym')
+        symTheta = symvar(paramVec);
+      end
+      
       % Create parameter matrix of zeros, put a 1 where ss parameters are 
       % missing since all transformation will start as the unit transformation
-      ssZeros = StateSpace.setAllParameters(ss, 0);
-      for iP = 1:length(ss.systemParam)
-        iParam = ss.(ss.systemParam{iP});
+      ssZeros = StateSpace.setAllParameters(ssE, 0);
+      for iP = 1:length(ssE.systemParam)
+        iParam = ssE.(ssE.systemParam{iP});
 
-        indexes = ssZeros.(ss.systemParam{iP});
-        indexes(isnan(iParam)) = 1;
+        if isa(iParam, 'sym')
+          symInx = has(iParam, symTheta);
+        else
+          symInx = false(size(iParam));
+        end
+        
+        indexes = ssZeros.(ssE.systemParam{iP});
+        indexes(isnan(iParam)| symInx) = 1;
         transIndParams{iP} = indexes;
       end
       
       % Create StateSpace with system parameters
       transIndex = ThetaMap.cellParams2ss(transIndParams);
       
-      if ~isempty(ss.a0)
-        a0 = zeros(size(ss.a0));
-        a0(isnan(ss.a0)) = 1;
+      if ~isempty(ssE.a0)
+        a0 = zeros(size(ssE.a0));
+        a0(isnan(ssE.a0)) = 1;
         transIndex.a0 = a0;
       end
       
-      if ~isempty(ss.P0) 
-        P0inx = ss.P0;
+      if ~isempty(ssE.P0) 
+        P0inx = ssE.P0;
         P0inx(isnan(P0inx)) = 1;
         transIndex.P0 = P0inx;
       end

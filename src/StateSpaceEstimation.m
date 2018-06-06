@@ -37,7 +37,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     fminsearchMaxIter = 500;
     
     % Indicator to use more accurate, slower gradient
-    useInternalNumericGrad = true;
+    useInternalNumericGrad = false;
     
     % Allowable flags in estimation
     flagsAllowed = -1:5;
@@ -228,8 +228,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
           case 'fmincon'
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, true);
             try
-            [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(... 
-              minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
+              [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(...
+                minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
             catch ex
               switch ex.identifier
                 case 'optim:barrier:GradUndefAtX0'
