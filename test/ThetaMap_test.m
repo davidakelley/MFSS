@@ -196,5 +196,59 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       testCase.verifyEqual(tmNew.nTheta, tm.nTheta - 2);      
     end
     
+    %% Tests using the symbolic specification
+    function thetaSystemThetaSymbol(testCase)
+      % Test that we can go from a theta to a system and back.
+      syms rho lambda sigmaKappa
+      
+      Z = [1 0 1 0];
+      H = nan;
+      T = [1 1 0 0;
+        0 1 0 0;
+        0 0 rho * cos(lambda), rho * sin(lambda);
+        0 0 -rho * sin(lambda), rho * cos(lambda)];
+      R = [zeros(1,3); eye(3)];
+      Q = diag([nan sigmaKappa sigmaKappa]);
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      
+      % Convert from theta -> ss -> thetaMap
+      theta = rand(5,1);
+      ss = ssE.ThetaMapping.theta2system(theta);
+      thetaNew = ssE.ThetaMapping.system2theta(ss);
+      
+      testCase.verifyEqual(theta, thetaNew, 'AbsTol', 1e-6);
+    end
+    
+    function systemThetaSystemSymbol(testCase)
+      % Test that we can go from a theta to a system and back.
+      syms rho lambda sigmaKappa
+      
+      Z = [1 0 1 0];
+      H = nan;
+      T = [1 1 0 0;
+        0 1 0 0;
+        0 0 rho * cos(lambda), rho * sin(lambda);
+        0 0 -rho * sin(lambda), rho * cos(lambda)];
+      R = [zeros(1,3); eye(3)];
+      Q = diag([nan sigmaKappa sigmaKappa]);
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      
+      % Convert from theta -> ss -> thetaMap
+      theta = rand(5,1);
+      ss = ssE.ThetaMapping.theta2system(theta);      
+      thetaNew = ssE.ThetaMapping.system2theta(ss);
+      ssNew = ssE.ThetaMapping.theta2system(thetaNew);
+      
+      testCase.verifyEqual(ss.Z, ssNew.Z, 'AbsTol', 1e-6);
+      testCase.verifyEqual(ss.d, ssNew.d, 'AbsTol', 1e-6);
+      testCase.verifyEqual(ss.H, ssNew.H, 'AbsTol', 1e-6);
+      testCase.verifyEqual(ss.T, ssNew.T, 'AbsTol', 1e-6);
+      testCase.verifyEqual(ss.c, ssNew.c, 'AbsTol', 1e-6);
+      testCase.verifyEqual(ss.R, ssNew.R, 'AbsTol', 1e-6);
+      testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 1e-6);
+    end
+    
   end
 end
