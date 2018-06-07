@@ -209,7 +209,12 @@ classdef ThetaMap < AbstractSystem
         {'Z', 'd', 'beta', 'T', 'c', 'R'})) + ...
         sum(cellfun(@(paramName) sum(isnan(reshape(tril(ssE.(paramName)), [], 1))), ...
         {'H', 'Q'}));
-      % nPsi = max(ThetaMap.vectorizeStateSpace(index, explicita0, explicitP0));
+      if explicita0
+        nTheta = nTheta + sum(isnan(ssE.a0));
+      end
+      if explicitP0
+        nTheta = nTheta + sum(isnan(ssE.P0));
+      end
       
       % Theta to Psi transformations
       % Cell of length nPsi of which theta elements determine element of Psi

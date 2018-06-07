@@ -178,7 +178,7 @@ classdef estimate_test < matlab.unittest.TestCase
       % gradient fmincon uses by default and the internal gradient that checks both
       % directions should give the same answers here. 
       
-      p = 4; m = 2; timeDim = 500;
+      p = 2; m = 1; timeDim = 500;
       rng(1001)
       ssTrue = generateARmodel(p, m-1, true);
       y = generateData(ssTrue, timeDim);
@@ -262,5 +262,25 @@ classdef estimate_test < matlab.unittest.TestCase
       testCase.verifyLessThanOrEqual(ssE.T, 1);
       testCase.verifyGreaterThanOrEqual(ssE.T, -1);
     end
+    
+    function testSyms(testCase)
+      nile = testCase.data.nile;
+      syms rho lambda sigmaKappa
+      
+      Z = [1 0 1 0];
+      H = nan;
+      T = [1 1 0 0;
+        0 1 0 0;
+        0 0 rho * cos(lambda), rho * sin(lambda);
+        0 0 -rho * sin(lambda), rho * cos(lambda)];
+      R = [zeros(1,3); eye(3)];
+      Q = diag([nan sigmaKappa sigmaKappa]);
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssOpt = ssE.estimate(nile);
+
+      testCase.verifyEqual(ssOpt.Q(1,1), 1.0399, 'AbsTol', 0.1);
+    end
+    
   end
 end
