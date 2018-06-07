@@ -92,7 +92,6 @@ classdef ThetaMap < AbstractSystem
       inP.addParameter('explicita0', false);
       inP.addParameter('explicitP0', false);
       inP.addParameter('PsiTransformation', []);
-      inP.addParameter('PsiGradient', []);
       inP.addParameter('PsiInverse', []);
       inP.addParameter('PsiIndexes', []);
     
@@ -103,8 +102,16 @@ classdef ThetaMap < AbstractSystem
         transformations, inverses, opts);
       
       % Set dimensions
-      obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, opts.explicita0, opts.explicitP0));
-      obj.nPsi = obj.nTheta;
+      if ~isempty(opts.PsiIndexes)
+        obj.nTheta = max(cellfun(@max, opts.PsiIndexes));
+      else
+        obj.nTheta = max(ThetaMap.vectorizeStateSpace(index, opts.explicita0, opts.explicitP0));
+      end
+      if ~isempty(opts.PsiTransformation)
+        obj.nPsi = length(opts.PsiTransformation);
+      else
+        obj.nPsi = obj.nTheta;
+      end
       
       % Set properties
       obj.fixed = fixed;
@@ -197,7 +204,12 @@ classdef ThetaMap < AbstractSystem
       explicita0 = ~isempty(ssE.a0);
       explicitP0 = ~isempty(ssE.P0);
       
-      nTheta = max(ThetaMap.vectorizeStateSpace(index, explicita0, explicitP0));
+      nTheta = length(symTheta) + ...
+        sum(cellfun(@(paramName) sum(isnan(ssE.(paramName)(:))), ...
+        {'Z', 'd', 'beta', 'T', 'c', 'R'})) + ...
+        sum(cellfun(@(paramName) sum(isnan(reshape(tril(ssE.(paramName)), [], 1))), ...
+        {'H', 'Q'}));
+      % nPsi = max(ThetaMap.vectorizeStateSpace(index, explicita0, explicitP0));
       
       % Theta to Psi transformations
       % Cell of length nPsi of which theta elements determine element of Psi
@@ -218,8 +230,9 @@ classdef ThetaMap < AbstractSystem
       end
       PsiTransformations = [symPsiTrans; ...
         repmat({@(theta) theta}, [length(PsiIndexes)-length(symPsi) 1])]; 
-      % TODO: Find theta given psi.
-      PsiInverses = [];
+      % Find theta given psi. Empty inverses will be done numerically.
+      PsiInverses = [repmat({[]}, [length(symTheta) 1]); ...
+        repmat({@(psi, inx) psi(inx(1))}, [nTheta-length(symTheta) 1]);];
       
       % Psi to state space parameter transformations
       transformations = {@(x) x};
@@ -407,7 +420,18 @@ classdef ThetaMap < AbstractSystem
       theta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
         psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
-        theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
+        if ~isempty(obj.PsiInverse{iTheta})
+          theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
+        end
+      end
+      
+      while any(isnan(theta))
+        iTheta = find(isnan(theta), 1);
+        psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
+        
+        iThetas = unique([obj.PsiIndexes{psiInvInx}]);
+        theta(iThetas) = ThetaMap.numericInverse(psi(psiInvInx), ...
+          obj.PsiTransformation(psiInvInx), length(iThetas));
       end
     end
     
@@ -1203,6 +1227,13 @@ classdef ThetaMap < AbstractSystem
       vecFn = eval(['@(theta) scalarFn(' ...
         strjoin(arrayfun(@(x) ['theta(' num2str(x) ')'], 1:nargin(scalarFn), ...
         'Uniform', false), ', ') ')']);
+    end
+    
+    function theta = numericInverse(psi, psiTrans, nThetas)
+      % Numeric inverse of transformation to psi.
+      theta0 = randn(nThetas, 1);
+      err = @(theta) sum((cellfun(@(trans) trans(theta), psiTrans)-psi).^2);
+      theta = fminunc(err, theta0, optimoptions('fminunc', 'Display', 'off'));
     end
   end
 end
