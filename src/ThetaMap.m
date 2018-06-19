@@ -226,12 +226,8 @@ classdef ThetaMap < AbstractSystem
       % Going from theta to psi
       symPsiTrans = cell(length(symPsi),1);
       for iPsi = 1:length(symPsi)
-        mlFun = matlabFunction(symPsi(iPsi));
-        if nargin(mlFun) == 1
-          symPsiTrans{iPsi} = mlFun;
-        else
-          symPsiTrans{iPsi} = ThetaMap.vectorize(mlFun);
-        end
+        symPsiTrans{iPsi} = matlabFunction(symPsi(iPsi), ...
+          'Vars', {symTheta(PsiIndexes{iPsi})});
       end
       PsiTransformations = [symPsiTrans; ...
         repmat({@(theta) theta}, [length(PsiIndexes)-length(symPsi) 1])]; 
@@ -794,7 +790,7 @@ classdef ThetaMap < AbstractSystem
       
       psi = nan(obj.nPsi, 1);
       for iPsi = 1:obj.nPsi
-        psi(iPsi) = obj.PsiTransformation{iPsi}(theta(obj.PsiIndexes{iPsi}));        
+        psi(iPsi) = obj.PsiTransformation{iPsi}(theta(obj.PsiIndexes{iPsi})');        
       end      
     end
     
@@ -1228,17 +1224,11 @@ classdef ThetaMap < AbstractSystem
       vecParam = vertcat(vectors{:});
     end
     
-    function vecFn = vectorize(scalarFn)
-      vecFn = eval(['@(theta) scalarFn(' ...
-        strjoin(arrayfun(@(x) ['theta(' num2str(x) ')'], 1:nargin(scalarFn), ...
-        'Uniform', false), ', ') ')']);
-    end
-    
     function theta = numericInverse(psi, psiTrans, nThetas)
       % Numeric inverse of transformation to psi.
       theta0 = randn(nThetas, 1);
       err = @(theta) sum((cellfun(@(trans) trans(theta), psiTrans)-psi).^2);
-      theta = fminunc(err, theta0, optimoptions('fminunc', 'Display', 'off'));
+      theta = fminunc(err, theta0', optimoptions('fminunc', 'Display', 'off'))';
     end
   end
 end
