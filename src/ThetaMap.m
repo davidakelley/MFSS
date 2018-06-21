@@ -422,17 +422,25 @@ classdef ThetaMap < AbstractSystem
       for iTheta = 1:obj.nTheta
         psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
         if ~isempty(obj.PsiInverse{iTheta})
-          theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); %#ok<FNDSB>
+          theta(iTheta) = obj.PsiInverse{iTheta}(psi, psiInvInx); 
         end
       end
       
       while any(isnan(theta))
-        iTheta = find(isnan(theta), 1);
-        psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
+        % We want to find the i-th element of theta. To do so, we collect the set of 
+        % codetermined elements of theta based on a psi vector. We will solve for that set
+        % of theta elements at the same time. 
+        iTheta = [];
+        iThetaNew = find(isnan(theta), 1);
+        while ~isequal(iTheta, iThetaNew)
+          iTheta = iThetaNew;
+          psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
+          iThetaNew = unique([obj.PsiIndexes{psiInvInx}]);
+        end
+        iThetas = iThetaNew;
         
-        iThetas = unique([obj.PsiIndexes{psiInvInx}]);
         theta(iThetas) = ThetaMap.numericInverse(psi(psiInvInx), ...
-          obj.PsiTransformation(psiInvInx), length(iThetas));
+          obj.PsiTransformation(psiInvInx), obj.PsiIndexes(psiInvInx), length(iThetas));
       end
     end
     
@@ -1224,11 +1232,17 @@ classdef ThetaMap < AbstractSystem
       vecParam = vertcat(vectors{:});
     end
     
-    function theta = numericInverse(psi, psiTrans, nThetas)
+    function theta = numericInverse(psi, psiTrans, psiInx, nThetas)
       % Numeric inverse of transformation to psi.
       theta0 = randn(nThetas, 1);
-      err = @(theta) sum((cellfun(@(trans) trans(theta), psiTrans)-psi).^2);
-      theta = fminunc(err, theta0', optimoptions('fminunc', 'Display', 'off'))';
+      err = @(theta) sum((cellfun(@(trans, inx) trans(theta(inx)), psiTrans, psiInx)-psi).^2);
+      assert(isnumeric(err(theta0')));
+      
+      [theta, ~, flag] = fminunc(err, theta0', optimoptions('fminunc', 'Display', 'off'));
+      if flag <= 0
+        warning('Poor numeric inverse from psi to theta.');
+      end      
+      theta = theta';
     end
   end
 end

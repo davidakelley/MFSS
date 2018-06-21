@@ -250,5 +250,18 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       testCase.verifyEqual(ss.Q, ssNew.Q, 'AbsTol', 1e-6);
     end
     
+    function thetaSystemThetaSymbolComplex(testCase)
+      theta = [.6; .5];
+      
+      syms a b
+      Z = [a 0];
+      T = [b*a b/3; 1/a 0];
+      ssE = StateSpaceEstimation(Z, 1, T, 1, 'R', [1; 0]);
+      ss = ssE.ThetaMapping.theta2system(theta);
+      thetaTest = ssE.ThetaMapping.system2theta(ss);
+
+      testCase.verifyEqual(theta, thetaTest, 'AbsTol', 1e-2);
+    end
+    
   end
 end
