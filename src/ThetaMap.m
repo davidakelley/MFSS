@@ -62,6 +62,9 @@ classdef ThetaMap < AbstractSystem
     
     thetaLowerBound
     thetaUpperBound
+    
+    % Cell array of names of parameters to be estimated
+    thetaNames
   end
   
   properties (SetAccess = protected)
@@ -94,6 +97,7 @@ classdef ThetaMap < AbstractSystem
       inP.addParameter('PsiTransformation', []);
       inP.addParameter('PsiInverse', []);
       inP.addParameter('PsiIndexes', []);
+      inP.addParameter('Names', {});
     
       inP.parse(varargin{:});
       opts = inP.Results;
@@ -111,6 +115,13 @@ classdef ThetaMap < AbstractSystem
         obj.nPsi = length(opts.PsiTransformation);
       else
         obj.nPsi = obj.nTheta;
+      end
+      
+      if ~isempty(opts.Names)
+        assert(length(opts.Names) == obj.nTheta);
+        obj.thetaNames = opts.Names;
+      else
+        obj.thetaNames = arrayfun(@(iT) sprintf('theta_%d', iT), 1:nTheta, 'Uniform', false)';
       end
       
       % Set properties
@@ -216,6 +227,9 @@ classdef ThetaMap < AbstractSystem
         nTheta = nTheta + sum(isnan(ssE.P0));
       end
       
+      names = [cellfun(@char, sym2cell(symTheta), 'Uniform', false)'; ...
+        arrayfun(@(iT) sprintf('theta_%d', iT), length(symTheta)+1:nTheta, 'Uniform', false)'];
+      
       % Theta to Psi transformations
       % Cell of length nPsi of which theta elements determine element of Psi
       symPsiInx = cell(length(symPsi),1);
@@ -271,7 +285,7 @@ classdef ThetaMap < AbstractSystem
         transformations, inverses, ...
         'explicita0', explicita0, 'explicitP0', explicitP0, ...
         'PsiIndexes', PsiIndexes, 'PsiTransformation', PsiTransformations, ...
-        'PsiInverse', PsiInverses);
+        'PsiInverse', PsiInverses, 'Names', names);
     end
    
     function tm = ThetaMapAll(ss)
@@ -562,6 +576,35 @@ classdef ThetaMap < AbstractSystem
         % Save new lower and upper bounds
         obj.LowerBound.Q0 = lbMat;
         obj.UpperBound.Q0 = ubMat;
+      end
+    end
+    
+    function obj = addStructuralRestriction(obj, symbol, lb, ub)
+      % Set the bounds on an element of theta
+      % 
+      % Inputs: 
+      %   symbol: which element of theta to restrict. Index, symbol or character accepted.
+      %   lb: lower bound 
+      %   ub: upper bound
+      %
+      % If the lower or upper bounds passed are empty, the bound is unchanged. 
+ 
+      % Find the element of theta we'll restrict
+      if isnumeric(symbol)
+        assert(symbol <= obj.nTheta) 
+        iTheta = symbol;
+      elseif ischar(symbol)
+        iTheta = find(strcmp(symbol, obj.thetaNames));
+      elseif isa(symbol, 'sym')
+        iTheta = find(strcmp(char(symbol), obj.thetaNames));
+      end
+      
+      % Restrict
+      if ~isempty(lb)
+        obj.thetaLowerBound(iTheta) = lb;
+      end
+      if nargin > 3 && ~isempty(ub)
+        obj.thetaUpperBound(iTheta) = ub;
       end
     end
     
