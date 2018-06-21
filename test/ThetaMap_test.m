@@ -251,6 +251,7 @@ classdef ThetaMap_test < matlab.unittest.TestCase
     end
     
     function thetaSystemThetaSymbolComplex(testCase)
+      rng(0);
       theta = [.6; .5];
       
       syms a b

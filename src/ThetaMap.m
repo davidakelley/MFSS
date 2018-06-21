@@ -439,8 +439,12 @@ classdef ThetaMap < AbstractSystem
         end
         iThetas = iThetaNew;
         
+        % Get the indexes needed for the subset of theta to create the psi vector.
+        smallThetaInx = cellfun(@(inx) find(iThetas == inx), obj.PsiIndexes(psiInvInx), ...
+          'Uniform', false);
+        
         theta(iThetas) = ThetaMap.numericInverse(psi(psiInvInx), ...
-          obj.PsiTransformation(psiInvInx), obj.PsiIndexes(psiInvInx), length(iThetas));
+          obj.PsiTransformation(psiInvInx), smallThetaInx, length(iThetas));
       end
     end
     
