@@ -121,7 +121,7 @@ classdef ThetaMap < AbstractSystem
         assert(length(opts.Names) == obj.nTheta);
         obj.thetaNames = opts.Names;
       else
-        obj.thetaNames = arrayfun(@(iT) sprintf('theta_%d', iT), 1:nTheta, 'Uniform', false)';
+        obj.thetaNames = arrayfun(@(iT) sprintf('theta_%d', iT), 1:obj.nTheta, 'Uniform', false)';
       end
       
       % Set properties
@@ -227,7 +227,12 @@ classdef ThetaMap < AbstractSystem
         nTheta = nTheta + sum(isnan(ssE.P0));
       end
       
-      names = [cellfun(@char, sym2cell(symTheta), 'Uniform', false)'; ...
+      if isa(paramVec, 'sym')
+        symNames = cellfun(@char, sym2cell(symTheta), 'Uniform', false)';
+      else
+        symNames = {};
+      end
+      names = [symNames; ...
         arrayfun(@(iT) sprintf('theta_%d', iT), length(symTheta)+1:nTheta, 'Uniform', false)'];
       
       % Theta to Psi transformations
@@ -458,7 +463,8 @@ classdef ThetaMap < AbstractSystem
           'Uniform', false);
         
         theta(iThetas) = ThetaMap.numericInverse(psi(psiInvInx), ...
-          obj.PsiTransformation(psiInvInx), smallThetaInx, length(iThetas));
+          obj.PsiTransformation(psiInvInx), smallThetaInx, length(iThetas), ...
+          obj.thetaLowerBound(iThetas), obj.thetaUpperBound(iThetas));
       end
     end
     
@@ -474,6 +480,11 @@ classdef ThetaMap < AbstractSystem
     end
     
     function untransformedTheta = unrestrictTheta(obj, theta)
+      % Get theta^U given theta
+      
+      assert(all(theta > obj.thetaLowerBound), 'Theta lower bound violated.');
+      assert(all(theta < obj.thetaUpperBound), 'Theta upper bound violated.');
+            
       [~, thetaInverses] = obj.getThetaTransformations();
       untransformedTheta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
@@ -1279,13 +1290,14 @@ classdef ThetaMap < AbstractSystem
       vecParam = vertcat(vectors{:});
     end
     
-    function theta = numericInverse(psi, psiTrans, psiInx, nThetas)
+    function theta = numericInverse(psi, psiTrans, psiInx, nThetas, lb, ub)
       % Numeric inverse of transformation to psi.
       theta0 = randn(nThetas, 1);
       err = @(theta) sum((cellfun(@(trans, inx) trans(theta(inx)), psiTrans, psiInx)-psi).^2);
       assert(isnumeric(err(theta0')));
       
-      [theta, ~, flag] = fminunc(err, theta0', optimoptions('fminunc', 'Display', 'off'));
+      [theta, ~, flag] = fmincon(err, theta0', [], [], [], [], lb, ub, [], ...
+        optimoptions('fmincon', 'Display', 'off'));
       if flag <= 0
         warning('Poor numeric inverse from psi to theta.');
       end      
