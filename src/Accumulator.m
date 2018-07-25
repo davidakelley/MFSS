@@ -345,7 +345,7 @@ classdef Accumulator < AbstractSystem
       % To find where these go, start with the list of used aggregate state definitions.
       % Iterate through each one, adding one to the current count as you come across a new
       % definition. 
-      endState = nan(sum(Zinx(:)), 1);
+      endState = nan(sum(Zinx(:)), 1); % FIXME? For symbolic specifications. 
       count = 0;
       for iE = 1:length(iC_usedDefs)
         if any(iC_usedDefs(iE) == iC_usedDefs(1:iE-1))
@@ -355,7 +355,7 @@ classdef Accumulator < AbstractSystem
           endState(iE) = count;
         end
       end
-      ZendT = zeros(ss.m, ss.p);
+      ZendT = zeros(ss.m, ss.p); % FIXME? For symbolic specifications. 
       ZendT(Zinx') = endState;
       Zend = ZendT';
     end
@@ -617,7 +617,7 @@ classdef Accumulator < AbstractSystem
       end
       
       % Z - add zeros to the right
-      Z.Zt = zeros(ss.p, mWithLag, size(ss.Z, 3));
+      Z.Zt = zeros(ss.p, mWithLag, size(ss.Z, 3), class(ss.Z));
       Z.Zt(:, 1:ss.m, :) = ss.Z;
       Z.tauZ = ss.tau.Z;
       
@@ -630,7 +630,7 @@ classdef Accumulator < AbstractSystem
       H.tauH = ss.tau.H;
       
       % T - Add ones to transmit lags
-      T.Tt = zeros(mWithLag, mWithLag, size(ss.T, 3));
+      T.Tt = zeros(mWithLag, mWithLag, size(ss.T, 3), class(ss.T));
       T.Tt(1:ss.m, 1:ss.m, :) = ss.T;
       lagsIndex = sub2ind([mWithLag mWithLag], (ss.m+1:mWithLag)', addLagsFrom);
       % FIXME: I don't think this handles slices correctly:
@@ -638,12 +638,12 @@ classdef Accumulator < AbstractSystem
       T.tauT = ss.tau.T;
       
       % c - just add zeros below
-      c.ct = zeros(mWithLag, size(ss.c, 3));
+      c.ct = zeros(mWithLag, size(ss.c, 3), class(ss.c));
       c.ct(1:ss.m, :) = ss.c;
       c.tauc = ss.tau.c;
       
       % R - just add zeros below
-      R.Rt = zeros(mWithLag, ss.g, size(ss.R, 3));
+      R.Rt = zeros(mWithLag, ss.g, size(ss.R, 3), class(ss.R));
       R.Rt(1:ss.m, :, :) = ss.R;
       R.tauR = ss.tau.R;
       
@@ -663,7 +663,7 @@ classdef Accumulator < AbstractSystem
       
       % Add accumulator elements
       Tslices = size(aug.T.oldtau, 1);
-      newT = zeros(mNew, mNew, Tslices);
+      newT = zeros(mNew, mNew, Tslices, class(T));
       for iT = 1:Tslices
         % Get the part of T already defined
         newT(1:aug.m.withLag, 1:aug.m.withLag, iT) = T(:, :, aug.T.oldtau(iT));
@@ -703,7 +703,7 @@ classdef Accumulator < AbstractSystem
       % Construct new c vector
       cSlices = size(aug.c.oldtau, 1);
       
-      newc = zeros(aug.m.final, cSlices);
+      newc = zeros(aug.m.final, cSlices, class(c));
       for iC = 1:cSlices
         % Get the part of c already defined
         newc(1:aug.m.withLag, iC) = c(:, aug.c.oldtau(iC));
@@ -729,7 +729,7 @@ classdef Accumulator < AbstractSystem
       nShocks = size(R, 2);
       
       Rslices = size(aug.R.oldtau, 1);
-      newR = zeros(aug.m.final, nShocks, Rslices);
+      newR = zeros(aug.m.final, nShocks, Rslices, class(R));
       for jj = 1:Rslices
         
         % Get the part of R already defined
@@ -753,7 +753,7 @@ classdef Accumulator < AbstractSystem
     
     function newZ = augmentParamZ(Z, aug)
       % Construct new Z matrix - we're just moving elements around.
-      newZ = zeros(size(Z, 1), aug.m.final);
+      newZ = zeros(size(Z, 1), aug.m.final, class(Z));
       newZ(aug.Z.finalIndexes) = Z(aug.Z.originIndexes);
       Z(aug.Z.originIndexes) = 0;
       newZ(1:size(Z, 1), 1:size(Z, 2), :) = Z;

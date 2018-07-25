@@ -236,7 +236,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         maxTaus = cellfun(@(name) max(obj.tau.(name)), obj.systemParam);
       end
       
-      validate = @(x, sz, name) validateattributes(x, {'numeric'}, ...
+      validate = @(x, sz, name) validateattributes(x, {'numeric', 'sym'}, ...
         {'size', sz}, 'StateSpace', name);
       
       % Measurement equation
