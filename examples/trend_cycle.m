@@ -15,6 +15,8 @@ R = [zeros(1, 3); eye(3)];
 Q = diag([sigmaZeta; sigmaKappa; sigmaKappa]);
 
 ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(lambda, 0, 2*pi);
+ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(rho, -1, 1);
 
 % Estimate the parameters
 ssML = ssE.estimate(y);

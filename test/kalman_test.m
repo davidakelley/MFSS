@@ -203,7 +203,7 @@ classdef kalman_test < matlab.unittest.TestCase
       testCase.verifyEqual(sOut.logli, sOut_m.logli, 'AbsTol', 1e-9);
     end
     
-     function testExogFilter(testCase)
+    function testExogFilter(testCase)
       ssAR = generateARmodel(2, 1, false);
       ssAR.Z = eye(2);
       ssAR.T = [1 0.01; 0 0.95];
@@ -257,6 +257,72 @@ classdef kalman_test < matlab.unittest.TestCase
       testCase.verifyEqual(sOut.V, sOut_m.V, 'AbsTol', 1e-11);
       testCase.verifyEqual(sOut.a0tilde, sOut_m.a0tilde, 'AbsTol', 1e-11);
       testCase.verifyEqual(sOut.logli, sOut_m.logli, 'AbsTol', 1e-9);
+    end
+    
+    function testExogFilterBetadEquiv(testCase)
+      ssAR = generateARmodel(2, 1, false);
+      ssAR.Z = eye(2);
+      ssAR.T = [1 0.01; 0 0.95];
+       
+      ss = StateSpace(ssAR.Z, ssAR.H, ssAR.T, ssAR.Q, 'R', ssAR.R, 'beta', [1; .2]);
+      
+      N = 500;
+      [y, ~, x] = generateData(ss, N);
+      [a, logl, fOut] = ss.filter(y, x);
+      
+      % Run same model but putting the beta*x part in d.
+      ss2 = StateSpace(struct('Zt', ssAR.Z, 'tauZ', ones(N,1)), ...
+        struct('Ht', ssAR.H, 'tauH', ones(N,1)), ...
+        struct('Tt', ssAR.T, 'tauT', ones(N+1,1)), ...
+        struct('Qt', ssAR.Q, 'tauQ', ones(N+1,1)), ...
+        'R', struct('Rt', ssAR.R, 'tauR', ones(N+1,1)), ...
+        'd', struct('dt', [1; .2] * x, 'taud', (1:N)'));
+      [a_2, logl_2, fOut_2] = ss2.filter(y);
+      
+      % Assertions
+      testCase.verifyEqual(logl, logl_2, 'AbsTol', 1e-12);
+      testCase.verifyEqual(a, a_2, 'AbsTol', 1e-12);
+      testCase.verifyEqual(fOut.P, fOut_2.P, 'AbsTol', 1e-12);
+      testCase.verifyEqual(fOut.v, fOut_2.v, 'AbsTol', 1e-12);
+      testCase.verifyEqual(fOut.F, fOut_2.F, 'AbsTol', 1e-12);
+      testCase.verifyEqual(fOut.K, fOut_2.K, 'AbsTol', 1e-12);
+    end
+    
+    function testExogSmootherBetadEquiv(testCase)
+      ssAR = generateARmodel(2, 1, false);
+      ssAR.Z = eye(2);
+      ssAR.T = [1 0.01; 0 0.95];
+       
+      ss = StateSpace(ssAR.Z, ssAR.H, ssAR.T, ssAR.Q, 'R', ssAR.R, 'beta', [1; .2]);
+      
+      N = 500;
+      [y, ~, x] = generateData(ss, N);
+      [alpha, sOut, fOut] = ss.smooth(y, x);
+
+      % Run same model but putting the beta*x part in d.
+      ss2 = StateSpace(struct('Zt', ssAR.Z, 'tauZ', ones(N,1)), ...
+        struct('Ht', ssAR.H, 'tauH', ones(N,1)), ...
+        struct('Tt', ssAR.T, 'tauT', ones(N+1,1)), ...
+        struct('Qt', ssAR.Q, 'tauQ', ones(N+1,1)), ...
+        'R', struct('Rt', ssAR.R, 'tauR', ones(N+1,1)), ...
+        'd', struct('dt', [1; .2] * x, 'taud', (1:N)'));
+      [alpha_2, sOut_2, fOut_2] = ss2.smooth(y);
+      
+      % Assertions
+      testCase.verifyEqual(fOut_2.dt, fOut.dt);
+      testCase.verifyEqual(fOut_2.a, fOut.a, 'AbsTol', 1e-14);
+      testCase.verifyEqual(fOut_2.P, fOut.P, 'AbsTol', 1e-14);
+      testCase.verifyEqual(fOut_2.v, fOut.v, 'AbsTol', 1e-14);
+      testCase.verifyEqual(fOut_2.K, fOut.K, 'AbsTol', 1e-14);
+      testCase.verifyEqual(fOut_2.Kd, fOut.Kd, 'AbsTol', 1e-14);
+      
+      testCase.verifyEqual(alpha, alpha_2, 'AbsTol', 1e-14);
+      testCase.verifyEqual(sOut.eta, sOut_2.eta, 'AbsTol', 1e-14);
+      testCase.verifyEqual(sOut.r, sOut_2.r, 'AbsTol', 1e-14);
+      testCase.verifyEqual(sOut.N, sOut_2.N, 'AbsTol', 1e-14);
+      testCase.verifyEqual(sOut.V, sOut_2.V, 'AbsTol', 1e-14);
+      testCase.verifyEqual(sOut.a0tilde, sOut_2.a0tilde, 'AbsTol', 1e-14);
+      testCase.verifyEqual(sOut.logli, sOut_2.logli, 'AbsTol', 1e-4);
     end
     
     %% Timing

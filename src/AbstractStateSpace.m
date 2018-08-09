@@ -276,17 +276,15 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       else
         obj.timeInvariant = false;
       
-        tauLens = [length(parameters.Z.tauZ), length(parameters.d.taud), ...
-          length(parameters.beta.taubeta), length(parameters.H.tauH), ...
-          length(parameters.T.tauT), length(parameters.c.tauc), ...
-          length(parameters.R.tauR), length(parameters.Q.tauQ)];
-        
-        subtract = structParams' & [0 0 0 0 1 1 1 1];
+        tauLens = zeros(8,1);
+        tauLens(structParams) = cellfun(@(x) ...
+          length(parameters.(x).(['tau' x])), obj.systemParam(structParams));
+        subtract = structParams & [0 0 0 0 1 1 1 1]';
         nCandidates = tauLens - subtract;
-        assert(all(nCandidates == nCandidates(1)), ['Bad tau specification. ' ... 
+        assert(all(nCandidates(structParams) == max(nCandidates)), ['Bad tau specification. ' ... 
           'tau vectors for Z, d, beta & H should have n elements. ' ...
           'tau vectors for T, c, R & Q should have n+1 elements.']);
-        obj.n = nCandidates(1);
+        obj.n = max(nCandidates);
       end
             
       % Set dimensions:
