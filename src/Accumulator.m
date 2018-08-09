@@ -107,6 +107,10 @@ classdef Accumulator < AbstractSystem
       tmNew.PsiTransformation = tm.PsiTransformation;
       tmNew.PsiInverse = tm.PsiInverse;
       tmNew.PsiIndexes = tm.PsiIndexes;
+      tmNew.thetaLowerBound = tm.thetaLowerBound;
+      tmNew.thetaUpperBound = tm.thetaUpperBound;
+      tmNew.thetaNames = tm.thetaNames;
+      
       % Have to use internal ThetaMap method to set nTheta
       tmNew = tmNew.validateThetaMap();
       
