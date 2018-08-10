@@ -5,14 +5,14 @@ data = cbd.data('LN(GDPH)');
 y = data{:,:};
 
 %% Set up model
-syms rho lambda sigmaKappa sigmaZeta
+syms rho lambda sigmaKappa sigmaXi
 
 Z = [1, 0, 1, 0];
 H = nan;
 
 T = blkdiag([1 1; 0 1], rho .* [cos(lambda), sin(lambda); -sin(lambda) cos(lambda)]);
 R = [zeros(1, 3); eye(3)];
-Q = diag([sigmaZeta; sigmaKappa; sigmaKappa]);
+Q = diag([sigmaXi; sigmaKappa; sigmaKappa]);
 
 ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
 ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(lambda, 0, 2*pi);
