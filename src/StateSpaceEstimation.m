@@ -116,7 +116,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     %% Estimation methods
-    function [ss_out, diagnostic, gradient] = estimate(obj, y, ss0, x)
+    function [ss_out, diagnostic, thetaHat, gradient] = estimate(obj, y, ss0, x)
       % Estimate missing parameter values via maximum likelihood.
       %
       % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
@@ -153,13 +153,21 @@ classdef StateSpaceEstimation < AbstractStateSpace
       progress = EstimationProgress(theta0, obj.diagnosticPlot, obj.m, ss0);
       outputFcn = @(thetaU, oVals, st) ...
           progress.update(obj.ThetaMapping.restrictTheta(thetaU), oVals);
-      
+        
+      function [stop, optOpts, deltaOpt] = outputFcnSimanneal(optOpts, oVals, ~)
+        if nargin >=1
+          stop = progress.update(obj.ThetaMapping.restrictTheta(oVals.x), oVals);
+        else
+          stop = false;
+        end        
+        deltaOpt = false;
+      end
+            
       assert(isnumeric(y), 'y must be numeric.');
       assert(isnumeric(x), 'x must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
         'All parameters known. Unable to estimate.');
-      
       
       % Run fminunc/fmincon
       nonlconFn = @obj.nlConstraintFun;
@@ -196,6 +204,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'OptimalityTolerance', obj.tol, ...
         'StepTolerance', obj.stepTol, ...
         'OutputFcn', outputFcn);
+      
+      optSimulanneal = optimoptions(@simulannealbnd, ...
+        'OutputFcn', @outputFcnSimanneal);
       
       if all(strcmpi(obj.solver, 'fminsearch')) && ...
           (ischar(obj.fminsearchMaxIter) && ...
@@ -251,6 +262,15 @@ classdef StateSpaceEstimation < AbstractStateSpace
               minfunc, theta0U, optFMinSearch);
             
             gradient = [];
+          case 'sa'
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
+            
+            [thetaUHat, logli, outflag] = simulannealbnd(...
+              minfunc, theta0U, [],  [], optSimulanneal);
+            
+            gradient = [];
+          otherwise
+            error('Unknown solver.');
         end
         
         progress.nextSolver();
@@ -446,7 +466,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
         theta0U = iTheta0U(:, thetaOrder(iGradAtt));
         theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,thetaOrder(iGradAtt)));
         ss0 = obj.ThetaMapping.theta2system(theta0);
-        [ll0, grad0] = ss0.gradient(y, x, obj.ThetaMapping, theta0);
+        try
+          [ll0, grad0] = ss0.gradient(y, x, obj.ThetaMapping, theta0);
+        catch
+          continue
+        end
         
         if isfinite(ll0) && all(isfinite(grad0))
           break
