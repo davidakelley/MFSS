@@ -211,13 +211,15 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       Q = diag([nan sigmaKappa sigmaKappa]);
       
       ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
-      
+      ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(rho, 0, 1);
+      ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(lambda, 0, 2*pi);
+
       % Convert from theta -> ss -> thetaMap
       theta = rand(5,1);
       ss = ssE.ThetaMapping.theta2system(theta);
       thetaNew = ssE.ThetaMapping.system2theta(ss);
       
-      testCase.verifyEqual(theta, thetaNew, 'AbsTol', 1e-6);
+      testCase.verifyEqual(theta, thetaNew, 'AbsTol', 1e-4);
     end
     
     function systemThetaSystemSymbol(testCase)
@@ -234,6 +236,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       Q = diag([nan sigmaKappa sigmaKappa]);
       
       ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(rho, 0, 1);
+      ssE.ThetaMapping = ssE.ThetaMapping.addStructuralRestriction(lambda, 0, 2*pi);
       
       % Convert from theta -> ss -> thetaMap
       theta = rand(5,1);

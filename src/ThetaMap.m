@@ -437,6 +437,7 @@ classdef ThetaMap < AbstractSystem
       % Loop over theta, construct from psi
       assert(size(obj.PsiInverse, 1) == obj.nTheta);
       
+      % Explicit inverses
       theta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
         psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
@@ -445,6 +446,7 @@ classdef ThetaMap < AbstractSystem
         end
       end
       
+      % Numeric inverses for those not specified
       while any(isnan(theta))
         % We want to find the i-th element of theta. To do so, we collect the set of 
         % codetermined elements of theta based on a psi vector. We will solve for that set
@@ -453,18 +455,49 @@ classdef ThetaMap < AbstractSystem
         iThetaNew = find(isnan(theta), 1);
         while ~isequal(iTheta, iThetaNew)
           iTheta = iThetaNew;
-          psiInvInx = find(cellfun(@(psiInx) any(psiInx == iTheta), obj.PsiIndexes));
+          
+          % Find which elements of psi are determined by the current subset of theta that
+          % we're going to solve for
+          psiInvInx = find(cellfun(@(psiInx) ~isempty(intersect(iTheta, psiInx)), ...
+            obj.PsiIndexes));
+          
+          % Add all elements of theta that determine these elements of psi to the list
+          % under consideration
           iThetaNew = unique([obj.PsiIndexes{psiInvInx}]);
         end
         iThetas = iThetaNew;
         
-        % Get the indexes needed for the subset of theta to create the psi vector.
-        smallThetaInx = cellfun(@(inx) find(iThetas == inx), obj.PsiIndexes(psiInvInx), ...
-          'Uniform', false);
+        % Get the indexes needed for the subset of theta to create the psi vector, ie. if
+        % we're finding theta(2:4), we need to find the indexes that determine each psi
+        % element from this 3-element vector. 
+        smallThetaInx = cellfun(@(inx) arrayfun(@(iInx) find(iThetas == iInx), inx), ...
+          obj.PsiIndexes(psiInvInx), 'Uniform', false);
+
+        % Take numeric inverses
+        computePartialPsi = @(theta) cellfun(@(trans, inx) trans(theta(inx)), ...
+          obj.PsiTransformation(psiInvInx), smallThetaInx);
+        psiErrors = @(theta) computePartialPsi(theta) - psi(psiInvInx);
         
-        theta(iThetas) = ThetaMap.numericInverse(psi(psiInvInx), ...
-          obj.PsiTransformation(psiInvInx), smallThetaInx, length(iThetas), ...
-          obj.thetaLowerBound(iThetas), obj.thetaUpperBound(iThetas));
+        theta0 = randn(length(iThetas), 1);
+        assert(isnumeric(sum(psiErrors(theta0').^2)));
+        verbose = false;
+        if verbose 
+          plotFcn = {@optimplotfunccount, @optimplotresnorm, ...
+          @optimplotstepsize, @optimplotfirstorderopt};
+        else
+          plotFcn = {};
+        end
+        
+        theta(iThetas) = lsqnonlin(psiErrors, theta0', ... 
+          obj.thetaLowerBound(iThetas), obj.thetaUpperBound(iThetas), ...
+          optimoptions('LSQNONLIN', 'Display', 'off', ...
+          'MaxFunctionEvaluations', 10000*length(iThetas), ...
+          'MaxIterations', 10000, ...
+          'PlotFcn', {}));
+        
+        if any(psiErrors(theta(iThetas)') > 1e-4)
+          warning('Bad numeric inverse from psi to theta.');
+        end
       end
     end
     
@@ -482,8 +515,8 @@ classdef ThetaMap < AbstractSystem
     function untransformedTheta = unrestrictTheta(obj, theta)
       % Get theta^U given theta
       
-      assert(all(theta > obj.thetaLowerBound), 'Theta lower bound violated.');
-      assert(all(theta < obj.thetaUpperBound), 'Theta upper bound violated.');
+      assert(all(theta+eps > obj.thetaLowerBound), 'Theta lower bound violated.');
+      assert(all(theta-eps < obj.thetaUpperBound), 'Theta upper bound violated.');
             
       [~, thetaInverses] = obj.getThetaTransformations();
       untransformedTheta = nan(obj.nTheta, 1);
@@ -1288,20 +1321,6 @@ classdef ThetaMap < AbstractSystem
       
       vectors = cellfun(@(x) x(:), param, 'Uniform', false);
       vecParam = vertcat(vectors{:});
-    end
-    
-    function theta = numericInverse(psi, psiTrans, psiInx, nThetas, lb, ub)
-      % Numeric inverse of transformation to psi.
-      theta0 = randn(nThetas, 1);
-      err = @(theta) sum((cellfun(@(trans, inx) trans(theta(inx)), psiTrans, psiInx)-psi).^2);
-      assert(isnumeric(err(theta0')));
-      
-      [theta, ~, flag] = fmincon(err, theta0', [], [], [], [], lb, ub, [], ...
-        optimoptions('fmincon', 'Display', 'off'));
-      if flag <= 0
-        warning('Poor numeric inverse from psi to theta.');
-      end      
-      theta = theta';
     end
   end
 end
