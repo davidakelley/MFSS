@@ -755,7 +755,7 @@ classdef ThetaMap < AbstractSystem
         % Compress indexes
         [obj.transformationIndex, unusedTransforms] = ...
           ThetaMap.eliminateUnusedIndexes(obj.transformationIndex, ...
-        ~obj.usingDefaulta0, ~obj.usingDefaultP0);
+          ~obj.usingDefaulta0, ~obj.usingDefaultP0);
         assert(isempty(unusedTransforms) || ...
           all(unusedTransforms == duplicatesForRemoval));
         
@@ -1002,6 +1002,13 @@ classdef ThetaMap < AbstractSystem
       
       obj.LowerBound = lower;
       obj.UpperBound = upper;
+    end
+    
+    function obj = setRestrictions(obj, ssLB, ssUB)
+      % Utility function not to be used 
+      warning('ThetaMap:setRestrictions', 'setRestrictions not to be used externally.');
+      obj.LowerBound = ssLB;
+      obj.UpperBound = ssUB;
     end
   end
   

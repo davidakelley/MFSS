@@ -110,12 +110,13 @@ classdef Accumulator < AbstractSystem
       tmNew.thetaLowerBound = tm.thetaLowerBound;
       tmNew.thetaUpperBound = tm.thetaUpperBound;
       tmNew.thetaNames = tm.thetaNames;
+      warning off 'ThetaMap:setRestrictions'
+      tmNew = tmNew.setRestrictions(obj.buildAccumulatorStateSpace(tm.LowerBound, aug), ...
+        obj.buildAccumulatorStateSpace(tm.UpperBound, aug));
+      warning on 'ThetaMap:setRestrictions'
       
       % Have to use internal ThetaMap method to set nTheta
       tmNew = tmNew.validateThetaMap();
-      
-      % Set the bounds matricies that are (probably) messed up
-      tmNew = tmNew.reconstructBoundSystems();
     end
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)

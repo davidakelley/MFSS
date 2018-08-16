@@ -713,6 +713,35 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       testCase.verifyEqual(thetaGen, thetaAug);
     end
     
+    function testThetaMapSym(testCase)
+      syms lambda rho sigmaKappa sigmaZeta
+      Z = [1, 0, 1, 0];
+      H = 0;
+      T = blkdiag([1 1; 0 1], rho .* [cos(lambda), sin(lambda); -sin(lambda) cos(lambda)]);
+      R = [zeros(1, 3); eye(3)];
+      Q = diag([sigmaZeta; sigmaKappa; sigmaKappa]);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      
+      accum = Accumulator(1, [repmat((1:3)', [100 1]); 1], repmat(3, [301 1]));
+      ssEA = accum.augmentStateSpaceEstimation(ssE);
+
+      tm1 = ssE.ThetaMapping;
+      tm2 = ssEA.ThetaMapping; 
+      testCase.verifyEqual(tm2.nTheta, tm1.nTheta);
+
+      % Test theta -> system
+      rng(0);
+      thetaTest = rand(tm1.nTheta, 1);
+      ssTestAug = tm2.theta2system(thetaTest);
+      thetaTestAug = tm2.system2theta(ssTestAug);
+      testCase.verifyEqual(thetaTest, thetaTestAug, 'AbsTol', 1e-10);
+      
+      % Test augmenting system after the fact
+      ss1 = tm1.theta2system(thetaTest);
+      ssNewAug = accum.augmentStateSpace(ss1);
+      testCase.verifyEqual(ssTestAug, ssNewAug);
+    end
+    
     function testOutOfOrder(testCase)
       % Set up a model with sum and average accumulator out of order, make sure it gets
       % set up in the reverse order. 
