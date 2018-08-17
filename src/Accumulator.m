@@ -110,10 +110,10 @@ classdef Accumulator < AbstractSystem
       tmNew.thetaLowerBound = tm.thetaLowerBound;
       tmNew.thetaUpperBound = tm.thetaUpperBound;
       tmNew.thetaNames = tm.thetaNames;
-      warning off 'ThetaMap:setRestrictions'
-      tmNew = tmNew.setRestrictions(obj.buildAccumulatorStateSpace(tm.LowerBound, aug), ...
+%       warning off 'ThetaMap:setRestrictions'
+      tmNew = tmNew.addRestrictions(obj.buildAccumulatorStateSpace(tm.LowerBound, aug), ...
         obj.buildAccumulatorStateSpace(tm.UpperBound, aug));
-      warning on 'ThetaMap:setRestrictions'
+%       warning on 'ThetaMap:setRestrictions'
       
       % Have to use internal ThetaMap method to set nTheta
       tmNew = tmNew.validateThetaMap();

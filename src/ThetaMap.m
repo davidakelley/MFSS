@@ -717,6 +717,14 @@ classdef ThetaMap < AbstractSystem
       % For duplicates, set their indexes to the lower-indexed version and 
       % delete the higher-indexed version.
       
+      % Make sure we don't have any transformations on fixed elements
+      possibleParamNames = [obj.transformationIndex.systemParam, {'a0', 'Q0'}];
+      paramNames = possibleParamNames(...
+        [true(1,8) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
+      for iP = 1:length(paramNames)
+        obj.transformationIndex.(paramNames{iP})(obj.index.(paramNames{iP}) == 0) = 0;        
+      end
+      
       % Remove unused transformations:
       % this should be very similar to removing missing index elements but
       % we also need to delete the transformations
@@ -743,9 +751,6 @@ classdef ThetaMap < AbstractSystem
         end
         
         % Reset the indexes of any transformations found to be duplicate
-        possibleParamNames = [obj.transformationIndex.systemParam, {'a0', 'Q0'}];
-        paramNames = possibleParamNames(...
-          [true(1,8) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
         for iP = 1:length(paramNames)
           dupInds = arrayfun(@(x) any(x == duplicatesForRemoval), ...
             obj.transformationIndex.(paramNames{iP}));
