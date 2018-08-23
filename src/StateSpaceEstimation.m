@@ -132,8 +132,13 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       [obj, y, x] = obj.checkSample(y, x);
         
-      if nargin < 3 || isempty(ss0)
+      firstSwarm = isequal(obj.solver, 'swarm') || ...
+        (iscell(obj.solver) &&  isequal(obj.solver{1}, 'swarm'));
+      
+      if nargin < 3 || isempty(ss0) && ~firstSwarm
         [theta0U, theta0, ss0] = obj.initializeRandom(y, x);
+      elseif firstSwarm
+        theta0U = [];
       else
         % Initialization
         if isa(ss0, 'StateSpace')
@@ -162,7 +167,16 @@ classdef StateSpaceEstimation < AbstractStateSpace
         end        
         deltaOpt = false;
       end
-            
+      function [stop, optOpts, deltaOpt] = outputFcnSwarm(optOpts, ~)
+        if nargin >=1
+          oVals = struct('fval', optOpts.bestfval);
+          stop = progress.update(obj.ThetaMapping.restrictTheta(optOpts.bestx), oVals);
+        else
+          stop = false;
+        end        
+        deltaOpt = false;
+      end
+                        
       assert(isnumeric(y), 'y must be numeric.');
       assert(isnumeric(x), 'x must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
@@ -207,6 +221,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       optSimulanneal = optimoptions(@simulannealbnd, ...
         'OutputFcn', @outputFcnSimanneal);
+      
+      optSwarm = optimoptions(@particleswarm, ...
+        'OutputFcn', @outputFcnSwarm, ...
+        'InitialSwarmSpan', 4, ...
+        'UseParallel', obj.useParallel);
       
       if all(strcmpi(obj.solver, 'fminsearch')) && ...
           (ischar(obj.fminsearchMaxIter) && ...
@@ -267,6 +286,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
             
             [thetaUHat, logli, outflag] = simulannealbnd(...
               minfunc, theta0U, [],  [], optSimulanneal);
+            
+            gradient = [];
+            
+          case 'swarm'
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
+            
+            [thetaUHat, logli, outflag] = particleswarm(...
+              minfunc, obj.ThetaMapping.nTheta, [],  [], optSwarm);
             
             gradient = [];
           otherwise
