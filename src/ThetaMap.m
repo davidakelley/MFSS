@@ -579,8 +579,8 @@ classdef ThetaMap < AbstractSystem
       if ~obj.usingDefaulta0
         if isempty(obj.LowerBound.a0)
           % Setting a0 for the first time
-          obj.LowerBound.a0 = -Inf(size(a0));
-          obj.UpperBound.a0 = Inf(size(a0)); 
+          obj.LowerBound.a0 = -Inf(size(obj.LowerBound.a0));
+          obj.UpperBound.a0 = Inf(size(obj.UpperBound.a0)); 
         end
         [trans, inver, transInx, lbMat, ubMat] = ...
           obj.restrictParamMat(ssLB, ssUB, 'a0');
