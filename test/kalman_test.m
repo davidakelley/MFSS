@@ -310,18 +310,18 @@ classdef kalman_test < matlab.unittest.TestCase
       
       % Assertions
       testCase.verifyEqual(fOut_2.dt, fOut.dt);
-      testCase.verifyEqual(fOut_2.a, fOut.a, 'AbsTol', 1e-14);
-      testCase.verifyEqual(fOut_2.P, fOut.P, 'AbsTol', 1e-14);
-      testCase.verifyEqual(fOut_2.v, fOut.v, 'AbsTol', 1e-14);
-      testCase.verifyEqual(fOut_2.K, fOut.K, 'AbsTol', 1e-14);
-      testCase.verifyEqual(fOut_2.Kd, fOut.Kd, 'AbsTol', 1e-14);
+      testCase.verifyEqual(fOut_2.a, fOut.a, 'AbsTol', 1e-13);
+      testCase.verifyEqual(fOut_2.P, fOut.P, 'AbsTol', 1e-13);
+      testCase.verifyEqual(fOut_2.v, fOut.v, 'AbsTol', 1e-13);
+      testCase.verifyEqual(fOut_2.K, fOut.K, 'AbsTol', 1e-13);
+      testCase.verifyEqual(fOut_2.Kd, fOut.Kd, 'AbsTol', 1e-13);
       
-      testCase.verifyEqual(alpha, alpha_2, 'AbsTol', 1e-14);
-      testCase.verifyEqual(sOut.eta, sOut_2.eta, 'AbsTol', 1e-14);
-      testCase.verifyEqual(sOut.r, sOut_2.r, 'AbsTol', 1e-14);
-      testCase.verifyEqual(sOut.N, sOut_2.N, 'AbsTol', 1e-14);
-      testCase.verifyEqual(sOut.V, sOut_2.V, 'AbsTol', 1e-14);
-      testCase.verifyEqual(sOut.a0tilde, sOut_2.a0tilde, 'AbsTol', 1e-14);
+      testCase.verifyEqual(alpha, alpha_2, 'AbsTol', 1e-13);
+      testCase.verifyEqual(sOut.eta, sOut_2.eta, 'AbsTol', 1e-13);
+      testCase.verifyEqual(sOut.r, sOut_2.r, 'AbsTol', 1e-13);
+      testCase.verifyEqual(sOut.N, sOut_2.N, 'AbsTol', 1e-13);
+      testCase.verifyEqual(sOut.V, sOut_2.V, 'AbsTol', 1e-13);
+      testCase.verifyEqual(sOut.a0tilde, sOut_2.a0tilde, 'AbsTol', 1e-13);
       testCase.verifyEqual(sOut.logli, sOut_2.logli, 'AbsTol', 1e-4);
     end
     
