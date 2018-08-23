@@ -347,4 +347,5 @@ classdef estimate_test < matlab.unittest.TestCase
       delete(fullfile(tempdir, 'temp_testInitSave.mat'));
     end
     
+  end
 end

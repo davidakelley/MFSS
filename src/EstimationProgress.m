@@ -52,6 +52,7 @@ classdef EstimationProgress < handle
   
   properties (SetAccess = protected)
     stopStatus = '';
+    updateStatus = 'active';
   end
   
   methods
@@ -112,7 +113,7 @@ classdef EstimationProgress < handle
       stopCond = ~isempty(obj.stopStatus);
       
       % Update plot
-      if obj.visible && isvalid(obj.figHandle)
+      if obj.visible && isvalid(obj.figHandle) && strcmpi(obj.updateStatus, 'active')   
         obj.updateFigure();
       end
     end
@@ -120,33 +121,54 @@ classdef EstimationProgress < handle
     function updateFigure(obj)
       % Update the figure display with the current object properties
       
+      % Update string of iterations
+      obj.totalEvalText.String = obj.getTotalEvalsString();
+      obj.nanItersText.String = obj.getNanItersString();
+      
       % Current theta value
       obj.plotPt.YData = obj.theta';
       
       % Likelihood history
+      if sum(~arrayfun(@(x) isempty(x.XData), obj.axVal.Children)) < ...
+          (max(obj.solverHist) + ~isempty(obj.alpha))
+        % Some solvers were missed entirely while paused, redraw them
+        delete(obj.axVal.Children(obj.axVal.Children ~= obj.plotVal));
+        
+        for iH = 1:max(obj.solverHist)
+          oldline = copyobj(obj.plotVal, obj.axVal);
+          % Set markers off, color line based on solver
+          oldline.Marker = 'none';
+          oldline.LineStyle = '-';
+          oldline.Color = obj.getSolverColor(iH);
+          
+          ll_XData = find(obj.solverHist == iH);
+          ll_YData = obj.likelihoodHist(obj.solverHist == iH);
+          set(oldline, 'XData', ll_XData, 'YData', ll_YData);
+        end
+        
+        obj.axVal.XLim = [0 ll_XData(end)];
+        set(obj.plotVal, 'XData', [], 'YData', []);
+        obj.plotVal.MarkerFaceColor = obj.getCurrentColor();
+      else 
+        oldline = [];
+      end     
+      
       ll_XData = find(obj.solverHist == obj.solverIter);
       ll_YData = obj.likelihoodHist(obj.solverHist == obj.solverIter);
       if ~isempty(ll_XData)
+        delete(oldline);
+      end
+      if ~isempty(ll_XData)
         set(obj.plotVal, 'XData', ll_XData, 'YData', ll_YData);
-        % obj.axVal.XLim(2) = ll_XData(end);
         obj.axVal.XLim(2) = ll_XData(end);
-%         xShowInd = ceil(ll_XData(end)*.05):ll_XData(end);
-        
-%         obj.axVal.YLim = [min(ll_YData(xShowInd))-.1 max(ll_YData(xShowInd))+.1];
-
         obj.axVal.Title.String = sprintf('Current Log-likelihood: %9.4f', ll_YData(end));
       end
       
       % Plot of state
       obj.showParamEstimate(obj.paramSelection.String{obj.paramSelection.Value}, ...
         obj.paramSelectionSlice.Value);
-      
       % Plot of state
       obj.plotStateEstimate(obj.stateSelection.Value);
-      
-      % Update string of iterations
-      obj.totalEvalText.String = obj.getTotalEvalsString();
-      obj.nanItersText.String = obj.getNanItersString();
       
       % Draw plot
       drawnow;
@@ -161,7 +183,7 @@ classdef EstimationProgress < handle
       end
       
       % Update likelihood value plot
-      if obj.visible && isvalid(obj.figHandle)
+      if obj.visible && isvalid(obj.figHandle) && strcmpi(obj.updateStatus, 'active')
         oldline = copyobj(obj.plotVal, obj.axVal);
         % Set markers off, color line based on solver
         oldline.Marker = 'none';
@@ -235,6 +257,17 @@ classdef EstimationProgress < handle
       % Set the position, using the initial hard coded position, if it is long enough
       set(stopEstimBtn, 'Position', max(stopBtnPos, get(stopEstimBtn, 'Position')));
       
+      % Create a pause button for the window updates
+      pauseBtnXYLoc = [stopEstimBtn.Position(1)+stopBtnExtent(3)+5 5];
+      pauseEstimBtn = uicontrol('string', 'Pause Updates', ...
+        'Position', [pauseBtnXYLoc 90 20], 'callback', @buttonPauseUpdates,  ...
+        'Parent', newwin);
+      % Make sure the full text of the button is shown
+      stopBtnExtent = get(pauseEstimBtn, 'Extent');
+      stopBtnPos = [pauseBtnXYLoc stopBtnExtent(3:4) + [2 2]];
+      % Set the position, using the initial hard coded position, if it is long enough
+      set(pauseEstimBtn, 'Position', max(stopBtnPos, get(pauseEstimBtn, 'Position')));
+      
       % Create plot of current theta
       axH = axes(newwin);
       obj.axPt = subplot(3, 2, 1, axH);
@@ -281,8 +314,19 @@ classdef EstimationProgress < handle
       end
       function buttonStopEstim(~,~)
         % Set no matter stop condition in case its 'stop'
-        obj.stopStatus  = 'stopestim';
+        obj.stopStatus = 'stopestim';
       end
+      function buttonPauseUpdates(~,~)
+        % Set property for if we're updating figure window
+        if strcmp(obj.updateStatus, 'paused')
+          obj.updateStatus = 'active';
+          pauseEstimBtn.String = 'Pause Updates';
+          obj.updateFigure();
+        else
+          obj.updateStatus = 'paused';
+          pauseEstimBtn.String = 'Resume Updates';
+        end
+      end      
     end
     
     function setupPlots(obj)
@@ -374,7 +418,11 @@ classdef EstimationProgress < handle
     end
     
     function currentColor = getCurrentColor(obj)
-      currentColor = [mod(obj.solverIter - 1, 2), 0, 1];
+      currentColor = obj.getSolverColor(obj.solverIter);
+    end
+    
+    function color = getSolverColor(~, solverNo)
+      color = [mod(solverNo - 1, 2), 0, 1];
     end
     
     %% Plot functions

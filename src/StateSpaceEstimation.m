@@ -309,7 +309,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Run smoother, plot smoothed state
       if obj.diagnosticPlot
         progress.alpha = ss_out.smooth(y, x);
-        if progress.visible && isvalid(progress.figHandle)
+        if progress.visible && isvalid(progress.figHandle) && ...
+            strcmpi(progress.updateStatus, 'active')     
           progress.updateFigure();
         end
       end
@@ -393,6 +394,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       negLogli = -rawLogli;
       gradient = -rawGradient;
+      
+      % Allow callbacks to process in EstimationProgress:
+      drawnow;
     end
     
     function [cx, ceqx] = nlConstraintFun(obj, thetaU)
