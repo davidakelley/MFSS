@@ -341,7 +341,7 @@ classdef Accumulator < AbstractSystem
       ZUsedRows = zeros(ss.p, ss.m);
       accumObs = unique(obj.index(lowFreqObsInx));
       ZUsedRows(accumObs,:) = 1;
-      Zinx = ZUsedRows & ss.Z~=0;
+      Zinx = ZUsedRows & logical(ss.Z~=0);
       
       % Find where the index of the aggregated states each observation needs. This will be
       % sorted by observation then by state but any state that's used for multiple
@@ -350,7 +350,7 @@ classdef Accumulator < AbstractSystem
       % To find where these go, start with the list of used aggregate state definitions.
       % Iterate through each one, adding one to the current count as you come across a new
       % definition. 
-      endState = nan(sum(Zinx(:)), 1); % FIXME? For symbolic specifications. 
+      endState = nan(sum(Zinx(:)), 1); 
       count = 0;
       for iE = 1:length(iC_usedDefs)
         if any(iC_usedDefs(iE) == iC_usedDefs(1:iE-1))

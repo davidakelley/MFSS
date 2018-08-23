@@ -714,8 +714,8 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
     end
     
     function testThetaMapSym(testCase)
-      syms lambda rho sigmaKappa sigmaZeta
-      Z = [1, 0, 1, 0];
+      syms lambda rho sigmaKappa sigmaZeta a
+      Z = [1, 0, a, 0];
       H = 0;
       T = blkdiag([1 1; 0 1], rho .* [cos(lambda), sin(lambda); -sin(lambda) cos(lambda)]);
       R = [zeros(1, 3); eye(3)];
@@ -734,7 +734,7 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       thetaTest = rand(tm1.nTheta, 1);
       ssTestAug = tm2.theta2system(thetaTest);
       thetaTestAug = tm2.system2theta(ssTestAug);
-      testCase.verifyEqual(thetaTest, thetaTestAug, 'AbsTol', 1e-10);
+      testCase.verifyEqual(thetaTest, thetaTestAug, 'AbsTol', 1e-6);
       
       % Test augmenting system after the fact
       ss1 = tm1.theta2system(thetaTest);
