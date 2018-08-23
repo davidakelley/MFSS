@@ -68,7 +68,10 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     end
     
     function obj = set.a0Private(obj, newa0)
-      assert(isempty(newa0) || size(newa0, 1) == obj.m, 'a0 should be a m X 1 vector');
+      % Check if obj.m is empty - if it is, we're loading a saved object so ignore the
+      % assertion. 
+      assert(isempty(obj.m) || isempty(newa0) || size(newa0, 1) == obj.m, ...
+        'a0 should be a m X 1 vector');
       obj.a0Private = newa0;
     end
     

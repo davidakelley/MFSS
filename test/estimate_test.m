@@ -281,6 +281,70 @@ classdef estimate_test < matlab.unittest.TestCase
 
       testCase.verifyEqual(ssOpt.Q(1,1), 1.0399, 'AbsTol', 0.1);
     end
+   
+    %% Initial values
+    function testInitSet(testCase)
+      % Check that a0 and P0 set on an estimation object get transfered to system
+      p = 2; m = 1;
+      
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      H = nan(p, p);
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssE.a0 = 100;
+      ssE.P0 = 10;
+      
+      testCase.verifyEqual(ssE.a0, ssE.ThetaMapping.fixed.a0);
+      testCase.verifyEqual(ssE.P0, ssE.ThetaMapping.fixed.P0);
+    end
     
-  end
+    function testInitMakeSystem(testCase)
+      % Check that a0 and P0 set on an estimation object get transfered to system
+      p = 2; m = 1;
+      
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      H = nan(p, p);
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssE.a0 = 100;
+      ssE.P0 = 10;
+      
+      ss0 = ssE.ThetaMapping.theta2system(randn(6,1));
+      
+      testCase.verifyEqual(ssE.a0, ss0.a0);
+      testCase.verifyEqual(ssE.P0, ss0.P0);
+    end
+  
+    function testInitSave(testCase)
+      % Check that a0 and P0 set on an estimation object get transfered to system
+      p = 2; m = 1;
+      
+      Z = [[1; nan(p-1, 1)] zeros(p, m-1)];
+      H = nan(p, p);
+      
+      T = [nan(1, m); [eye(m-1) zeros(m-1, 1)]];
+      R = zeros(m, 1); R(1, 1) = 1;
+      Q = nan;
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
+      ssE.a0 = 100;
+      ssE.P0 = 10;
+
+      save(fullfile(tempdir, 'temp_testInitSave.mat'));
+      load(fullfile(tempdir, 'temp_testInitSave.mat'));
+      
+      testCase.verifyEqual(ssE.a0, 100);
+      testCase.verifyEqual(ssE.P0, 10);
+
+      delete(fullfile(tempdir, 'temp_testInitSave.mat'));
+    end
+    
 end
