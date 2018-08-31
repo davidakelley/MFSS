@@ -577,6 +577,9 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       % Test smoother
       alpha = ssA.smooth(aggY);
       testCase.verifyEqual(alpha(3:3:end,end), aggY(3:3:end,2), 'AbsTol', 1e-10);
+      % We can only test the sample where we have full information to average over
+      triangleAvg = filter([1 2 3 2 1], 1, alpha(:,1)) ./ 3;
+      testCase.verifyEqual(alpha(6:3:end,3), triangleAvg(6:3:end), 'AbsTol', 1e-10);
     end
     
     function testCommonStateProcess(testCase)
@@ -631,6 +634,39 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
       diffPeriods = sum((abs(alpha(1, :)' - obsAlpha(1,:)')) > 0.02);
       testCase.verifyLessThanOrEqual(diffPeriods, allowedDiffPeriods);
     end
+    
+    function testNotOneStart(testCase)
+      p = 2; m = 0; timeDim = 599;
+      ssGen = generateARmodel(p, m, false);
+      ssGen.T(1,:) = 0.5; %[0.5 0.3];
+      ssGen.Z(:,1) = [1; 1];
+      ssGen.H = diag([1 0]);
+
+      Y = generateData(ssGen, timeDim)';
+      aggY = Accumulator_test.aggregateY(Y(:, 2), 3, 'sum');
+      Y(:, 2) = nan;
+      Y(4:3:end, 2) = aggY(3:3:end-1);
+      
+      accum = Accumulator.GenerateRegular(Y, {'', 'avg'}, [1 3]);
+      ssA = accum.augmentStateSpace(ssGen);
+      
+      accumNot1 = accum;
+      accumNot1.calendar = [3; accumNot1.calendar(1:end-1)];
+      ssAnot1 = accumNot1.augmentStateSpace(ssGen);
+      
+      % Make sure we can run the filter
+      [~, ll] = ssAnot1.filter(Y');
+      testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
+      
+      % Test smoother
+      alpha = ssAnot1.smooth(Y);
+      testCase.verifyEqual(alpha(4:3:end,end), Y(4:3:end,2), 'AbsTol', 1e-10);
+      
+      % We can only test starting when we have enough high-frequency obs to aggregate
+      triangleAvg = filter([1 2 3 2 1], 1, alpha(:,1)) ./ 3;
+      testCase.verifyEqual(alpha(7:3:end,3), triangleAvg(7:3:end), 'AbsTol', 1e-10);
+    end
+    
 
     %% ThetaMap tests
     function testThetaMapAR(testCase)

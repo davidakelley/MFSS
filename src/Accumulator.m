@@ -277,7 +277,7 @@ classdef Accumulator < AbstractSystem
       cSpec = struct;
       ctypes = [ss.tau.c used.Calendar(:,used.Types == 0)];
       [~, iA_c, cSpec.newtau] = unique(ctypes, 'rows');
-      cSpec.cal = used.Calendar(sort(iA_c),:);
+      cSpec.cal = used.Calendar(iA_c,:);
       cSpec.oldtau = ss.tau.c(sort(iA_c));
       augSpec.c = cSpec;
       
@@ -287,7 +287,7 @@ classdef Accumulator < AbstractSystem
       Rspec = struct;
       Rtypes = [ss.tau.R used.Calendar(:,used.Types == 0)];
       [~, iA_R, Rspec.newtau] = unique(Rtypes, 'rows');
-      Rspec.cal = used.Calendar(sort(iA_R),:);
+      Rspec.cal = used.Calendar(iA_R,:);
       Rspec.oldtau = ss.tau.c(sort(iA_R));      
       augSpec.R = Rspec;
     end
@@ -658,6 +658,13 @@ classdef Accumulator < AbstractSystem
       
       % Create new system
       ss = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R);
+         
+      if ~isempty(ss.a0)
+        error('Unable to add lags of initial state.');
+      end
+      if ~isempty(ss.P0)
+        error('Unable to add lags of initial state.');
+      end
     end
     
     function newT = augmentParamT(T, aug)
@@ -735,22 +742,22 @@ classdef Accumulator < AbstractSystem
       
       Rslices = size(aug.R.oldtau, 1);
       newR = zeros(aug.m.final, nShocks, Rslices, class(R));
-      for jj = 1:Rslices
+      for iR = 1:Rslices
         
         % Get the part of R already defined
-        newR(1:aug.m.withLag, :, jj) = R(:, :, aug.R.oldtau(jj));
+        newR(1:aug.m.withLag, :, iR) = R(:, :, aug.R.oldtau(iR));
         
         for iAccum = 1:aug.nAccumulatorStates
           iState = aug.m.withLag + iAccum;
           
-          hiFreqRElements = R(aug.baseFreqState(iAccum), :, aug.R.oldtau(jj));
+          hiFreqRElements = R(aug.baseFreqState(iAccum), :, aug.R.oldtau(iR));
           
           if aug.accumulatorTypes(iAccum) == 1
             % Sum accumulator
-            newR(iState,:,jj) = hiFreqRElements;
+            newR(iState,:,iR) = hiFreqRElements;
           else
             % Average accumulator
-            newR(iState,:,jj) = (1/aug.R.cal(jj,iAccum)) * hiFreqRElements;
+            newR(iState,:,iR) = (1/aug.R.cal(iR,iAccum)) * hiFreqRElements;
           end
         end
       end
