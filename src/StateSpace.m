@@ -711,7 +711,7 @@ classdef StateSpace < AbstractStateSpace
           Kd(:,iP,iT) = Pdti * Zjj' ./ Fd(iP,iT);
           Kstar(:,iP,iT) = Pstarti * Zjj' ./ Fstar(iP,iT);
           
-          if Fd(iP,iT) ~= 0
+          if abs(Fd(iP,iT)) > eps
             % F diffuse nonsingular
             ati = ati + Kd(:,iP,iT) * v(iP,iT);
             

@@ -128,7 +128,7 @@ _filter filter_uni_mex(mat y, mat x, cube Z, mat d, cube beta, cube H, cube T, m
       // Kstar(:,jj,ii) = Pstarti * Zjj'
       Kstar.slice(ii-1).col(jj) = Pstarti * trans(Zjj) / Fstar(jj,ii-1); 
       
-      if (Fd(jj, ii-1) != 0) {
+      if (abs(Fd(jj, ii-1)) > std::numeric_limits<double>::epsilon()) {
         // F diffuse nonsingular
         // ati = ati + Kd(:,jj,ii) ./ Fd(jj,ii) * v(jj,ii)
         ati = ati + Kd.slice(ii-1).col(jj) * v(jj,ii-1);
