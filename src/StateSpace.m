@@ -497,32 +497,22 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [V, J, D] = getErrorVariances(obj, fOutNew, sOut, factorC)
+    function [V, J] = getErrorVariances(obj, y, fOut, sOut)
       % Get the smoothed state variance and covariance matricies
       % Produces V = Var(alpha | Y_n) and J = Cov(alpha_{t+1}, alpha_t | Y_n)
-      % and D = Var(epsilon_t | Y_n)
+      
+      components = obj.build_smoother_weight_parts(y, fOut);
       
       I = eye(obj.m);
-      Hinv = nan(obj.p, obj.p, size(obj.H, 3));
-      for iH = 1:size(obj.H, 3)
-        Hinv(:,:,iH) = AbstractSystem.pseudoinv(obj.H(:,:,iH), 1e-12);
-      end
-      
       V = nan(obj.m, obj.m, obj.n);
       J = nan(obj.m, obj.m, obj.n);
-      D = nan(obj.p, obj.p, obj.n);
       for iT = obj.n:-1:1
-        iP = fOutNew.P(:,:,iT);
-        iC = factorC(:,:,obj.tau.H(iT));
-        
-        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;
-        
-        L = obj.T(:,:,obj.tau.T(iT)) - fOutNew.K(:,:,iT) * obj.Z(:,:,obj.tau.Z(iT));
-        J(:,:,iT) = iP * L' * (I - sOut.N(:,:,iT+1) * fOutNew.P(:,:,iT+1));
-        
-        % TODO: Can we do this without the F inverses or Ks?
-        D(:,:,iT) = iC' * (fOutNew.Finv(:,:,iT) + ...
-          fOutNew.K(:,:,iT)' * sOut.N(:,:,iT) * fOutNew.K(:,:,iT)) * iC;
+        iP = fOut.P(:,:,iT);
+        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;   
+        % FIXME: fOut.K is wrong (ignoring any diffuse issues)
+        %   L = obj.T(:,:,obj.tau.T(iT)) - fOut.K(:,:,iT) * obj.Z(:,:,obj.tau.Z(iT));
+        L = components.Ldagger(:,:,iT);
+        J(:,:,iT) = iP * L' * (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
       end
     end
     
