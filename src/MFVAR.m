@@ -14,6 +14,7 @@ classdef MFVAR
     verbose = true;
     
     tol = 1e-7;
+    maxIter = 10000;
   end
   
   properties (Hidden)
@@ -28,8 +29,9 @@ classdef MFVAR
       inP.addParameter('accumulator', []);
       inP.addParameter('dataR', []);
       
-      obj.Y = data(lags+1:end,:);
-      obj.presample = data(1:lags,:);
+      obj.Y = data;
+%       obj.Y = data(lags+1:end,:);
+%       obj.presample = data(1:lags,:);
       
       obj.nLags = lags;
       obj.accumulator = accumulator;
@@ -61,7 +63,7 @@ classdef MFVAR
       iter = 0;
       logli0 = -Inf;
       improvement = -Inf;
-      while abs(improvement) > obj.tol
+      while abs(improvement) > obj.tol && iter < obj.maxIter
         % E-step: Get state conditional on parameters
         [alpha, logli, V, J] = obj.stateEstimate(params);
         
@@ -111,7 +113,7 @@ classdef MFVAR
       end
     end
     
-    function ss = params2system(obj, params)
+    function ssA = params2system(obj, params)
       % Convert VAR parameters into state space object.
       
       Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
@@ -122,8 +124,11 @@ classdef MFVAR
       Q = params.sigma;
       
       ss = StateSpace(Z, H, T, Q, 'c', c, 'R', R);
-      ss.a0 = zeros(size(c));
-      ss.P0 = 10 * eye(size(T));
+      
+      ssA = obj.accumulator.augmentStateSpace(ss);
+      
+      ssA.a0 = zeros(size(ssA.c, 1), 1);
+      ssA.P0 = 10 * eye(size(ssA.T, 1));
     end
     
     function params = estimateOLS_VJ(obj, alpha, V, J)
