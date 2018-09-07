@@ -270,6 +270,12 @@ classdef StateSpaceEstimation < AbstractStateSpace
                   else
                     rethrow(ex);
                   end
+                case 'optim:barrier:DerivUndefAtX0'
+                  if iter == 1
+                    rethrow(ex);
+                  else
+                    warning('Unable to evaluate derivative. Optimization cannot continue.')
+                  end
                 otherwise
                   rethrow(ex);
               end

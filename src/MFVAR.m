@@ -30,8 +30,6 @@ classdef MFVAR
       inP.addParameter('dataR', []);
       
       obj.Y = data;
-%       obj.Y = data(lags+1:end,:);
-%       obj.presample = data(1:lags,:);
       
       obj.nLags = lags;
       obj.accumulator = accumulator;
@@ -76,7 +74,8 @@ classdef MFVAR
         iter = iter + 1;
 
         if improvement < 0
-          % error('EM algorithm did not improve likelihood.');
+          warning('EM algorithm did not improve likelihood.');
+          break
         end
         
         if obj.verbose

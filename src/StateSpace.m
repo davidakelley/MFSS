@@ -270,6 +270,30 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
+    function irf = impulseState(obj, nPeriods)
+      % Impulse response functions for the states to a one standard deviation shock
+      
+      if ~isscalar(nPeriods)
+        irfTau = nPeriods;
+      else
+        irfTau = 1:nPeriods;
+      end
+      
+      eyeMat = eye(obj.g);
+      if obj.timeInvariant
+        obj.n = nPeriods;
+        obj = obj.setInvariantTau();
+      end
+      
+      irf = nan(obj.m, nPeriods, obj.g);
+      for iShock = 1:obj.g
+        irf(:,1,iShock) = obj.R(:,:,obj.tau.R(irfTau(1))) * eyeMat(:,iShock);
+        for iPeriod = 2:nPeriods
+          irf(:,iPeriod,iShock) = obj.T(:,:,obj.tau.T(irfTau(iPeriod))) * irf(:,iPeriod-1,iShock);
+        end
+      end
+    end
+    
     %% Utilties
     function obj = setDefaultInitial(obj)
       % Set default a0 and P0.
@@ -509,10 +533,8 @@ classdef StateSpace < AbstractStateSpace
       for iT = obj.n:-1:1
         iP = fOut.P(:,:,iT);
         V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;   
-        % FIXME: fOut.K is wrong (ignoring any diffuse issues)
-        %   L = obj.T(:,:,obj.tau.T(iT)) - fOut.K(:,:,iT) * obj.Z(:,:,obj.tau.Z(iT));
-        L = components.Ldagger(:,:,iT);
-        J(:,:,iT) = iP * L' * (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
+        J(:,:,iT) = iP * components.Ldagger(:,:,iT)' * ...
+          (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
       end
     end
     
