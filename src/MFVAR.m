@@ -11,6 +11,7 @@ classdef MFVAR
     accumulator
     
     nLags
+    constant = true;
     verbose = true;
     
     tol = 1e-7;
@@ -24,10 +25,6 @@ classdef MFVAR
   methods
     
     function obj = MFVAR(data, lags, accumulator)
-      
-      inP = inputParser();
-      inP.addParameter('accumulator', []);
-      inP.addParameter('dataR', []);
       
       obj.Y = data;
       
@@ -157,6 +154,7 @@ classdef MFVAR
       
       OLS = yxT/xxT;
       Sigma = (yyT-OLS*yxT') ./ (size(alpha,1) - 1); % FIXME: -1? obj.nLags?
+      Sigma = (Sigma + Sigma') ./ 2;
       
       params = struct('phi', OLS(:, 1:obj.p*obj.nLags), 'cons', OLS(:,end), ...
         'sigma', Sigma);
