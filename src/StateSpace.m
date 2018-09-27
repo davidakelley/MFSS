@@ -41,8 +41,9 @@ classdef StateSpace < AbstractStateSpace
       %     Q (matrix): State error covariances
       % Optional args: 
       %     d (matrix): Observation constants
-      %     beta (matrix): Exogenous series loadings
+      %     beta (matrix): Exogenous measurement series loadings
       %     c (matrix): State constants
+      %     gamma (matrix): Exogenous state series loadings
       %     R (matrix): Error selection
       %
       % Returns:
@@ -52,6 +53,7 @@ classdef StateSpace < AbstractStateSpace
       inP.addParameter('d', []); 
       inP.addParameter('beta', []);
       inP.addParameter('c', []);
+      inP.addParameter('gamma', []);
       inP.addParameter('R', []);
       % inP.addParameter('a0', []);
       % inP.addParameter('P0', []);
@@ -61,7 +63,7 @@ classdef StateSpace < AbstractStateSpace
       if nargin == 0
         superArgs = {};
       else
-        superArgs = {Z, parsed.d, parsed.beta, H, T, parsed.c, parsed.R, Q};
+        superArgs = {Z, parsed.d, parsed.beta, H, T, parsed.c, parsed.gamma, parsed.R, Q};
       end
       obj = obj@AbstractStateSpace(superArgs{:});
       if nargin == 0
@@ -73,11 +75,13 @@ classdef StateSpace < AbstractStateSpace
   
   methods
     %% State estimation methods
-    function [a, logli, filterOut] = filter(obj, y, x)
+    function [a, logli, filterOut] = filter(obj, y, x, w)
       % Estimate the filtered state
       %
       % Arguments:
       %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
       %
       % Returns:
       %     a (double) : filtered state (m x [T+1])
@@ -90,25 +94,28 @@ classdef StateSpace < AbstractStateSpace
       if nargin < 3
         x = [];
       end
+      if nargin < 4
+        w = [];
+      end
       
-      [obj, yCheck, xCheck] = obj.prepareFilter(y, x);
+      [obj, yCheck, xCheck, wCheck] = obj.prepareFilter(y, x, w);
       
       assert(~any(obj.H(1:obj.p+1:end) < 0), 'Negative error variance.');
       
       % Call the filter
       if obj.useMex
-        [a, logli, filterOut] = obj.filter_mex(yCheck, xCheck);
+        [a, logli, filterOut] = obj.filter_mex(yCheck, xCheck, wCheck);
       else
-        [a, logli, filterOut] = obj.filter_m(yCheck, xCheck);
+        [a, logli, filterOut] = obj.filter_m(yCheck, xCheck, wCheck);
       end
       
       if ~all(size(y) == size(yCheck))
-        % Time in the first dimension
+        % The data were transposed prior to running the filter, make a match shape
         a = a';
       end
     end
     
-    function [alpha, smootherOut, filterOut] = smooth(obj, y, x)
+    function [alpha, smootherOut, filterOut] = smooth(obj, y, x, w)
       % SMOOTH Estimate the smoothed state
       %
       % alpha = StateSpace.SMOOTH(y) returns the smoothed state given the data y.
@@ -120,11 +127,14 @@ classdef StateSpace < AbstractStateSpace
       if nargin < 3
         x = [];
       end
+      if nargin < 4
+        w = [];
+      end
       
-      [obj, yCheck, xCheck] = obj.prepareFilter(y, x);
+      [obj, yCheck, xCheck, wCheck] = obj.prepareFilter(y, x, w);
       
       % Get the filtered estimates for use in the smoother
-      [~, logli, filterOut] = obj.filter(yCheck, xCheck);
+      [~, logli, filterOut] = obj.filter(yCheck, xCheck, wCheck);
       
       % Determine which version of the smoother to run
       if obj.useMex
@@ -134,32 +144,33 @@ classdef StateSpace < AbstractStateSpace
       end
       
       if ~all(size(y) == size(yCheck))
-        % Time in the first dimension
+        % The data were transposed prior to running the smoother, make alpha match shape
         alpha = alpha';
       end
       smootherOut.logli = logli;
     end
     
-    function [logli, gradient, fOut] = gradient(obj, y, x, tm, theta)
+    function [logli, gradient, fOut] = gradient(obj, y, x, w, tm, theta)
       % Returns the likelihood and the change in the likelihood given the
       % change in any system parameters that are currently set to nans.
       
       % Handle inputs
       assert(isa(tm, 'ThetaMap'), 'tm must be a ThetaMap.');
-      if nargin < 5 || isempty(theta)
+      if nargin < 6 || isempty(theta)
         theta = tm.system2theta(obj);
       end
       assert(all(size(theta) == [tm.nTheta 1]), ...
         'theta must be a nTheta x 1 vector.');
       
       if obj.useParallel
-        [logli, gradient, fOut] = obj.gradientFiniteDifferences_parallel(y, x, tm, theta);
+        [logli, gradient, fOut] = obj.gradientFiniteDifferences_parallel(y, x, w, tm, theta);
       else
-        [logli, gradient, fOut] = obj.gradientFiniteDifferences(y, x, tm, theta);
+        [logli, gradient, fOut] = obj.gradientFiniteDifferences(y, x, w, tm, theta);
       end
     end
     
-    function [dataContrib, paramContrib, exogContrib, weights] = decompose_filtered(obj, y, x)
+    function [dataContr, paramContr, exogMContr, exogSContr, weights] = ...
+        decompose_filtered(obj, y, x, w)
       % Decompose the smoothed states by data contributions
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
@@ -167,55 +178,65 @@ classdef StateSpace < AbstractStateSpace
       if nargin < 3
         x = [];
       end
-      [obj, y, x] = obj.checkSample(y, x);
+      if nargin < 4
+        w = [];
+      end
+      [obj, y, x, w] = obj.checkSample(y, x, w);
       
       % Get quantities from filter
-      [~, ~, fOut] = obj.filter(y, x);
+      [~, ~, fOut] = obj.filter(y, x, w);
 
       % Transform to the univariate form of the state space
       obj.validateKFilter();
-      obj = obj.checkSample(y, x);
+      obj = obj.checkSample(y, x, w);
       ssMulti = obj;
-      [obj, ~, ~, C] = obj.prepareFilter(y, x);
+      [obj, ~, ~, ~, C] = obj.prepareFilter(y, x, w);
       
       % Compute recursion
-      weights = obj.filter_weights(y, x, fOut, ssMulti, C);
+      weights = obj.filter_weights(y, x, w, fOut, ssMulti, C);
       
       % Weights are ordered (state, observation, effect, origin) so we need to collapse 
       % the 4th dimension for the data and the 2nd and 4th dimensions for the parameters. 
       
       % sum(weights.y,4);
-      dataContrib = zeros(obj.m, obj.p, obj.n+1);
-      paramContrib = zeros(obj.m, obj.n+1);
-      exogContrib = zeros(obj.m, obj.k, obj.n+1);
+      dataContr = zeros(obj.m, obj.p, obj.n+1);
+      paramContr = zeros(obj.m, obj.n+1);
+      exogMContr = zeros(obj.m, obj.k, obj.n+1);
+      exogSContr = zeros(obj.m, obj.l, obj.n+1);
       for iT = 1:obj.n+1
         if any(~cellfun(@isempty, weights.y(iT,:)))
-          dataContrib(:,:,iT) = sum(cat(3, ...
+          dataContr(:,:,iT) = sum(cat(3, ...
             weights.y{iT, ~cellfun(@isempty, weights.y(iT,:))}), 3);
         end
         
         if any(~cellfun(@isempty, weights.d(iT,:)))
-          paramContrib(:,iT) = ...
+          paramContr(:,iT) = ...
             sum(sum(cat(3, weights.d{iT, ~cellfun(@isempty, weights.d(iT,:))}), 3), 2);
         end
         
-        if any(~cellfun(@isempty, weights.x(iT,:)))
-          exogContrib(:,:,iT) = sum(cat(3, ...
-            weights.x{iT, ~cellfun(@isempty, weights.x(iT,:))}), 3);
-        end
-        
         if any(~cellfun(@isempty, weights.c(iT,:)))
-          paramContrib(:,iT) = paramContrib(:,iT) + ...
+          paramContr(:,iT) = paramContr(:,iT) + ...
             sum(sum(cat(3, weights.c{iT, ~cellfun(@isempty, weights.c(iT,:))}), 3), 2);
         end
         
         if ~isempty(weights.a0{iT})
-          paramContrib(:,iT) = paramContrib(:,iT) + sum(weights.a0{iT}, 2);
+          paramContr(:,iT) = paramContr(:,iT) + sum(weights.a0{iT}, 2);
+        end
+        
+        if any(~cellfun(@isempty, weights.x(iT,:)))
+          exogMContr(:,:,iT) = sum(cat(3, ...
+            weights.x{iT, ~cellfun(@isempty, weights.x(iT,:))}), 3);
+        end
+        
+        if any(~cellfun(@isempty, weights.w(iT,:)))
+          exogSContr(:,:,iT) = sum(cat(3, ...
+            weights.w{iT, ~cellfun(@isempty, weights.w(iT,:))}), 3);
         end
       end
     end
     
-    function [dataContrib, paramContrib, exogContrib, weights] = decompose_smoothed(obj, y, x)
+    function [dataContr, paramContr, exogMContr, exogSContr, weights] = ...
+        decompose_smoothed(obj, y, x, w)
       % Decompose the smoothed states by data contributions
       %
       % Output ordered by (state, observation, effectPeriod, contributingPeriod)
@@ -223,50 +244,58 @@ classdef StateSpace < AbstractStateSpace
       if nargin < 3
         x = [];
       end
-      [obj, y, x] = obj.checkSample(y, x);
+      if nargin < 4
+        w = [];
+      end
+      [obj, y, x, w] = obj.checkSample(y, x, w);
 
       % Get output from the filter
-      [~, ~, fOut] = obj.filter(y, x);
+      [~, ~, fOut] = obj.filter(y, x, w);
 
       % Transform to the univariate form of the state space
       obj.validateKFilter();
-      obj = obj.checkSample(y, x);
+      obj = obj.checkSample(y, x, w);
       ssMulti = obj;
-      [obj, ~, ~, C] = obj.prepareFilter(y, x);
+      [obj, ~, ~, ~, C] = obj.prepareFilter(y, x, w);
       
-      weights = obj.smoother_weights(y, x, fOut, ssMulti, C);
+      weights = obj.smoother_weights(y, x, w, fOut, ssMulti, C);
       
       % Weights come out ordered (state, observation, effect, origin) so we need
       % to collapse the 4th dimension for the data and the 2nd and 4th
       % dimensions for the parameters. 
-      dataContrib = zeros(obj.m, obj.p, obj.n);
-      paramContrib = zeros(obj.m, obj.n);
-      exogContrib = zeros(obj.m, obj.k, obj.n);
+      dataContr = zeros(obj.m, obj.p, obj.n);
+      paramContr = zeros(obj.m, obj.n);
+      exogMContr = zeros(obj.m, obj.k, obj.n);
+      exogSContr = zeros(obj.m, obj.l, obj.n);
       for iT = 1:obj.n
         if any(~cellfun(@isempty, weights.y(iT,:)))
-          dataContrib(:,:,iT) = sum(cat(3, ...
+          dataContr(:,:,iT) = sum(cat(3, ...
             weights.y{iT, ~cellfun(@isempty, weights.y(iT,:))}), 3);
         end
         
         if any(~cellfun(@isempty, weights.d(iT,:)))
-          paramContrib(:,iT) = ...
+          paramContr(:,iT) = ...
             sum(sum(cat(3, weights.d{iT, ~cellfun(@isempty, weights.d(iT,:))}), 3), 2);
         end
         
         if any(~cellfun(@isempty, weights.c(iT,:)))
-          paramContrib(:,iT) = paramContrib(:,iT) + ...
+          paramContr(:,iT) = paramContr(:,iT) + ...
             sum(sum(cat(3, weights.c{iT, ~cellfun(@isempty, weights.c(iT,:))}), 3), 2);
         end
         
         if ~isempty(weights.a0{iT})
-          paramContrib(:,iT) = paramContrib(:,iT) + sum(weights.a0{iT}, 2);
+          paramContr(:,iT) = paramContr(:,iT) + sum(weights.a0{iT}, 2);
         end
         
         if any(~cellfun(@isempty, weights.x(iT,:)))
-          exogContrib(:,:,iT) = sum(cat(3, ...
+          exogMContr(:,:,iT) = sum(cat(3, ...
             weights.x{iT, ~cellfun(@isempty, weights.x(iT,:))}), 3);
         end
-        
+                
+        if any(~cellfun(@isempty, weights.w(iT,:)))
+          exogSContr(:,:,iT) = sum(cat(3, ...
+            weights.w{iT, ~cellfun(@isempty, weights.w(iT,:))}), 3);
+        end
       end
     end
     
@@ -289,7 +318,8 @@ classdef StateSpace < AbstractStateSpace
       for iShock = 1:obj.g
         irf(:,1,iShock) = obj.R(:,:,obj.tau.R(irfTau(1))) * eyeMat(:,iShock);
         for iPeriod = 2:nPeriods
-          irf(:,iPeriod,iShock) = obj.T(:,:,obj.tau.T(irfTau(iPeriod))) * irf(:,iPeriod-1,iShock);
+          irf(:,iPeriod,iShock) = obj.T(:,:,obj.tau.T(irfTau(iPeriod))) * ...
+            irf(:,iPeriod-1,iShock);
         end
       end
     end
@@ -358,10 +388,10 @@ classdef StateSpace < AbstractStateSpace
   
   methods
     %% Filter/smoother Helper Methods
-    function [obj, y, x, factorC, oldTau] = prepareFilter(obj, y, x)
+    function [obj, y, x, w, factorC, oldTau] = prepareFilter(obj, y, x, w)
       % Make sure data matches observation dimensions
       obj.validateKFilter();
-      [obj, y, x] = obj.checkSample(y, x);
+      [obj, y, x, w] = obj.checkSample(y, x, w);
       
       % Set initial values
       obj = obj.setDefaultInitial();
@@ -461,9 +491,10 @@ classdef StateSpace < AbstractStateSpace
       end
       newbeta = struct('betat', newbetamat, 'taubeta', newTaubeta);
       
-      [~, ~, T, Q, ~, ~, c, R] = obj.getInputParameters();
+      [~, ~, T, Q, ~, ~, c, gamma, R] = obj.getInputParameters();
       
-      ssUni = StateSpace(newZ, newH, T, Q, 'd', newd, 'beta', newbeta, 'c', c, 'R', R);
+      ssUni = StateSpace(newZ, newH, T, Q, ...
+        'd', newd, 'beta', newbeta, 'c', c, 'gamma', gamma, 'R', R);
       
       % Set initial values
       ssUni.a0 = obj.a0;
@@ -476,7 +507,7 @@ classdef StateSpace < AbstractStateSpace
         'obsPattern', obsPatternH);
     end
     
-    function [obsErr, stateErr] = getErrors(obj, y, state, a0)
+    function [obsErr, stateErr] = getErrors(obj, y, x, w, state, a0)
       % Get the errors epsilon & eta given an estimate of the state
       % Either the filtered or smoothed estimates can be calculated by passing
       % either the filtered state (a) or smoothed state (alphaHat).
@@ -497,7 +528,9 @@ classdef StateSpace < AbstractStateSpace
       obsErr = nan(obj.p, obj.n);
       for iT = 1:obj.n
         obsErr(:,iT) = y(:,iT) - ...
-          obj.Z(:,:,obj.tau.Z(iT)) * state(:,iT) - obj.d(:,obj.tau.d(iT));
+          obj.Z(:,:,obj.tau.Z(iT)) * state(:,iT) - ...
+          obj.d(:,obj.tau.d(iT)) - ...
+          obj.beta(:,:,obj.tau.beta(iT)) * x(:,iT);
       end
       
       % Potentially return early
@@ -517,7 +550,9 @@ classdef StateSpace < AbstractStateSpace
         obj.T(:,:,obj.tau.T(1)) * a0 - obj.c(:,obj.tau.c(1)));
       for iT = 2:obj.n
         stateErr(:,iT) = Rbar(:,:,obj.tau.R(iT)) * (state(:,iT) - ...
-          obj.T(:,:,obj.tau.T(iT)) * state(:,iT-1) - obj.c(:,obj.tau.c(iT)));
+          obj.T(:,:,obj.tau.T(iT)) * state(:,iT-1) - ...
+          obj.c(:,obj.tau.c(iT))) - ...
+          obj.gamma(:,:,obj.tau.gamma(iT)) * w(:,iT);
       end
     end
     
@@ -538,9 +573,9 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function [ll, grad, fOut] = gradientFiniteDifferences(obj, y, x, tm, theta)
+    function [ll, grad, fOut] = gradientFiniteDifferences(obj, y, x, w, tm, theta)
       % Compute numeric gradient using central differences
-      [~, ll, fOut] = obj.filter(y, x);
+      [~, ll, fOut] = obj.filter(y, x, w);
       
       nTheta = tm.nTheta;
       grad = nan(nTheta, 1);
@@ -550,22 +585,22 @@ classdef StateSpace < AbstractStateSpace
         try
           thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
           ssDown = tm.theta2system(thetaDown);
-          [~, llDown] = ssDown.filter(y, x);
+          [~, llDown] = ssDown.filter(y, x, w);
           
           thetaUp = theta + [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
           ssUp = tm.theta2system(thetaUp);
-          [~, llUp] = ssUp.filter(y, x);
+          [~, llUp] = ssUp.filter(y, x, w);
           
           if obj.numericGradPrec == 1
             grad(iTheta) = (llUp - llDown) ./ (2 * stepSize);
           else
             thetaDown2 = theta - [zeros(iTheta-1,1); 2 * stepSize; zeros(nTheta-iTheta,1)];
             ssDown2 = tm.theta2system(thetaDown2);
-            [~, llDown2] = ssDown2.filter(y, x);
+            [~, llDown2] = ssDown2.filter(y, x, w);
             
             thetaUp2 = theta + [zeros(iTheta-1,1); 2 * stepSize; zeros(nTheta-iTheta,1)];
             ssUp2 = tm.theta2system(thetaUp2);
-            [~, llUp2] = ssUp2.filter(y, x);
+            [~, llUp2] = ssUp2.filter(y, x, w);
             
             grad(iTheta) = (llDown2 - 8 * llDown + 8 * llUp - llUp2) ./ (12 * stepSize);
           end
@@ -582,9 +617,9 @@ classdef StateSpace < AbstractStateSpace
       grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
     end
     
-    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, x, tm, theta)
+    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, x, w, tm, theta)
       % Compute numeric gradient using central differences
-      [~, ll, fOut] = obj.filter(y, x);
+      [~, ll, fOut] = obj.filter(y, x, w);
       
       nTheta = tm.nTheta;
       
@@ -600,11 +635,11 @@ classdef StateSpace < AbstractStateSpace
       parfor iTheta = 1:nTheta
         thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
         ssDown = tm.theta2system(thetaDown); %#ok<PFBNS>
-        [~, llDown] = ssDown.filter(y, x);
+        [~, llDown] = ssDown.filter(y, x, w);
         
         thetaUp = theta + [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
         ssUp = tm.theta2system(thetaUp);
-        [~, llUp] = ssUp.filter(y, x);
+        [~, llUp] = ssUp.filter(y, x, w);
         
         grad(iTheta) = (llUp - llDown) ./ (2 * stepSize);
       end
@@ -632,7 +667,7 @@ classdef StateSpace < AbstractStateSpace
         'Likely development error.']);
     end
     
-    function [Z, H, T, Q, d, beta, c, R] = getInputParameters(obj)
+    function [Z, H, T, Q, d, beta, c, gamma, R] = getInputParameters(obj)
       % Get parameters to input to constructor
       
       if ~isempty(obj.tau)
@@ -643,15 +678,18 @@ classdef StateSpace < AbstractStateSpace
         
         T = struct('Tt', obj.T, 'tauT', obj.tau.T);
         c = struct('ct', obj.c, 'tauc', obj.tau.c);
+        gamma = struct('gammat', obj.gamma, 'taugamma', obj.tau.gamma);
         R = struct('Rt', obj.R, 'tauR', obj.tau.R);
         Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
       else
         Z = obj.Z;
         d = obj.d;
+        beta = obj.beta;
         H = obj.H;
         
         T = obj.T;
         c = obj.c;
+        gamma = obj.gamma;
         R = obj.R;
         Q = obj.Q;
       end
@@ -660,7 +698,7 @@ classdef StateSpace < AbstractStateSpace
   
   methods (Hidden)
     %% Filter/smoother/gradient mathematical methods
-    function [a, logli, filterOut] = filter_m(obj, y, x)
+    function [a, logli, filterOut] = filter_m(obj, y, x, w)
       % Filter using exact initial conditions
       %
       % Note that the quantities v, F and K are those that come from the
@@ -747,7 +785,8 @@ classdef StateSpace < AbstractStateSpace
         end
         
         Tii = obj.T(:,:,obj.tau.T(iT+1));
-        a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1));
+        a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1)) + ...
+          obj.gamma(:,:,obj.tau.gamma(iT+1)) * w(:,iT+1);
         
         Pd(:,:,iT+1)  = Tii * Pdti * Tii';
         Pstar(:,:,iT+1) = Tii * Pstarti * Tii' + ...
@@ -782,7 +821,8 @@ classdef StateSpace < AbstractStateSpace
         
         Tii = obj.T(:,:,obj.tau.T(iT+1));
         
-        a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1));
+        a(:,iT+1) = Tii * ati + obj.c(:,obj.tau.c(iT+1)) + ...
+          obj.gamma(:,:,obj.tau.gamma(iT+1)) * w(:,iT+1);
         P(:,:,iT+1) = AbstractSystem.enforceSymmetric(Tii * Pti * Tii' + ...
           obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))');
       end
@@ -795,7 +835,7 @@ classdef StateSpace < AbstractStateSpace
         'K', K, 'Kd', Kd, 'dt', dt);
     end
     
-    function [a, logli, filterOut] = filter_mex(obj, y, x)
+    function [a, logli, filterOut] = filter_mex(obj, y, x, w)
       % Call mex function filter_uni
       
       if isempty(obj.beta)
@@ -805,7 +845,7 @@ classdef StateSpace < AbstractStateSpace
       end
       
       ssStruct = struct('Z', obj.Z, 'd', obj.d, 'beta', obj.beta, 'H', obj.H, ...
-        'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
+        'T', obj.T, 'c', obj.c, 'gamma', obj.gamma, 'R', obj.R, 'Q', obj.Q, ...
         'a0', obj.a0, 'A0', obj.A0, 'R0', obj.R0, 'Q0', obj.Q0, ...
         'tau', obj.tau);
       if isempty(ssStruct.R0)
@@ -816,7 +856,7 @@ classdef StateSpace < AbstractStateSpace
         ssStruct.A0 = zeros(obj.m, 1);
       end
       
-      [a, logli, P, Pd, v, F, Fd, K, Kd, dt] = mfss_mex.filter_uni(y, x, ssStruct);
+      [a, logli, P, Pd, v, F, Fd, K, Kd, dt] = mfss_mex.filter_uni(y, x, w, ssStruct);
       filterOut = struct('a', a, 'P', P, 'Pd', Pd, 'v', v, 'F', F, 'Fd', Fd, ...
         'K', K, 'Kd', Kd, 'dt', dt);
     end
@@ -936,8 +976,8 @@ classdef StateSpace < AbstractStateSpace
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
       % Smoother mex mathematical function
       
-      ssStruct = struct('Z', obj.Z, 'd', obj.d, 'H', obj.H, ...
-        'T', obj.T, 'c', obj.c, 'R', obj.R, 'Q', obj.Q, ...
+      ssStruct = struct('Z', obj.Z, 'H', obj.H, ...
+        'T', obj.T, 'R', obj.R, 'Q', obj.Q, ...
         'a0', obj.a0, 'A0', obj.A0, 'R0', obj.R0, 'Q0', obj.Q0, ...
         'tau', obj.tau);
       if isempty(ssStruct.R0)
@@ -954,7 +994,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     %% Decomposition mathematical methods
-    function fWeights = filter_weights(obj, y, x, fOut, ssMulti, C)
+    function fWeights = filter_weights(obj, y, x, w, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
       % The outputs of this function should satisfy
@@ -980,6 +1020,7 @@ classdef StateSpace < AbstractStateSpace
       omegac = cell(obj.n+1, obj.n+1);
       omegad = cell(obj.n+1, obj.n);
       omegax = cell(obj.n+1, obj.n);
+      omegaw = cell(obj.n+1, obj.n+1);
       omegaa0 = cell(obj.n+1, 1);
 
       Im = eye(obj.m);
@@ -1046,10 +1087,16 @@ classdef StateSpace < AbstractStateSpace
         if any(any(abs(omegac_temp) > eps2))
           omegac{iJ,iJ} = omegac_temp;
         end
+        
+        omegaw_temp = obj.gamma(:,:,obj.tau.gamma(iJ)) * diag(w(:,iJ));
+        if any(any(abs(omegaw_temp) > eps2))
+          omegaw{iJ,iJ} = omegaw_temp;
+        end
       end
       % Get the effect on the T+1 period filtered state
       omegac{obj.n+1,obj.n+1} = diag(obj.c(:,obj.tau.c(obj.n+1)));
-      
+      omegaw{obj.n+1,obj.n+1} = obj.gamma(:,:,obj.tau.gamma(obj.n+1)) * diag(w(:,obj.n+1)); 
+            
       % Propogate effect forward to other time periods of states
       for iJ = 1:obj.n
         % c (part 1)
@@ -1102,6 +1149,17 @@ classdef StateSpace < AbstractStateSpace
         end
       end
       
+      % w
+      for iT = iJ+1:obj.n
+        if ~isempty(omegaw{iT,iJ})
+          omegaw_temp = Lstar(:,:,iT+1) * omegaw{iT,iJ};
+          if all(abs(omegaw_temp) < eps2)
+            break
+          end
+          omegaw{iT+1,iJ} = omegaw_temp;
+        end
+      end
+      
       % Determine effect of initial conditions
       omegaa0{1} = obj.T(:,:,obj.tau.T(1)) * diag(obj.a0);
       for iT = 2:obj.n+1
@@ -1113,10 +1171,10 @@ classdef StateSpace < AbstractStateSpace
       end
       
       fWeights = struct('y', {omega}, 'd', {omegad}, 'x', {omegax}, ...
-        'c', {omegac}, 'a0', {omegaa0});
+        'c', {omegac}, 'w', {omegaw}, 'a0', {omegaa0});
     end
     
-    function sWeights = smoother_weights(obj, y, x, fOut, ssMulti, C)
+    function sWeights = smoother_weights(obj, y, x, w, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
       % The outputs of this function should satisfy
@@ -1137,7 +1195,7 @@ classdef StateSpace < AbstractStateSpace
       %           (state, effectPeriod)
       
       % Filter weights (a_t)
-      fWeight = obj.filter_weights(y, x, fOut, ssMulti, C);
+      fWeight = obj.filter_weights(y, x, w, fOut, ssMulti, C);
       [rWeight, r1Weight] = obj.r_weights(y, x, fOut, fWeight, ssMulti, C);
       
       % Calculate smoothed state weights
@@ -1145,11 +1203,13 @@ classdef StateSpace < AbstractStateSpace
       omegac = cell(obj.n+1, obj.n+1);
       omegad = cell(obj.n+1, obj.n);
       omegax = cell(obj.n+1, obj.n);
+      omegaw = cell(obj.n+1, obj.n+1);
       omegaa0 = cell(obj.n+1, 1);
       
       zeroMP = zeros(obj.m, obj.p);
       zeroMK = zeros(obj.m, obj.k);
       zeroMM = zeros(obj.m, obj.m);
+      zeroML = zeros(obj.m, obj.l);
       
       % Diffuse filter
       for iT = 1:fOut.dt
@@ -1225,6 +1285,24 @@ classdef StateSpace < AbstractStateSpace
             temp_r1c = zeroMM;
           end
           omegac{iT,iJ} = temp_yc + temp_r0c + temp_r1c;
+          
+          % omegaw
+          if ~isempty(fWeight.w{iT,iJ})
+            temp_yw = fWeight.w{iT,iJ};
+          else
+            temp_yw = zeroML;            
+          end
+          if ~isempty(rWeight.w{iT,iJ}) 
+            temp_r0w = fOut.P(:,:,iT) * rWeight.w{iT,iJ};
+          else
+            temp_r0w = zeroML;
+          end
+          if ~isempty(r1Weight.w{iT,iJ})
+            temp_r1w = fOut.Pd(:,:,iT) * r1Weight.w{iT,iJ};
+          else
+            temp_r1w = zeroML;
+          end
+          omegaw{iT,iJ} = temp_yw + temp_r0w + temp_r1w;
         end
         
         % omegaa0
@@ -1280,6 +1358,14 @@ classdef StateSpace < AbstractStateSpace
           elseif ~isempty(rWeight.c{iT,iJ})
             omegac{iT,iJ} = fOut.P(:,:,iT) * rWeight.c{iT,iJ};
           end
+                    
+          if ~isempty(fWeight.w{iT,iJ}) && ~isempty(rWeight.w{iT,iJ})
+            omegaw{iT,iJ} = fWeight.w{iT,iJ} + fOut.P(:,:,iT) * rWeight.w{iT,iJ};
+          elseif ~isempty(fWeight.w{iT,iJ}) 
+            omegaw{iT,iJ} = fWeight.w{iT,iJ};
+          elseif ~isempty(rWeight.w{iT,iJ})
+            omegaw{iT,iJ} = fOut.P(:,:,iT) * rWeight.w{iT,iJ};
+          end
           
         end
         
@@ -1293,7 +1379,7 @@ classdef StateSpace < AbstractStateSpace
       end
       
       sWeights = struct('y', {omega}, 'd', {omegad}, 'x', {omegax}, ...
-        'c', {omegac}, 'a0', {omegaa0});
+        'c', {omegac}, 'w', {omegaw}, 'a0', {omegaa0});
     end
     
     function [r, r1] = r_weights(obj, y, x, fOut, fWeight, ssMulti, C)
@@ -1325,6 +1411,7 @@ classdef StateSpace < AbstractStateSpace
       omegarc = cell(T, obj.n+1);
       omegard = cell(T, obj.n);
       omegarx = cell(T, obj.n);
+      omegarw = cell(T, obj.n+1);
       omegara0 = cell(T, 1);
       
       if isempty(sOut2.Lother)
@@ -1334,6 +1421,7 @@ classdef StateSpace < AbstractStateSpace
       zeroMP = zeros(obj.m, obj.p);
       zeroMK = zeros(obj.m, obj.k);
       zeroMM = zeros(obj.m, obj.m);
+      zeroML = zeros(obj.m, obj.l);
       
       eps2 = eps^2;
       
@@ -1366,6 +1454,11 @@ classdef StateSpace < AbstractStateSpace
           else
             forwardEffectc = zeroMM;
           end
+          if iT ~= T && ~isempty(omegarw{iT+1,iJ})
+            forwardEffectw = sOut2.Lown(:,:,iT)' * omegarw{iT+1,iJ};
+          else
+            forwardEffectw = zeroML;
+          end
           
           % The effect of y on r^(1) via future r^(0) 
           if ~isempty(otherOmega) && iT ~= obj.n && ~isempty(otherOmega.y{iT+1,iJ})
@@ -1388,6 +1481,11 @@ classdef StateSpace < AbstractStateSpace
           else
             forwardEffectOtherc = zeroMM;
           end
+          if ~isempty(otherOmega) && iT ~= obj.n && ~isempty(otherOmega.w{iT+1,iJ})
+            forwardEffectOtherw = sOut2.Lother(:,:,iT)' * otherOmega.w{iT+1,iJ};
+          else
+            forwardEffectOtherw = zeroML;
+          end
           
           % The effect of the data on the filtered state estimate, a_t.
           if iT < iJ || isempty(fWeights.y{iT,iJ})
@@ -1409,6 +1507,11 @@ classdef StateSpace < AbstractStateSpace
             filterEffectc = zeroMM;
           else
             filterEffectc = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.c{iT,iJ};
+          end
+          if iT < iJ || isempty(fWeights.w{iT,iJ})
+            filterEffectw = zeroML;
+          else
+            filterEffectw = -sOut2.M(:,:,iT) * sOut2.Aa(:,:,iT) * fWeights.w{iT,iJ};
           end
 
           % The effect of the data on the error term, v_t.
@@ -1444,6 +1547,10 @@ classdef StateSpace < AbstractStateSpace
           if any(any(abs(omegarc_temp) > eps2))
             omegarc{iT,iJ} = omegarc_temp;
           end
+          omegarw_temp = forwardEffectw + forwardEffectOtherw + filterEffectw;
+          if any(any(abs(omegarw_temp) > eps2))
+            omegarw{iT,iJ} = omegarw_temp;
+          end
         end
         
         % Weight for a0
@@ -1469,7 +1576,7 @@ classdef StateSpace < AbstractStateSpace
       end
       
       weights = struct('y', {omegar}, 'd', {omegard}, 'x', {omegarx}, ...
-        'c', {omegarc}, 'a0', {omegara0});
+        'c', {omegarc}, 'w', {omegarw}, 'a0', {omegara0});
     end
     
     function components = build_smoother_weight_parts(obj, y, fOut)
@@ -1669,7 +1776,8 @@ classdef StateSpace < AbstractStateSpace
       
       % Needs to be a StateSpace since we don't want a ThetaMap
       setSS = StateSpace(ss.Z(:,:,1), ss.H(:,:,1), ss.T(:,:,1), ss.Q(:,:,1), ...
-        'd', ss.d(:,1), 'beta', ss.beta(:,:,1), 'c', ss.c(:,1), 'R', ss.R(:,:,1));
+        'd', ss.d(:,1), 'beta', ss.beta(:,:,1), ...
+        'c', ss.c(:,1), 'gamma', ss.gamma(:,:,1), 'R', ss.R(:,:,1));
       paramNames = ss.systemParam;
       for iP = 1:length(paramNames)
         setSS.(paramNames{iP}) = ss.(paramNames{iP});

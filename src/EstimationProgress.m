@@ -358,7 +358,7 @@ classdef EstimationProgress < handle
       dropdownX = obj.tableSubplot.Position(1) + titleText.Extent(1) + titleText.Extent(3);
       dropdownY = obj.tableSubplot.Position(2) + titleText.Extent(2);
       obj.paramSelection = uicontrol('Style', 'popupmenu', ...
-        'String', {'Z', 'd', 'beta', 'H', 'T', 'c', 'R', 'Q', 'a0', 'P0'}, ...
+        'String', {'Z', 'd', 'beta', 'H', 'T', 'c', 'gamma', 'R', 'Q', 'a0', 'P0'}, ...
         'Value', 5, ...
         'Parent', obj.tableSubplot.Parent, ...
         'Position', [dropdownX dropdownY 50 20]);
@@ -376,7 +376,7 @@ classdef EstimationProgress < handle
       function paramSelectCallback(dropdown, ~)
         
         ssParamName = dropdown.String{dropdown.Value};
-        if any(strcmpi(ssParamName, {'Z', 'beta', 'H', 'T', 'R', 'Q'}))
+        if any(strcmpi(ssParamName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))
           maxSlice = size(obj.ss.(ssParamName), 3);
         elseif any(strcmpi(ssParamName, {'d', 'c'}))
           maxSlice = size(obj.ss.(ssParamName), 2);
@@ -429,7 +429,7 @@ classdef EstimationProgress < handle
     function showParamEstimate(obj, paramName, slice)
       % Plot the filtered/smoothed state
       
-      if any(strcmpi(paramName, {'Z', 'beta', 'H', 'T', 'R', 'Q'}))
+      if any(strcmpi(paramName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))
         obj.tableParams.Data = obj.ss.(paramName)(:,:,slice);
       elseif any(strcmpi(paramName, {'d', 'c'}))
         obj.tableParams.Data = obj.ss.(paramName)(:,slice);

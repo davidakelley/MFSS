@@ -200,7 +200,7 @@ classdef ThetaMap < AbstractSystem
       transformationIndex = ThetaMap.TransformationIndexStateSpace(ssE);
       
       paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
-        ssE.T(:); ssE.c(:); ssE.R(:); ssE.Q(:)];
+        ssE.T(:); ssE.c(:); ssE.gamma(:); ssE.R(:); ssE.Q(:)];
       
       if isa(paramVec, 'sym')
         % theta is ordered by symbolic variables, then nan variables
@@ -217,7 +217,7 @@ classdef ThetaMap < AbstractSystem
       
       nTheta = length(symTheta) + ...
         sum(cellfun(@(paramName) sum(isnan(ssE.(paramName)(:))), ...
-        {'Z', 'd', 'beta', 'T', 'c', 'R'})) + ...
+        {'Z', 'd', 'beta', 'T', 'c', 'gamma', 'R'})) + ...
         sum(cellfun(@(paramName) sum(isnan(reshape(tril(ssE.(paramName)), [], 1))), ...
         {'H', 'Q'}));
       if explicita0
@@ -264,7 +264,7 @@ classdef ThetaMap < AbstractSystem
       fixed = StateSpace(zeros(size(ssE.Z)), zeros(size(ssE.H)), ...
         zeros(size(ssE.T)), zeros(size(ssE.Q)), ...
         'd', zeros(size(ssE.d)), 'beta', zeros(size(ssE.beta)), ...
-        'c', zeros(size(ssE.c)), 'R', zeros(size(ssE.R)));
+        'c', zeros(size(ssE.c)), 'gamma', zeros(size(ssE.gamma)), 'R', zeros(size(ssE.R)));
       
       for iP = 1:length(fixed.systemParam)
         if isa(ssE.(ssE.systemParam{iP}), 'sym')
@@ -720,7 +720,7 @@ classdef ThetaMap < AbstractSystem
       % Make sure we don't have any transformations on fixed elements
       possibleParamNames = [obj.transformationIndex.systemParam, {'a0', 'Q0'}];
       paramNames = possibleParamNames(...
-        [true(1,8) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
+        [true(1,9) ~obj.usingDefaulta0 ~obj.usingDefaultP0]);
       for iP = 1:length(paramNames)
         obj.transformationIndex.(paramNames{iP})(obj.index.(paramNames{iP}) == 0) = 0;        
       end
@@ -1069,7 +1069,7 @@ classdef ThetaMap < AbstractSystem
       end
       
       possibleParamNames = [indexSS.systemParam, {'a0', 'Q0'}];
-      paramNames = possibleParamNames([true(1,8) explicita0 explicitP0]);
+      paramNames = possibleParamNames([true(1,9) explicita0 explicitP0]);
  
       if ~isempty(missingInx)
         for iP = 1:length(paramNames)
@@ -1105,7 +1105,7 @@ classdef ThetaMap < AbstractSystem
       paramEstimIndexes = cell(length(ssE.systemParam), 1);
       
       paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
-        ssE.T(:); ssE.c(:); ssE.R(:); ssE.Q(:)];
+        ssE.T(:); ssE.c(:); ssE.gamma(:); ssE.R(:); ssE.Q(:)];
       
       if isa(paramVec, 'sym')
         % theta is ordered by symbolic variables, then nan variables
@@ -1144,9 +1144,9 @@ classdef ThetaMap < AbstractSystem
         indexCounter = indexCounter + nRequiredPsi;
       end
       
-      index = StateSpace(paramEstimIndexes{[1 4 5 8]}, ...
+      index = StateSpace(paramEstimIndexes{[1 4 5 9]}, ...
         'd', paramEstimIndexes{2}, 'beta', paramEstimIndexes{3}, ...
-        'c', paramEstimIndexes{6}, 'R', paramEstimIndexes{7});
+        'c', paramEstimIndexes{6}, 'gamma', paramEstimIndexes{7}, 'R', paramEstimIndexes{8});
       if ~isempty(ssE.a0)
         a0 = zeros(size(ssE.a0));
         nRequiredPsi = sum(isnan(ssE.a0));
@@ -1180,7 +1180,7 @@ classdef ThetaMap < AbstractSystem
       
       transIndParams = cell(length(ssE.systemParam), 1);
       paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
-        ssE.T(:); ssE.c(:); ssE.R(:); ssE.Q(:)];
+        ssE.T(:); ssE.c(:); ssE.gamma(:); ssE.R(:); ssE.Q(:)];
       if isa(paramVec, 'sym')
         symTheta = symvar(paramVec);
       end
@@ -1305,9 +1305,9 @@ classdef ThetaMap < AbstractSystem
       % Outputs
       %   ssNew:      StateSpace constructed with new parameters
       
-      ssNew = StateSpace(cellParams{[1 4 5 8]}, ...
+      ssNew = StateSpace(cellParams{[1 4 5 9]}, ...
         'd', cellParams{2}, 'beta', cellParams{3}, ...
-        'c', cellParams{6}, 'R', cellParams{7});
+        'c', cellParams{6}, 'gamma', cellParams{7}, 'R', cellParams{8});
     end
     
     function vecParam = vectorizeStateSpace(ss, explicita0, explicitP0)
@@ -1325,10 +1325,10 @@ classdef ThetaMap < AbstractSystem
       
       param = ss.parameters;
       if ~explicita0
-        param{9} = [];
+        param{10} = [];
       end
       if ~explicitP0
-        param{10} = [];
+        param{11} = [];
       end
       
       vectors = cellfun(@(x) x(:), param, 'Uniform', false);

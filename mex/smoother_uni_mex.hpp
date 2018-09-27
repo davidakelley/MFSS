@@ -36,7 +36,7 @@ struct _smoother {
   vec a0tilde;
 };
 
-_smoother smoother_uni_mex(mat y, cube Z, mat d, cube H, cube T, mat c, cube R, cube Q, 
+_smoother smoother_uni_mex(mat y, cube Z, cube H, cube T, cube R, cube Q, 
   mat a0, mat A0, mat R0, mat Q0, _Tau tau, _Fout fOut) {
 
   cube N, P, Pd, K, Kd, V;

@@ -19,6 +19,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     % State equation parameters
     T
     c
+    gamma
     R
     Q
     
@@ -57,8 +58,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     Q0Private
     
     % Lists of variables used across methods
-    systemParam = {'Z', 'd', 'beta', 'H', 'T', 'c', 'R', 'Q'};
+    systemParam = {'Z', 'd', 'beta', 'H', 'T', 'c', 'gamma', 'R', 'Q'};
     symmetricParams = {'H', 'Q', 'Q0', 'P'};    % Include P0? P?
+    % FIXME: Why P in symmetricParams?
   end
   
   methods
@@ -128,15 +130,15 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
  
   methods
     %% Constructor
-    function obj = AbstractStateSpace(Z, d, beta, H, T, c, R, Q)
+    function obj = AbstractStateSpace(Z, d, beta, H, T, c, gamma, R, Q)
       % Constructor
       % Inputs: Parameters matricies or a structure of parameters
       if nargin == 1
         % Structure of parameter values or AbstractStateSpace object passed
         parameters = Z;
-      elseif nargin == 8
+      elseif nargin == 9
         parameters = struct('Z', Z, 'd', d, 'beta', beta, 'H', H, ...
-          'T', T, 'c', c, 'R', R, 'Q', Q);
+          'T', T, 'c', c, 'gamma', gamma, 'R', R, 'Q', Q);
       elseif nargin == 0
         return;
       else
@@ -149,7 +151,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     %% Utility methods
     function param = parameters(obj, index)
       % Getter for cell array of parameters
-      param = {obj.Z, obj.d, obj.beta, obj.H, obj.T, obj.c, obj.R, obj.Q, obj.a0, obj.Q0}; 
+      param = {obj.Z, obj.d, obj.beta, obj.H, ...
+        obj.T, obj.c, obj.gamma, obj.R, obj.Q, obj.a0, obj.Q0}; 
       if nargin > 1
         param = param{index};
       end
@@ -172,6 +175,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       
       eVec = @(size, elem) [false(elem-1, 1); true; false(size-elem, 1)];
 
+      % FIXME: Shouldn't c and gamma show up here too? 
       criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
         all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
         all(obj.R(:, :, obj.tau.R(1)) == 0, 2) ~eVec(obj.m, interest)], 2);
@@ -185,11 +189,13 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       end
     end
     
-    function [obj, y, x] = checkSample(obj, y, x)
+    function [obj, y, x, w] = checkSample(obj, y, x, w)
       % Check the data timing against the time-varrying parameters
       % 
       % Args: 
       %     y (double) : observed data
+      %     x (double) : exogenous series in measurement equation
+      %     w (double) : exogenous series in state equation
       % 
       % TODO: 
       %     - check that we're only observing accumulated series when we should
@@ -201,9 +207,17 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         x = x';
       elseif nargin < 3 || isempty(x)
         if ~isempty(obj.beta)
-          error('MFSS:noX', 'Model specified with beta and no x data provided.')
+          error('MFSS:noX', 'Model specified with beta and no X data provided.')
         end
         x = zeros(obj.k, size(y,2));
+      end
+      if nargin > 3 && ~isempty(w) && size(w, 1) ~= obj.l && size(w,2) == obj.l
+        w = w';
+      elseif nargin < 4 || isempty(w)
+        if ~isempty(obj.gamma)
+          error('MFSS:noW', 'Model specified with gamma and no W data provided.')
+        end
+        w = zeros(obj.l, size(y,2)+1);
       end
       
       assert(isnumeric(y), 'MFSS:nonnumericY', 'Input data y must be numeric.');
@@ -213,6 +227,10 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       assert(size(x, 1) == obj.k, ...
         'Number of exogenous series in x does not match observation equation.');
       assert(~any(any(isnan(x))), 'MFSS:nanX', 'Input data x must be not nan.');
+      assert(isnumeric(w), 'MFSS:nonnumericW', 'Input data w must be numeric.');
+      assert(size(w, 1) == obj.l, ...
+        'Number of exogenous series in w does not match state equation.');
+      assert(~any(any(isnan(w))), 'MFSS:nanW', 'Input data w must be not nan.');
       
       if ~obj.timeInvariant
         % System with TVP, make sure length of taus matches data.
@@ -220,11 +238,17 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         if ~isempty(x) 
           assert(size(x, 2) == obj.n);
         end
+        if ~isempty(w)
+          assert(size(w, 2) == obj.n+1);
+        end
       else
         % No TVP, set n then set tau as ones vectors of that length.
         obj.n = size(y, 2);
         if ~isempty(x) 
           assert(size(x, 2) == obj.n);
+        end
+        if ~isempty(w) 
+          assert(size(w, 2) == obj.n+1);
         end
 
         obj = obj.setInvariantTau();
@@ -234,7 +258,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     function validateStateSpace(obj)
       % Check dimensions of inputs to Kalman filter.
       if obj.timeInvariant
-        maxTaus = ones([8 1]);
+        maxTaus = ones([9 1]);
       else
         maxTaus = cellfun(@(name) max(obj.tau.(name)), obj.systemParam);
       end
@@ -251,8 +275,9 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % State equation
       validate(obj.T, [obj.m obj.m maxTaus(5)], 'T');
       validate(obj.c, [obj.m maxTaus(6)], 'c');
-      validate(obj.R, [obj.m obj.g maxTaus(7)], 'R');
-      validate(obj.Q, [obj.g obj.g maxTaus(8)], 'Q');
+      validate(obj.gamma, [obj.m obj.l maxTaus(7)], 'c');
+      validate(obj.R, [obj.m obj.g maxTaus(8)], 'R');
+      validate(obj.Q, [obj.g obj.g maxTaus(9)], 'Q');
     end
     
   end
@@ -270,7 +295,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if isa(parameters, 'StateSpace')
         [pZ, pd, pbeta, pH, pT, pc, pR, pQ] = parameters.getInputParameters();
         parameters = struct('Z', pZ, 'd', pd, 'beta', pbeta, 'H', pH, ...
-          'T', pT, 'c', pc, 'R', pR, 'Q', pQ);
+          'T', pT, 'c', pc, 'gamma', pgamma, 'R', pR, 'Q', pQ);
       end
       structParams = structfun(@isstruct, parameters);
       
@@ -279,23 +304,24 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       else
         obj.timeInvariant = false;
       
-        tauLens = zeros(8,1);
+        tauLens = zeros(9,1);
         tauLens(structParams) = cellfun(@(x) ...
           length(parameters.(x).(['tau' x])), obj.systemParam(structParams));
-        subtract = structParams & [0 0 0 0 1 1 1 1]';
+        subtract = structParams & [0 0 0 0 1 1 1 1 1]';
         nCandidates = tauLens - subtract;
         assert(all(nCandidates(structParams) == max(nCandidates)), ['Bad tau specification. ' ... 
           'tau vectors for Z, d, beta & H should have n elements. ' ...
-          'tau vectors for T, c, R & Q should have n+1 elements.']);
+          'tau vectors for T, c, gamma, R & Q should have n+1 elements.']);
         obj.n = max(nCandidates);
       end
-            
+      
       % Set dimensions:
       %   p - number of observables
       %   m - number of state variables
       %   g - number of shocks
-      %   k - number of exogenous variables
-           
+      %   k - number of exogenous measurement variables
+      %   l - number of exogenous state variables 
+      
       % Z system matrix
       if isstruct(parameters.Z)
         obj = obj.setTimeVarrying(length(parameters.Z.tauZ));
@@ -404,6 +430,29 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
         end
       end
       
+      % gamma system matrix
+      if isempty(parameters.gamma)
+        obj.gamma = zeros(obj.m, 0);
+        if ~obj.timeInvariant
+          obj.tau.gamma = ones(obj.n+1, 1);
+        end
+      elseif isstruct(parameters.gamma)
+        obj = obj.setTimeVarrying(length(parameters.gamma.taugamma) - 1);
+        assert(numel(parameters.gamma.taugamma) == obj.n+1);
+        obj.tau.gamma = parameters.gamma.taugamma;
+        obj.gamma = parameters.gamma.gammat;
+      elseif size(parameters.gamma, 3) > 1
+        obj = obj.setTimeVarrying(size(parameters.gamma, 3) - 1);
+        obj.tau.gamma = [(1:obj.n) obj.n];
+        obj.gamma = parameters.gamma;
+      else
+        obj.gamma = parameters.gamma;
+        if ~obj.timeInvariant
+          obj.tau.gamma = ones(obj.n+1, 1);
+        end
+      end
+      obj.l = size(obj.gamma, 2);
+
       % Q system matrix
       if isstruct(parameters.Q)
         obj = obj.setTimeVarrying(length(parameters.Q.tauQ) - 1);
@@ -441,7 +490,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       if ~obj.timeInvariant
         tauDims = [length(obj.tau.Z) length(obj.tau.d) ...
           length(obj.tau.beta) length(obj.tau.H) ...
-          length(obj.tau.T)-1 length(obj.tau.c)-1 ...
+          length(obj.tau.T)-1 length(obj.tau.c)-1 length(obj.tau.gamma)-1 ...
           length(obj.tau.R)-1 length(obj.tau.Q)-1];
         assert(all(tauDims == obj.n));
       end
@@ -461,7 +510,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     function obj = setInvariantTau(obj)
       % Set the tau structure for TVP.
       taus = [repmat({ones([obj.n 1])}, [4 1]); ...
-        repmat({ones([obj.n+1 1])}, [4 1])];
+        repmat({ones([obj.n+1 1])}, [5 1])];
       
       if ~isempty(obj.tau)
         cellTau = struct2cell(obj.tau);

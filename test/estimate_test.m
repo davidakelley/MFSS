@@ -147,7 +147,7 @@ classdef estimate_test < matlab.unittest.TestCase
       ssE.solver = 'fmincon';
       ssML = ssE.estimate(y, ss0);
       
-      [~, grad] = ssML.gradient(y, [], ssE.ThetaMapping);
+      [~, grad] = ssML.gradient(y, [], [], ssE.ThetaMapping);
       testCase.verifyLessThanOrEqual(abs(grad), 1e-4);
     end
     
@@ -265,16 +265,16 @@ classdef estimate_test < matlab.unittest.TestCase
     
     function testSyms(testCase)
       nile = testCase.data.nile;
-      syms rho lambda sigmaKappa
+      syms rho lambda sigmaKappa sigmaTrend 
       
       Z = [1 0 1 0];
-      H = nan;
+      H = 0;
       T = [1 1 0 0;
         0 1 0 0;
         0 0 rho * cos(lambda), rho * sin(lambda);
         0 0 -rho * sin(lambda), rho * cos(lambda)];
       R = [zeros(1,3); eye(3)];
-      Q = diag([nan sigmaKappa sigmaKappa]);
+      Q = diag([sigmaTrend sigmaKappa sigmaKappa]);
       
       ssE = StateSpaceEstimation(Z, H, T, Q, 'R', R);
       ssOpt = ssE.estimate(nile);

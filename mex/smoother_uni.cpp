@@ -52,10 +52,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   _Ss ss;
 
   ss.Z = getMaybeCube(mxGetField(prhs[1], 0, "Z"));
-  ss.d = armaGetPr(mxGetField(prhs[1], 0, "d"));
+  // ss.d = armaGetPr(mxGetField(prhs[1], 0, "d"));
   ss.H = getMaybeCube(mxGetField(prhs[1], 0, "H"));
   ss.T = getMaybeCube(mxGetField(prhs[1], 0, "T"));
-  ss.c = armaGetPr(mxGetField(prhs[1], 0, "c"));
+  // ss.c = armaGetPr(mxGetField(prhs[1], 0, "c"));
   ss.R = getMaybeCube(mxGetField(prhs[1], 0, "R"));
   ss.Q = getMaybeCube(mxGetField(prhs[1], 0, "Q"));
   ss.a0 = (vec) armaGetPr(mxGetField(prhs[1], 0, "a0"));
@@ -74,10 +74,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
       "tau must be a structure.");
   _Tau tau;     
   tau.Z = armaGetPr(mxGetField(tauPtr, 0, "Z"));
-  tau.d = armaGetPr(mxGetField(tauPtr, 0, "d"));
+  // tau.d = armaGetPr(mxGetField(tauPtr, 0, "d"));
   tau.H = armaGetPr(mxGetField(tauPtr, 0, "H"));
   tau.T = armaGetPr(mxGetField(tauPtr, 0, "T"));
-  tau.c = armaGetPr(mxGetField(tauPtr, 0, "c"));
+  // tau.c = armaGetPr(mxGetField(tauPtr, 0, "c"));
   tau.R = armaGetPr(mxGetField(tauPtr, 0, "R"));
   tau.Q = armaGetPr(mxGetField(tauPtr, 0, "Q"));
 
@@ -100,7 +100,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   
   // Compute
   _smoother output;
-  output = smoother_uni_mex(y, ss.Z, ss.d, ss.H, ss.T, ss.c, ss.R, ss.Q, 
+  output = smoother_uni_mex(y, ss.Z, ss.H, ss.T, ss.R, ss.Q, 
     ss.a0, ss.A0, ss.R0, ss.Q0, tau, fOut);
 
   // Set outputs

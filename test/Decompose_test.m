@@ -260,7 +260,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Prep from decompose_smoothed
       ss.validateKFilter();
       ss = ss.checkSample(y);
-      [ssUni, yUni, ~, C] = ss.prepareFilter(y, []);
+      [ssUni, yUni, ~, ~, C] = ss.prepareFilter(y, [], []);
       
       comp = ssUni.build_smoother_weight_parts(yUni, fOut);
 
@@ -289,9 +289,9 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y);
       ssMulti = ss; 
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, []);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, [], []);
       
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       rWeights = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       for iT = 1:ss.n
@@ -323,9 +323,9 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y, x);
       ssMulti = ss; 
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, x);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, x, []);
       
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       rWeights = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       for iT = 1:ss.n
@@ -358,10 +358,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, []);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, [], []);
       
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -404,10 +404,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, []);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, [], []);
       
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -449,10 +449,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, []);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, [], []);
       
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -491,10 +491,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       ss = ss.checkSample(y, []);
       ssMulti = ss;
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, []);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, [], []);
 
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));
@@ -534,10 +534,10 @@ classdef Decompose_test < matlab.unittest.TestCase
       ss.validateKFilter();
       [ss, y, x] = ss.checkSample(y, x);
       ssMulti = ss;
-      [ssUni, yUni, x, C] = ss.prepareFilter(y, x);
+      [ssUni, yUni, x, ~, C] = ss.prepareFilter(y, x, []);
 
       % Decompose
-      fWeights = ssUni.filter_weights(yUni, x, fOut, ssMulti, C);
+      fWeights = ssUni.filter_weights(yUni, x, zeros(0,size(yUni,2)+1), fOut, ssMulti, C);
       [rWeights, r1Weights] = ssUni.r_weights(yUni, x, fOut, fWeights, ssMulti, C);
       r_reconstruct = zeros(size(r));
       r1_reconstruct = zeros(size(r1));

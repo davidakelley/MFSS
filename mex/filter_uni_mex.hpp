@@ -3,7 +3,7 @@
 See "Fast Filtering and Smoothing for Multivariate State Space Models",
 Koopman & Durbin (2000).
 
-Copyright: David Kelley, 2017. 
+Copyright: David Kelley, 2017-2018. 
 */
 
 #ifndef FILTER_UNI_MEX_M_HPP
@@ -15,11 +15,11 @@ using namespace arma ;
 
 
 struct _Tau {
-  vec Z, d, beta, H, T, c, R, Q;
+  vec Z, d, beta, H, T, c, gamma, R, Q;
 };
 
 struct _Ss {
-  cube Z, beta, H, T, R, Q;
+  cube Z, beta, H, T, gamma, R, Q;
   mat d, c, a0, A0, R0, Q0;
   _Tau tau;
 };
@@ -33,7 +33,7 @@ struct _filter {
 
 const double PI = 3.1415926535897931;
 
-_filter filter_uni_mex(mat y, mat x, cube Z, mat d, cube beta, cube H, cube T, mat c, cube R, cube Q, 
+_filter filter_uni_mex(mat y, mat x, mat w, cube Z, mat d, cube beta, cube H, cube T, mat c, cube gamma, cube R, cube Q, 
   mat a0, mat A0, mat R0, mat Q0, _Tau tau) {
 
   cube K, Kd, Kstar, P, Pd, Pstar;
@@ -45,16 +45,15 @@ _filter filter_uni_mex(mat y, mat x, cube Z, mat d, cube beta, cube H, cube T, m
   uvec ind;
   uword jj;
 
-  vec tauZ, taud, taubeta, tauH, tauT, tauc, tauR, tauQ;
+  vec tauZ, taud, taubeta, tauH, tauT, tauc, taugamma, tauR, tauQ;
   tauZ = tau.Z;   taud = tau.d;   tauH = tau.H;   taubeta = tau.beta; 
-  tauT = tau.T;   tauc = tau.c;   tauR = tau.R;   tauQ = tau.Q;
+  tauT = tau.T;   tauc = tau.c;   taugamma = tau.gamma;   tauR = tau.R;   tauQ = tau.Q;
   
   int p = Z.n_rows;
   int m = Z.n_cols;
   int n = y.n_cols;
   
   // assert(isdiag(H), 'Univarite filter requires diagonal H.');
-  
 
   // Preallocate
   // Note Pd is the "diffuse" P matrix (P_\infty).
@@ -163,7 +162,7 @@ _filter filter_uni_mex(mat y, mat x, cube Z, mat d, cube beta, cube H, cube T, m
     Tii = T.slice((uword) tauT(ii)-1);
 
     // a(:,ii+1) = Tii * ati + c(:,tauc(ii+1))
-    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1);
+    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii-1);
 
     // Pd(:,:,ii+1)  = Tii * Pdti * Tii'
     Pd.slice(ii) = Tii * Pdti * trans(Tii);
@@ -218,7 +217,7 @@ _filter filter_uni_mex(mat y, mat x, cube Z, mat d, cube beta, cube H, cube T, m
     Tii = T.slice((uword) tauT(ii)-1);
 
       // a(:,ii+1) = Tii * ati + c(:,tauc(ii))
-    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1);
+    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii-1);
       // P(:,:,ii+1) = Tii * Pti * Tii' + ...
       //     R(:,:,tauR(ii)) * Q(:,:,tauQ(ii)) * R(:,:,tauR(ii))'
     Ptemp = Tii * Pti * trans(Tii) + 

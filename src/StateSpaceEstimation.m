@@ -83,6 +83,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       inP.addParameter('d', []);
       inP.addParameter('beta', []);
       inP.addParameter('c', []);
+      inP.addParameter('gamma', []);
       inP.addParameter('R', []);
       inP.addParameter('a0', [], @isnumeric);
       inP.addParameter('P0', [], @isnumeric);
@@ -92,7 +93,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
       inP.parse(varargin{:});
       inOpts = inP.Results;
 
-      obj = obj@AbstractStateSpace(Z, inOpts.d, inOpts.beta, H, T, inOpts.c, inOpts.R, Q);
+      obj = obj@AbstractStateSpace(Z, inOpts.d, inOpts.beta, H, ...
+        T, inOpts.c, inOpts.gamma, inOpts.R, Q);
 
       % Initial ThetaMap generation - will be augmented to include restrictions
       if ~isempty(inOpts.ThetaMap)
@@ -116,7 +118,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     %% Estimation methods
-    function [ss_out, diagnostic, thetaHat, gradient] = estimate(obj, y, ss0, x)
+    function [ss_out, diagnostic, thetaHat, gradient] = estimate(obj, y, ss0, x, w)
       % Estimate missing parameter values via maximum likelihood.
       %
       % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
@@ -129,14 +131,17 @@ classdef StateSpaceEstimation < AbstractStateSpace
       if nargin < 4
         x = [];
       end
+      if nargin < 5
+        w = [];
+      end
       
-      [obj, y, x] = obj.checkSample(y, x);
+      [obj, y, x, w] = obj.checkSample(y, x, w);
         
       firstSwarm = isequal(obj.solver, 'swarm') || ...
         (iscell(obj.solver) &&  isequal(obj.solver{1}, 'swarm'));
       
       if nargin < 3 || isempty(ss0) && ~firstSwarm
-        [theta0U, theta0, ss0] = obj.initializeRandom(y, x);
+        [theta0U, theta0, ss0] = obj.initializeRandom(y, x, w);
       elseif firstSwarm
         theta0U = [];
       else
@@ -179,6 +184,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
                         
       assert(isnumeric(y), 'y must be numeric.');
       assert(isnumeric(x), 'x must be numeric.');
+      assert(isnumeric(w), 'w must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
       assert(obj.ThetaMapping.nTheta > 0, ...
         'All parameters known. Unable to estimate.');
@@ -252,11 +258,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
         
         switch solverFun
           case 'fminunc'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, obj.useInternalNumericGrad);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, obj.useInternalNumericGrad);
             [thetaUHat, logli, outflag, ~, gradient] = fminunc(...
               minfunc, theta0U, optFMinUnc);
           case 'fmincon'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, obj.useInternalNumericGrad);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, obj.useInternalNumericGrad);
             try
               [thetaUHat, logli, outflag, ~, ~, gradient] = fmincon(...
                 minfunc, theta0U, [], [], [], [], [], [], nonlconFn, optFMinCon);
@@ -281,14 +287,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
               end
             end
           case 'fminsearch'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, false);
             
             [thetaUHat, logli, outflag] = fminsearch(...
               minfunc, theta0U, optFMinSearch);
             
             gradient = [];
           case 'sa'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, false);
             
             [thetaUHat, logli, outflag] = simulannealbnd(...
               minfunc, theta0U, [],  [], optSimulanneal);
@@ -296,7 +302,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
             gradient = [];
             
           case 'swarm'
-            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, progress, false);
+            minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, false);
             
             [thetaUHat, logli, outflag] = particleswarm(...
               minfunc, obj.ThetaMapping.nTheta, [],  [], optSwarm);
@@ -341,7 +347,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Run smoother, plot smoothed state
       if obj.diagnosticPlot
-        progress.alpha = ss_out.smooth(y, x);
+        progress.alpha = ss_out.smooth(y, x, w);
         if progress.visible && isvalid(progress.figHandle) && ...
             strcmpi(progress.updateStatus, 'active')     
           progress.updateFigure();
@@ -355,7 +361,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
-    function [negLogli, gradient] = minimizeFun(obj, thetaU, y, x, progress, calcGrad)
+    function [negLogli, gradient] = minimizeFun(obj, thetaU, y, x, w, progress, calcGrad)
       % Get the likelihood of
       theta = obj.ThetaMapping.restrictTheta(thetaU);
       ss1 = obj.ThetaMapping.theta2system(theta);
@@ -393,14 +399,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
             1 + (2 * obj.numericGradPrec * obj.ThetaMapping.nTheta * obj.useInternalNumericGrad);
 
            % Calculate likelihood and gradient
-          [rawLogli, thetaGradient, fOut] = ss1.gradient(y, x, obj.ThetaMapping, theta);
+          [rawLogli, thetaGradient, fOut] = ss1.gradient(y, x, w, obj.ThetaMapping, theta);
 
           GthetaUtheta = obj.ThetaMapping.thetaUthetaGrad(thetaU);
           rawGradient = GthetaUtheta * thetaGradient;
         else
           progress.totalEvaluations = progress.totalEvaluations + 1;
 
-          [~, rawLogli, fOut] = ss1.filter(y, x);
+          [~, rawLogli, fOut] = ss1.filter(y, x, w);
           rawGradient = [];          
         end
         
@@ -475,7 +481,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       end
     end
     
-    function [theta0U, theta0, ss0] = initializeRandom(obj, y, x)
+    function [theta0U, theta0, ss0] = initializeRandom(obj, y, x, w)
       % Generate default initialization
       
       % The default initialization
@@ -491,7 +497,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         try
           theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,iAttempt));
           ss0 = obj.ThetaMapping.theta2system(theta0);
-          [~, iLogli(iAttempt)] = ss0.filter(y, x);
+          [~, iLogli(iAttempt)] = ss0.filter(y, x, w);
         catch
         end
       end
@@ -504,7 +510,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,thetaOrder(iGradAtt)));
         ss0 = obj.ThetaMapping.theta2system(theta0);
         try
-          [ll0, grad0] = ss0.gradient(y, x, obj.ThetaMapping, theta0);
+          [ll0, grad0] = ss0.gradient(y, x, w, obj.ThetaMapping, theta0);
         catch
           continue
         end

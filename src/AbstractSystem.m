@@ -17,7 +17,8 @@ classdef (Abstract) AbstractSystem
     p % Number of observed series
     m % Number of states
     g % Number of shocks
-    k % Number of exogenous series
+    k % Number of exogenous measurement series
+    l % Number of exogenous state series
     
     timeInvariant % Indicator for TVP models
   end
@@ -117,7 +118,10 @@ classdef (Abstract) AbstractSystem
       assert(obj.m == sys.m, 'State dimension mismatch (m).');
       assert(obj.g == sys.g, 'Shock dimension mismatch (g).');
       if ~isempty(sys.k)
-        assert(obj.k == sys.k, 'Shock dimension mismatch (k).');
+        assert(obj.k == sys.k, 'Exogenous measurement dimension mismatch (k).');
+      end
+      if ~isempty(sys.l)
+        assert(obj.l == sys.l, 'Exogenous state dimension mismatch (l).');
       end
 
       assert(obj.timeInvariant == sys.timeInvariant, ...
@@ -134,7 +138,7 @@ classdef (Abstract) AbstractSystem
     %% General utility functions
     function mat = enforceSymmetric(mat)
       % Force a matrix to be symmetric. Corrects for small rounding errors in recursions.
-      mat = 0.5 * (mat + mat');
+      mat = 0.5 .* (mat + mat');
     end
     
     function [Finv, logDetF] = pseudoinv(F, tol)
@@ -143,7 +147,7 @@ classdef (Abstract) AbstractSystem
       % [Finv, logDetF] = pseudoinv(F, tol) finds the inverse and log
       % determinent of F. Elements of the SVD of F less than tol are taken as 0.
       
-      tempF = 0.5 * (F + F');
+      tempF = 0.5 .* (F + F');
       
       [PSVD, DSDV, PSVDinv] = svd(tempF);
       
@@ -159,28 +163,6 @@ classdef (Abstract) AbstractSystem
       Finv = PSVD * (DSDV\eye(length(DSDV))) * PSVDinv';
       logDetF = sum(log(diag(DSDV)));
     end
-    
-    function K = genCommutation(m, n)
-      % Generate commutation matrix
-      %
-      % K = genCommutation(m, n) returns a commutation matrix for an m X n
-      % matrix A such that K * vec(A) = vec(A').
-      
-      % From Magnus & Neudecker (1979) (Definition 3.1): a commutation matrix is
-      % "a suqare mn-dimensional matrix partitioned into mn sub-matricies of
-      % order (n, m) such that the ij-th submatrix has a 1 in its ji-th position
-      % and zeros elsewhere."
-      if nargin == 1, n = m; end
-      
-      E = @(i, j) [zeros(i-1, n); ...
-        zeros(1, j-1), 1, zeros(1, n-j); zeros(m-i, n)];
-      K = zeros(m * n);
-      for iComm = 1:m
-        for jComm = 1:n
-          K = K + kron(E(iComm, jComm), E(iComm, jComm)');
-        end
-      end
-    end
-    
   end
+  
 end

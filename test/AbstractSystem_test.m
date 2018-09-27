@@ -15,18 +15,6 @@ classdef AbstractSystem_test < matlab.unittest.TestCase
   end
   
   methods (Test)  
-%     function testPseudoinv(testCase)
-%       
-%     end
-    
-    function testCommutation(testCase)
-      mat1 = rand(5);
-      comm = AbstractSystem.genCommutation(5);
-      vec = @(M) reshape(M, [], 1);
 
-      % Definition of commutation matrix: K * vec(A) = vec(A')
-      testCase.verifyEqual(comm * vec(mat1), vec(mat1'));
-    end
-    
   end
 end

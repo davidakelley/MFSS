@@ -35,8 +35,8 @@ cube getMaybeCube(const mxArray *cubePtr) {
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   // Validate inputs
-  if (nrhs != 3) {
-    mexErrMsgIdAndTxt("filter_uni:nrhs", "Three inputs required: y, x and ssStruct.");
+  if (nrhs != 4) {
+    mexErrMsgIdAndTxt("filter_uni:nrhs", "Four inputs required: y, x, w and ssStruct.");
   }
   if (nlhs > 10) {
     mexErrMsgIdAndTxt("filter_uni:nlhs", "Maximum of 10 outputs allowed.");
@@ -61,26 +61,40 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     x.zeros(0, y.n_cols);
   }  
 
+  // w data
+  if (!(mxIsDouble(prhs[2]))){
+    mexErrMsgIdAndTxt( "filter_uni:inputNotDouble", "w must be of type double.");
+  }
+  mat w;
+  // Test if w is empty. If it is, we can't use the standard amadillo method 
+  // to pull it and have to just create the empty matrix.
+  if (mxGetData(prhs[2]) != NULL) {
+    w = armaGetPr(prhs[2]);  
+  } else {
+    w.zeros(0, y.n_cols);
+  }  
+
   // StateSpace structure
-  if(!mxIsStruct(prhs[2]))
+  if(!mxIsStruct(prhs[3]))
     mexErrMsgIdAndTxt( "filter_uni:inputNotStruct", "ss must be a structure.");
   
   _Ss ss;
 
-  ss.Z = getMaybeCube(mxGetField(prhs[2], 0, "Z"));
-  ss.d = armaGetPr(mxGetField(prhs[2], 0, "d"));
-  ss.beta = getMaybeCube(mxGetField(prhs[2], 0, "beta"));
-  ss.H = getMaybeCube(mxGetField(prhs[2], 0, "H"));
-  ss.T = getMaybeCube(mxGetField(prhs[2], 0, "T"));
-  ss.c = armaGetPr(mxGetField(prhs[2], 0, "c"));
-  ss.R = getMaybeCube(mxGetField(prhs[2], 0, "R"));
-  ss.Q = getMaybeCube(mxGetField(prhs[2], 0, "Q"));
-  ss.a0 = (vec) armaGetPr(mxGetField(prhs[2], 0, "a0"));
-  ss.A0 = armaGetPr(mxGetField(prhs[2], 0, "A0"));
-  ss.R0 = armaGetPr(mxGetField(prhs[2], 0, "R0"));
-  ss.Q0 = armaGetPr(mxGetField(prhs[2], 0, "Q0"));
+  ss.Z = getMaybeCube(mxGetField(prhs[3], 0, "Z"));
+  ss.d = armaGetPr(mxGetField(prhs[3], 0, "d"));
+  ss.beta = getMaybeCube(mxGetField(prhs[3], 0, "beta"));
+  ss.H = getMaybeCube(mxGetField(prhs[3], 0, "H"));
+  ss.T = getMaybeCube(mxGetField(prhs[3], 0, "T"));
+  ss.c = armaGetPr(mxGetField(prhs[3], 0, "c"));
+  ss.gamma = getMaybeCube(mxGetField(prhs[3], 0, "gamma"));
+  ss.R = getMaybeCube(mxGetField(prhs[3], 0, "R"));
+  ss.Q = getMaybeCube(mxGetField(prhs[3], 0, "Q"));
+  ss.a0 = (vec) armaGetPr(mxGetField(prhs[3], 0, "a0"));
+  ss.A0 = armaGetPr(mxGetField(prhs[3], 0, "A0"));
+  ss.R0 = armaGetPr(mxGetField(prhs[3], 0, "R0"));
+  ss.Q0 = armaGetPr(mxGetField(prhs[3], 0, "Q0"));
 
-  mxArray *tauPtr = mxGetField(prhs[2], 0, "tau");
+  mxArray *tauPtr = mxGetField(prhs[3], 0, "tau");
 
   if (tauPtr == NULL) 
     mexErrMsgIdAndTxt( "filter_uni:no_field",
@@ -96,12 +110,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   tau.H = armaGetPr(mxGetField(tauPtr, 0, "H"));
   tau.T = armaGetPr(mxGetField(tauPtr, 0, "T"));
   tau.c = armaGetPr(mxGetField(tauPtr, 0, "c"));
+  tau.gamma = armaGetPr(mxGetField(tauPtr, 0, "gamma"));
   tau.R = armaGetPr(mxGetField(tauPtr, 0, "R"));
   tau.Q = armaGetPr(mxGetField(tauPtr, 0, "Q"));
 
   // Compute
   _filter output;
-  output = filter_uni_mex(y, x, ss.Z, ss.d, ss.beta, ss.H, ss.T, ss.c, ss.R, ss.Q, 
+  output = filter_uni_mex(y, x, w, ss.Z, ss.d, ss.beta, ss.H, ss.T, ss.c, ss.gamma, ss.R, ss.Q, 
     ss.a0, ss.A0, ss.R0, ss.Q0, tau);
 
   // Set outputs
