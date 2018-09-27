@@ -427,6 +427,10 @@ classdef Accumulator < AbstractSystem
       
       % Create new system
       ssNew = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R);
+      
+      if ~isempty(ss.a0) || ~isempty(ss.P0)
+        [ssNew.a0, ssNew.P0] = obj.augmentParamInit(ssLag.a0, ssLag.P0, ssLag.T, aug);
+      end
     end
     
     %% ThetaMap system augmentation methods
@@ -769,6 +773,58 @@ classdef Accumulator < AbstractSystem
       newZ(aug.Z.finalIndexes) = Z(aug.Z.originIndexes);
       Z(aug.Z.originIndexes) = 0;
       newZ(1:size(Z, 1), 1:size(Z, 2), :) = Z;
+    end
+    
+    function [newa0, newP0] = augmentParamInit(a0, P0, T, aug)
+      % Compute augmented state initial values.
+      %
+      % Ideally, you want to think about what these values are in expectation given the
+      % existing elements of a0. That is like running the smoother with no data
+      % where we know the terminal values of the high-frequency states, the accumulating
+      % those to get the augmented state values of a0.
+      %
+      % For series where we observe the sum, we technically can't do anything other than
+      % the diffuse initialization because we don't know how long the current sum has been
+      % running for. This means that for the two cases:
+      %   (a) When the 1st period calendar is 1 a0 is 0 and P0 is Inf for augmented state.
+      %   (b) When the 1st period calendar is 0 a0 is equal to the high-frequency a0 with
+      %       the same variance as the high-frequency state and a correlation of 1.
+      %
+      % For series where we observe the average, we can run the expectations backwards and
+      % get the partial average for the accumulator. For most cases where the calendar is
+      % eqaul to one in the first period, this is just the existng a0 value. But it will
+      % always work to get the previous c high-frequency a0 values and take the average of
+      % them.
+      
+      error('Initial values of augmented system not yet solved for.');
+      
+      maxCal = max(aug.T.cal(aug.T.newtau(1), :));
+      
+      % Run smoother to get prior a0 values
+      % This has the wrong P0 right now. I want V0 = P0
+      m = length(a0);
+      Z = eye(m);
+      H = P0;
+      Q = eye(m) * 10 * eps;
+      ssT = StateSpace(Z, H, T, Q);
+      y = [nan(m, maxCal), a0];
+      a0Prev = ssT.smooth(y);
+      
+      a0Prev = nan(size(a0,1), maxCal);
+      a0Prev(:,end) = a0;
+      pinvT = pinv(T(1:aug.m.withLag,1:aug.m.withLag,aug.T.newtau(1)));
+      for iT = 1:maxCal-1
+        a0Prev(:,end-iT) = pinvT * a0Prev(:,end-iT+1);
+      end
+      
+      newa0 = zeros(aug.m.final, 1);
+      newa0(1:aug.m.withLag) = a0;
+      for iA = 1:aug.nAccumulatorStates
+        nPers = [];
+        a0mean = mean(a0Prev(:,end-nPers), 2);
+        newa0(aug.m.withLag+iA) = a0mean(aug.baseFreqState(iA));
+      end
+      
     end
     
     %% ThetaMap augmentation methods
