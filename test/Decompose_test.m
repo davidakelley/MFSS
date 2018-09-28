@@ -285,6 +285,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, ~, fOut] = ss.filter(y);
+      ss.useMex = true;
       
       % Get decomposition 
       % Prep from decompose_smoothed
@@ -415,6 +416,8 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, sOut, fOut] = ss.smooth(y);
+      ss.useMex = true;
+      
       r = sOut.r;
       r1 = sOut.r1;
       
@@ -461,6 +464,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, sOut, fOut] = ss.smooth(y);
+      ss.useMex = true;
       r = sOut.r;
       r1 = sOut.r1;
       
@@ -506,6 +510,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, sOut, fOut] = ss.smooth(y);
+      ss.useMex = true;
       r = sOut.r;
       r1 = sOut.r1;
       
@@ -548,6 +553,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, sOut, fOut] = ss.smooth(y);
+      ss.useMex = true;
       r = sOut.r;
       r1 = sOut.r1;
       
@@ -591,6 +597,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, sOut, fOut] = ss.smooth(y, x);
+      ss.useMex = true;
       r = sOut.r;
       r1 = sOut.r1;
       
@@ -636,6 +643,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       % Get actual r values
       ss.useMex = false;
       [~, sOut, fOut] = ss.smooth(y, [], w);
+      ss.useMex = true; 
       r = sOut.r;
       r1 = sOut.r1;
       

@@ -13,8 +13,6 @@ classdef Accumulator < AbstractSystem
   %
   % TODO (1/17/17)
   % ---------------
-  %   - Create utiltiy methods for standard accumulator creation (descriptive
-  %     specification as opposed to explicitly stating calendar/horizon values)
   %   - Write method that checks if a dataset follows the pattern an accumulator
   %     would expect.
   
@@ -51,10 +49,10 @@ classdef Accumulator < AbstractSystem
       
       obj.accumulatorTypes = any(obj.calendar == 0)';
       
-      obj.m = [];
+      % obj.m = [];
       obj.p = max(index);
-      obj.g = [];
-      obj.k = [];
+      % obj.g = [];
+      % obj.k = [];
       obj.n = size(obj.calendar, 1) - 1;
       obj.timeInvariant = false;
     end
@@ -136,6 +134,7 @@ classdef Accumulator < AbstractSystem
       sseNew.Z = ssNew.Z;
       sseNew.T = ssNew.T;
       sseNew.c = ssNew.c;
+      sseNew.gamma = ssNew.gamma;
       sseNew.R = ssNew.R;
       
       sseNew.tau = ssNew.tau;
@@ -281,6 +280,20 @@ classdef Accumulator < AbstractSystem
       cSpec.oldtau = ss.tau.c(sort(iA_c));
       augSpec.c = cSpec;
       
+      % gamma augmentation - same as c
+      gammaSpec = struct;
+      if ~isempty(ss.gamma)
+        gammatypes = [ss.tau.gamma used.Calendar(:,used.Types == 0)];
+        [~, iA_gamma, gammaSpec.newtau] = unique(gammatypes, 'rows');
+        gammaSpec.cal = used.Calendar(iA_gamma,:);
+        gammaSpec.oldtau = ss.tau.gamma(sort(iA_gamma));
+      else
+        gammaSpec.oldtau = ss.tau.gamma(1);
+        gammaSpec.newtau = ss.tau.gamma;
+        gammaSpec.cal = ones(length(ss.tau.gamma), size(used.Calendar,2));
+      end
+      augSpec.gamma = gammaSpec;
+      
       % R augmentation
       % The only R's that vary with time are those used in average accumulators. We can
       % drop the calendars for the sum accumulators and just use those with Type == 0.
@@ -387,6 +400,9 @@ classdef Accumulator < AbstractSystem
       fullc = tm.fixed.c;
       fullc(tm.index.c ~= 0) = placeholder;
       fullSys.c = fullc;
+      fullgamma = tm.fixed.gamma;
+      fullgamma(tm.index.gamma ~= 0) = placeholder;
+      fullSys.gamma = fullgamma;
       fullR = tm.fixed.R;
       fullR(tm.index.R ~= 0) = placeholder;
       fullSys.R = fullR;
@@ -420,13 +436,15 @@ classdef Accumulator < AbstractSystem
       T.tauT = aug.T.newtau;
       c.ct = obj.augmentParamc(ssLag.c, aug);
       c.tauc = aug.c.newtau;
+      gamma.gammat = obj.augmentParamgamma(ssLag.gamma, aug);
+      gamma.taugamma = aug.gamma.newtau;
       R.Rt = obj.augmentParamR(ssLag.R, aug);
       R.tauR = aug.R.newtau;
       Q.Qt = ssLag.Q;
       Q.tauQ = ssLag.tau.Q;
       
       % Create new system
-      ssNew = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R);
+      ssNew = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'gamma', gamma, 'R', R);
       
       if ~isempty(ss.a0) || ~isempty(ss.P0)
         [ssNew.a0, ssNew.P0] = obj.augmentParamInit(ssLag.a0, ssLag.P0, ssLag.T, aug);
@@ -449,6 +467,7 @@ classdef Accumulator < AbstractSystem
       lagStates = aug.m.original + 1: aug.m.withLag;
       newIndex.T(lagStates, :, :) = 0;
       newIndex.c(lagStates, :, :) = 0;
+      newIndex.gamma(lagStates, :, :) = 0;
       newIndex.R(lagStates, :, :) = 0;
       
       % Both accumulators are the same here. We're just copying integers.
@@ -458,6 +477,7 @@ classdef Accumulator < AbstractSystem
         % Copy rows of base part of T, c & R to the accumulator states
         newIndex.T(iAccumState, :, :) = newIndex.T(aug.baseFreqState(iAccum), :, :);
         newIndex.c(iAccumState, :) = newIndex.c(aug.baseFreqState(iAccum), :);
+        newIndex.gamma(iAccumState, :) = newIndex.gamma(aug.baseFreqState(iAccum), :);
         newIndex.R(iAccumState, :, :) = newIndex.R(aug.baseFreqState(iAccum), :, :);
       end
       
@@ -500,6 +520,15 @@ classdef Accumulator < AbstractSystem
         transIndex.c, factorc, addendc, find(isAugElemc), tm, ...
         nTrans + length(newTransT)); %#ok<FNDSB>
       
+      % Modify gamma transformations (similar structure to T transformations)
+      addendgamma = Accumulator.augmentParamgamma(zeros(aug.m.withLag, 1), aug);
+      factorgamma = Accumulator.augmentParamgamma(ones(aug.m.withLag, 1), aug) - addendgamma;
+      isAugElemgamma = false(size(transIndex.gamma));
+      isAugElemgamma(augStates, :) = true;
+      [transIndex.gamma, newTransgamma, newInvgamma] = Accumulator.computeNewTrans(...
+        transIndex.gamma, factorgamma, addendgamma, find(isAugElemgamma), tm, ...
+        nTrans + length(newTransT) + length(newTransc)); %#ok<FNDSB>
+      
       % Modify R transformations (similar structure to T transformations)
       addendR = Accumulator.augmentParamR(zeros(aug.m.withLag, tm.g), aug);
       factorR = Accumulator.augmentParamR(ones(aug.m.withLag, tm.g), aug) - addendR;
@@ -507,10 +536,10 @@ classdef Accumulator < AbstractSystem
       isAugElemR(augStates, :, :) = true;
       [transIndex.R, newTransR, newInvR] = Accumulator.computeNewTrans(...
         transIndex.R, factorR, addendR, find(isAugElemR), tm, ...
-        nTrans + length(newTransT) + length(newTransc)); %#ok<FNDSB>
+        nTrans + length(newTransT) + length(newTransc) + length(newTransgamma)); %#ok<FNDSB>
       
-      trans = [tm.transformations newTransT newTransc newTransR];
-      inv = [tm.inverses newInvT newInvc newInvR];
+      trans = [tm.transformations newTransT newTransc newTransgamma newTransR];
+      inv = [tm.inverses newInvT newInvc newInvgamma newInvR];
     end
     
     %% Helper methods
@@ -651,6 +680,11 @@ classdef Accumulator < AbstractSystem
       c.ct(1:ss.m, :) = ss.c;
       c.tauc = ss.tau.c;
       
+      % c - just add zeros below
+      gamma.gammat = zeros(mWithLag, size(ss.gamma, 2), size(ss.gamma, 3), class(ss.gamma));
+      gamma.gammat(1:ss.m, :) = ss.gamma;
+      gamma.taugamma = ss.tau.gamma;
+      
       % R - just add zeros below
       R.Rt = zeros(mWithLag, ss.g, size(ss.R, 3), class(ss.R));
       R.Rt(1:ss.m, :, :) = ss.R;
@@ -661,7 +695,7 @@ classdef Accumulator < AbstractSystem
       Q.tauQ = ss.tau.Q;
       
       % Create new system
-      ss = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R);
+      ss = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R, 'gamma', gamma);
          
       if ~isempty(ss.a0)
         error('Unable to add lags of initial state.');
@@ -734,6 +768,34 @@ classdef Accumulator < AbstractSystem
           else
             % Average accumulator
             newc(iState, iC) = (1/aug.c.cal(iC, iAccum)) * hiFreqElements;
+          end
+        end
+      end
+    end
+    
+    function newgamma = augmentParamgamma(gamma, aug)
+      % Construct new gamma matrix
+      gammaSlices = size(aug.gamma.oldtau, 1);
+      
+      newgamma = zeros(aug.m.final, size(gamma,2), gammaSlices, class(gamma));
+      if isempty(gamma)
+        return
+      end
+      
+      for igamma = 1:gammaSlices
+        % Get the part of c already defined
+        newgamma(1:aug.m.withLag, :, igamma) = gamma(:, :, aug.gamma.oldtau(igamma));
+        for iAccum = 1:aug.nAccumulatorStates
+          iState = aug.m.withLag + iAccum;
+          
+          hiFreqElements = gamma(aug.baseFreqState(iAccum), :, aug.gamma.oldtau(igamma));
+          
+          if aug.accumulatorTypes(iAccum) == 1
+            % Sum accumulator
+            newgamma(iState, :, igamma) = hiFreqElements;
+          else
+            % Average accumulator
+            newgamma(iState, :, igamma) = (1/aug.gamma.cal(igamma, iAccum)) * hiFreqElements;
           end
         end
       end
