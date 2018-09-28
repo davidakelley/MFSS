@@ -275,7 +275,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % State equation
       validate(obj.T, [obj.m obj.m maxTaus(5)], 'T');
       validate(obj.c, [obj.m maxTaus(6)], 'c');
-      validate(obj.gamma, [obj.m obj.l maxTaus(7)], 'c');
+      validate(obj.gamma, [obj.m obj.l maxTaus(7)], 'gamma');
       validate(obj.R, [obj.m obj.g maxTaus(8)], 'R');
       validate(obj.Q, [obj.g obj.g maxTaus(9)], 'Q');
     end

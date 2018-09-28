@@ -74,7 +74,7 @@ _filter filter_uni_mex(mat y, mat x, mat w, cube Z, mat d, cube beta, cube H, cu
   // Tii = T(:,:,tauT(ii+1));
   Tii = T.slice((uword) tauT(ii)-1);
   // a(:,ii+1) = Tii * a0 + c(:,tauc(ii+1));
-  a.col(ii) = Tii * a0 + c.col((uword) tauc(ii)-1);
+  a.col(ii) = Tii * a0 + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii);
 
   // Pd0 = A0 * A0';
   // Pstar0 = R0 * Q0 * R0';
@@ -162,7 +162,7 @@ _filter filter_uni_mex(mat y, mat x, mat w, cube Z, mat d, cube beta, cube H, cu
     Tii = T.slice((uword) tauT(ii)-1);
 
     // a(:,ii+1) = Tii * ati + c(:,tauc(ii+1))
-    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii-1);
+    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii);
 
     // Pd(:,:,ii+1)  = Tii * Pdti * Tii'
     Pd.slice(ii) = Tii * Pdti * trans(Tii);
@@ -217,7 +217,7 @@ _filter filter_uni_mex(mat y, mat x, mat w, cube Z, mat d, cube beta, cube H, cu
     Tii = T.slice((uword) tauT(ii)-1);
 
       // a(:,ii+1) = Tii * ati + c(:,tauc(ii))
-    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii-1);
+    a.col(ii) = Tii * ati + c.col((uword) tauc(ii)-1) + gamma.slice((uword) taugamma(ii)-1) * w.col(ii);
       // P(:,:,ii+1) = Tii * Pti * Tii' + ...
       //     R(:,:,tauR(ii)) * Q(:,:,tauQ(ii)) * R(:,:,tauR(ii))'
     Ptemp = Tii * Pti * trans(Tii) + 

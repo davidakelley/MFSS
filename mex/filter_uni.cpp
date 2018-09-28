@@ -9,7 +9,7 @@ This function uses the matrix library armadillo: http://arma.sourceforge.net/
 The utility Matlab2cpp 0.5 was used in the initial stages of converting this 
 from Matlab. Note that many changes have followed. 
 
-Copyright: David Kelley, 2017. 
+Copyright: David Kelley, 2017-2018. 
 */
 
 #define ARMA_DONT_PRINT_ERRORS
@@ -71,7 +71,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   if (mxGetData(prhs[2]) != NULL) {
     w = armaGetPr(prhs[2]);  
   } else {
-    w.zeros(0, y.n_cols);
+    w.zeros(0, y.n_cols+1);
   }  
 
   // StateSpace structure

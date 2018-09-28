@@ -729,7 +729,8 @@ classdef StateSpace < AbstractStateSpace
       % Initialize - Using the FRBC timing
       iT = 0;
       Tii = obj.T(:,:,obj.tau.T(iT+1));
-      a(:,iT+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(iT+1));
+      a(:,iT+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(iT+1)) + ...
+        obj.gamma(:,:,obj.tau.gamma(iT+1)) * w(:,iT+1);
       
       Pd0 = obj.A0 * obj.A0';
       Pstar0 = obj.R0 * obj.Q0 * obj.R0';
@@ -1104,6 +1105,11 @@ classdef StateSpace < AbstractStateSpace
           omegac{iJ+1,iJ} = Lstar(:,:,iJ+1) * omegac{iJ,iJ};
         end
         
+        % w (part 1)
+        if ~isempty(omegaw{iJ,iJ})
+          omegaw{iJ+1,iJ} = Lstar(:,:,iJ+1) * omegaw{iJ,iJ};
+        end
+        
         % y
         for iT = iJ+1:obj.n
           if ~isempty(omega{iT,iJ})
@@ -1147,17 +1153,18 @@ classdef StateSpace < AbstractStateSpace
             omegac{iT+1,iJ} = omegac_temp;
           end
         end
-      end
-      
-      % w
-      for iT = iJ+1:obj.n
-        if ~isempty(omegaw{iT,iJ})
-          omegaw_temp = Lstar(:,:,iT+1) * omegaw{iT,iJ};
-          if all(abs(omegaw_temp) < eps2)
-            break
+        
+        % w (part 2)
+        for iT = iJ+1:obj.n
+          if ~isempty(omegaw{iT,iJ})
+            omegaw_temp = Lstar(:,:,iT+1) * omegaw{iT,iJ};
+            if all(abs(omegaw_temp) < eps2)
+              break
+            end
+            omegaw{iT+1,iJ} = omegaw_temp;
           end
-          omegaw{iT+1,iJ} = omegaw_temp;
         end
+        
       end
       
       % Determine effect of initial conditions

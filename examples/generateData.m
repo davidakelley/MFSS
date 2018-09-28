@@ -1,4 +1,4 @@
-function [Y, alpha, x, eta, epsilon] = generateData(ss, timeDim)
+function [Y, alpha, x, w, eta, epsilon] = generateData(ss, timeDim)
 % Generate test data from a state-space model
 
 % Make sure StateSpace is set up
@@ -22,10 +22,13 @@ eta = nan(ss.g, timeDim);
 rawEta = randn(ss.g, timeDim);
 alpha = nan(ss.m, timeDim);
 
+w = randn(ss.l, timeDim+1);
+
 eta(:,1) = ss.Q(:,:,ss.tau.Q(1))^(1/2) * rawEta(:,1);
 
 alpha(:,1) = ss.T(:,:,ss.tau.T(1)) * ss.a0 + ...
   ss.c(:,ss.tau.c(1)) + ...
+  ss.gamma(:,:,ss.tau.gamma(1)) * w(:,1) + ...
   ss.R(:,:,ss.tau.R(1)) * eta(:,1);
 
 for iT = 2:timeDim
@@ -33,6 +36,7 @@ for iT = 2:timeDim
   
   alpha(:,iT) = ss.T(:,:,ss.tau.T(iT)) * alpha(:,iT-1) + ...
     ss.c(:,ss.tau.c(iT)) + ...
+    ss.gamma(:,:,ss.tau.gamma(iT)) * w(:,iT) + ...
     ss.R(:,:,ss.tau.R(iT)) * eta(:,iT);
 end
 
