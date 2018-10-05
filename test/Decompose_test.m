@@ -200,7 +200,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = squeeze(sum(decomp_data, 2));
       reconstruct_a = dataEff + decomp_const;
       
-      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11, 'AbsTol', 1e-12);
+      testCase.verifyEqual(a, reconstruct_a, 'AbsTol', 1e-11);
     end
     
     function testARpTVP_a(testCase)

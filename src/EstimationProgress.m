@@ -48,6 +48,8 @@ classdef EstimationProgress < handle
     
     m     % State dimension
     ss
+    
+    usedParams
   end
   
   properties (SetAccess = protected)
@@ -64,6 +66,10 @@ classdef EstimationProgress < handle
       obj.m = m;
       obj.ss = ss;
       
+      possibleParams = {'Z', 'd', 'beta', 'H', 'T', 'c', 'gamma', 'R', 'Q', 'a0', 'P0'};
+      obj.usedParams = possibleParams([true(1,2) ~isempty(ss.beta) true(1,3) ...
+        ~isempty(ss.gamma) true(1,2) ~isempty(ss.a0) ~isempty(ss.P0)]);
+      
       maxPossibleIters = 10000;
       obj.thetaHist = nan(maxPossibleIters, length(obj.theta0));
       obj.likelihoodHist = nan(maxPossibleIters, 1);
@@ -79,13 +85,26 @@ classdef EstimationProgress < handle
       else
         % But default to visible figure
         obj.figHandle = EstimationProgress.getWindow();
+        
+        % Get the current dropdown values so that we can preserve them
+        dropdowns = findobj(obj.figHandle, 'Style', 'popupmenu');
+        if ~isempty(dropdowns)
+          paramChar = dropdowns(3).String{dropdowns(3).Value};
+          paramSlice = dropdowns(2).Value;
+          stateSelect = dropdowns(1).Value;
+        else
+          paramChar = 'T';
+          paramSlice = 1;
+          stateSelect = 1;
+        end
+        
         if isempty(obj.figHandle) || ~isvalid(obj.figHandle)
           obj.figHandle = obj.createWindow();
         end
         obj.visible = true;
         
-        obj.setupWindow();
-        obj.setupPlots();
+        obj.setupWindow(paramChar, paramSlice, stateSelect);
+        obj.setupPlots(paramChar, paramSlice, stateSelect);
       end
       
     end
@@ -229,7 +248,7 @@ classdef EstimationProgress < handle
       EstimationProgress.getWindow(newwin);
     end
     
-    function setupWindow(obj)
+    function setupWindow(obj, paramChar, paramSlice, stateSelect)
       % Create basic figure elements
       
       newwin = EstimationProgress.getWindow();
@@ -283,7 +302,7 @@ classdef EstimationProgress < handle
       obj.tableSubplot.Position(2) = obj.tableSubplot.Position(2) -.03;
       obj.tableParams = uitable('Parent', obj.tableSubplot.Parent, 'Units', 'normalized', ...
         'Position', obj.tableSubplot.Position, ...
-        'Data', obj.ss.T(:,:,1));
+        'Data', obj.getSlice(paramChar, paramSlice));
       obj.tableSubplot.XAxis.Visible = 'off';
       obj.tableSubplot.YAxis.Visible = 'off';
       
@@ -329,7 +348,7 @@ classdef EstimationProgress < handle
       end      
     end
     
-    function setupPlots(obj)
+    function setupPlots(obj, paramChar, paramSlice, stateSelect)
       % Fill in plots
       
       % Create plot of current theta
@@ -357,17 +376,19 @@ classdef EstimationProgress < handle
       titleText.Units = 'pixels';
       dropdownX = obj.tableSubplot.Position(1) + titleText.Extent(1) + titleText.Extent(3);
       dropdownY = obj.tableSubplot.Position(2) + titleText.Extent(2);
+      
       obj.paramSelection = uicontrol('Style', 'popupmenu', ...
-        'String', {'Z', 'd', 'beta', 'H', 'T', 'c', 'gamma', 'R', 'Q', 'a0', 'P0'}, ...
-        'Value', 5, ...
+        'String', obj.usedParams, ...
+        'Value', find(strcmpi(paramChar, obj.usedParams)), ...
         'Parent', obj.tableSubplot.Parent, ...
         'Position', [dropdownX dropdownY 50 20]);
       
+      nSlices = obj.getSliceNum(paramChar);
       dropdownXslice = obj.tableSubplot.Position(1) + ...
         titleText.Extent(1) + titleText.Extent(3) + obj.paramSelection.Position(3);
       obj.paramSelectionSlice = uicontrol('Style', 'popupmenu', ...
-        'String', arrayfun(@(x) num2str(x), 1:size(obj.ss.T, 3), 'Uniform', false), ...
-        'Value', 1, ...
+        'String', arrayfun(@(x) num2str(x), 1:nSlices, 'Uniform', false), ...
+        'Value', min(paramSlice, nSlices), ...
         'Parent', obj.tableSubplot.Parent, ...
         'Position', [dropdownXslice dropdownY 50 20], ...
         'Callback', @(dropdown, ~) obj.showParamEstimate(...
@@ -376,15 +397,7 @@ classdef EstimationProgress < handle
       function paramSelectCallback(dropdown, ~)
         
         ssParamName = dropdown.String{dropdown.Value};
-        if any(strcmpi(ssParamName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))
-          maxSlice = size(obj.ss.(ssParamName), 3);
-        elseif any(strcmpi(ssParamName, {'d', 'c'}))
-          maxSlice = size(obj.ss.(ssParamName), 2);
-        elseif any(strcmpi(ssParamName, {'a0', 'P0'}))
-          maxSlice = 1;
-        else
-          error('Unknown input');
-        end
+        maxSlice = obj.getSliceNum(ssParamName);
         
         obj.paramSelectionSlice.Value = 1;
         obj.paramSelectionSlice.String = ...
@@ -402,6 +415,7 @@ classdef EstimationProgress < handle
       dropdownY = obj.axA.Position(1) + titleText.Extent(2) - titleText.Extent(4);
       obj.stateSelection = uicontrol('Style', 'popupmenu', ...
         'String', arrayfun(@(x) num2str(x), 1:obj.m, 'Uniform', false), ...
+        'Value', min(stateSelect, obj.m), ...
         'Parent', obj.axA.Parent, ...
         'Position', [dropdownX dropdownY 50 20], ...
         'Callback', @(dropdown, ~) obj.plotStateEstimate(dropdown.Value));
@@ -428,17 +442,7 @@ classdef EstimationProgress < handle
     %% Plot functions
     function showParamEstimate(obj, paramName, slice)
       % Plot the filtered/smoothed state
-      
-      if any(strcmpi(paramName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))
-        obj.tableParams.Data = obj.ss.(paramName)(:,:,slice);
-      elseif any(strcmpi(paramName, {'d', 'c'}))
-        obj.tableParams.Data = obj.ss.(paramName)(:,slice);
-      elseif any(strcmpi(paramName, {'a0', 'P0'}))
-        obj.tableParams.Data = obj.ss.(paramName);
-      else
-        error('Unknown input');
-      end
-      
+      obj.tableParams.Data = obj.getSlice(paramName, slice);
     end    
     
     function plotStateEstimate(obj, stateIndex)
@@ -474,6 +478,34 @@ classdef EstimationProgress < handle
         obj.axA.YLim(1) = min(plotY);
       end
     end    
+    
+    %% Utility getters
+    
+    function maxSlice = getSliceNum(obj, ssParamName)
+      % Find out the number of slices in a given parameter
+      if any(strcmpi(ssParamName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))
+        maxSlice = size(obj.ss.(ssParamName), 3);
+      elseif any(strcmpi(ssParamName, {'d', 'c'}))
+        maxSlice = size(obj.ss.(ssParamName), 2);
+      elseif any(strcmpi(ssParamName, {'a0', 'P0'}))
+        maxSlice = 1;
+      else
+        error('Unknown input');
+      end
+    end
+    
+    function sliceVals = getSlice(obj, paramName, slice)
+      % Get the slice of a given parameter
+      if any(strcmpi(paramName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))
+        sliceVals = obj.ss.(paramName)(:,:,slice);
+      elseif any(strcmpi(paramName, {'d', 'c'}))
+        sliceVals = obj.ss.(paramName)(:,slice);
+      elseif any(strcmpi(paramName, {'a0', 'P0'}))
+        sliceVals = obj.ss.(paramName);
+      else
+        error('Unknown input');
+      end
+    end
   end
   
   methods (Static)

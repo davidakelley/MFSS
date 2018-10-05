@@ -29,7 +29,11 @@ classdef MFVAR
       obj.Y = data;
       
       obj.nLags = lags;
-      obj.accumulator = accumulator;
+      if nargin > 2 
+        obj.accumulator = accumulator;
+      else 
+        obj.accumulator = Accumulator([], [], []);
+      end
       
       obj.p = size(obj.Y, 2);
     end
@@ -52,19 +56,22 @@ classdef MFVAR
       alpha0 = lagmatrix(interpY, 1:obj.nLags);
       alpha0(any(isnan(alpha0),2),:) = [];
       zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
-      params = obj.estimateOLS_VJ(alpha0, zeroMats, zeroMats);
+%       params = obj.estimateOLS_VJ(alpha0, zeroMats, zeroMats);
+      alpha = alpha0;
+      V = zeroMats;
+      J = zeroMats;
       
       % EM algorithm
       iter = 0;
       logli0 = -Inf;
       improvement = -Inf;
       while abs(improvement) > obj.tol && iter < obj.maxIter
-        % E-step: Get state conditional on parameters
-        [alpha, logli, V, J] = obj.stateEstimate(params);
-        
         % M-step: Get parameters conditional on state
         params = obj.estimateOLS_VJ(alpha, V, J);
-        
+       
+        % E-step: Get state conditional on parameters
+        [alpha, logli, V, J] = obj.stateEstimate(params);
+         
         % Compute improvement
         improvement = logli - logli0;
         logli0 = logli;
@@ -103,7 +110,7 @@ classdef MFVAR
       
       if nargout > 1
         ssVAR = ssVAR.setDefaultInitial();
-        ssVAR = ssVAR.prepareFilter(obj.Y, []);
+        ssVAR = ssVAR.prepareFilter(obj.Y, [], []);
         sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
         [V, J] = ssVAR.getErrorVariances(obj.Y', fOut, sOut);
       end
@@ -121,7 +128,11 @@ classdef MFVAR
       
       ss = StateSpace(Z, H, T, Q, 'c', c, 'R', R);
       
-      ssA = obj.accumulator.augmentStateSpace(ss);
+      if ~isempty(obj.accumulator.index)
+        ssA = obj.accumulator.augmentStateSpace(ss);
+      else
+        ssA = ss;
+      end
       
       ssA.a0 = zeros(size(ssA.c, 1), 1);
       ssA.P0 = 10 * eye(size(ssA.T, 1));
@@ -130,8 +141,8 @@ classdef MFVAR
     function params = estimateOLS_VJ(obj, alpha, V, J)
       % Estimate an OLS VAR taking the uncertainty of the state into account. 
       %
-      % Everything here is in the companion VAR(1) form from the smoother. We just need to
-      % worry about estimating the VAR(1) case then. 
+      % Everything here is in the companion VAR(1) form from the smoother. 
+      % We just need to worry about estimating the VAR(1) case then. 
       
       lagInx = 1:size(V,3)-1;
       coincInx = 2:size(V,3);

@@ -24,7 +24,7 @@ classdef estimate_test < matlab.unittest.TestCase
   
   methods(TestClassTeardown)
     function closeFigs(testCase) %#ok<MANU>
-      close all;
+      close all force;
     end
   end
   
@@ -258,9 +258,9 @@ classdef estimate_test < matlab.unittest.TestCase
       
       % The warnings thrown in this example don't worry me but I don't know how to
       % addresse them right now, so they stay.
-      [ssE, ~, ~] = ssE.estimate(y, ss0);
-      testCase.verifyLessThanOrEqual(ssE.T, 1);
-      testCase.verifyGreaterThanOrEqual(ssE.T, -1);
+      [ssOpt, ~, ~] = ssE.estimate(y, ss0);
+      testCase.verifyLessThanOrEqual(ssOpt.T, 1);
+      testCase.verifyGreaterThanOrEqual(ssOpt.T, -1);
     end
     
     function testSyms(testCase)
@@ -339,10 +339,10 @@ classdef estimate_test < matlab.unittest.TestCase
       ssE.P0 = 10;
 
       save(fullfile(tempdir, 'temp_testInitSave.mat'));
-      load(fullfile(tempdir, 'temp_testInitSave.mat'));
+      loadvar = load(fullfile(tempdir, 'temp_testInitSave.mat'));
       
-      testCase.verifyEqual(ssE.a0, 100);
-      testCase.verifyEqual(ssE.P0, 10);
+      testCase.verifyEqual(loadvar.ssE.a0, 100);
+      testCase.verifyEqual(loadvar.ssE.P0, 10);
 
       delete(fullfile(tempdir, 'temp_testInitSave.mat'));
     end
