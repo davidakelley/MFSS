@@ -24,7 +24,7 @@ classdef estimate_test < matlab.unittest.TestCase
   
   methods(TestClassTeardown)
     function closeFigs(testCase) %#ok<MANU>
-      close all;
+      close all force;
     end
   end
   
