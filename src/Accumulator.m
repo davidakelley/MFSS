@@ -521,8 +521,8 @@ classdef Accumulator < AbstractSystem
         nTrans + length(newTransT)); %#ok<FNDSB>
       
       % Modify gamma transformations (similar structure to T transformations)
-      addendgamma = Accumulator.augmentParamgamma(zeros(aug.m.withLag, 1), aug);
-      factorgamma = Accumulator.augmentParamgamma(ones(aug.m.withLag, 1), aug) - addendgamma;
+      addendgamma = Accumulator.augmentParamgamma(zeros(aug.m.withLag, tm.fixed.l, 1), aug);
+      factorgamma = Accumulator.augmentParamgamma(ones(aug.m.withLag, tm.fixed.l, 1), aug) - addendgamma;
       isAugElemgamma = false(size(transIndex.gamma));
       isAugElemgamma(augStates, :) = true;
       [transIndex.gamma, newTransgamma, newInvgamma] = Accumulator.computeNewTrans(...
