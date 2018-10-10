@@ -62,7 +62,7 @@ classdef Accumulator < AbstractSystem
       %
       % Note that augmenting a system removes initial values.
       
-      ss.checkConformingSystem(obj);
+%       ss.checkConformingSystem(obj);
       obj.checkConformingSystem(ss);
       aug = obj.computeAugSpecification(ss);
       
