@@ -57,13 +57,17 @@ classdef mfvar_test < matlab.unittest.TestCase
       [ssV, ssJ] = ss.getErrorVariances(y, fOut, sOut);
       
       % Compute in multivariate for simplicity
-      P = ss.T^2 * ss.P0 + ss.Q;
-      F = P + ss.Q;
-      N = 1./F;
-      V = P - P * N * P;
-      J = [];
+      P1 = ss.T^2 * ss.P0 + ss.Q;
+      F1 = P1 + ss.Q;
+      N1 = 1./F1;
+      V1 = P1 - P1 * N1 * P1;
+      K1 = ss.T * P1 * ss.Z' / F1;
+      L1 = ss.T - K1 * ss.Z;
+      % P2 = (ss.T^2 * P1 + ss.Q);
+      % N2 = 1./(P2 + ss.Q);
+      J = P1 * L1'; %* (eye(ss.m) - N2 * P2); % j = t + 1
       
-      testCase.verifyEqual(ssV, V);
+      testCase.verifyEqual(ssV, V1);
       testCase.verifyEqual(ssJ, J);
     end
     
@@ -73,9 +77,9 @@ classdef mfvar_test < matlab.unittest.TestCase
       
       phi2T = @(phi) [phi; eye(p*(lags-1)) zeros(p*(lags-1), p)];
       
-      phiRaw = 0.2*randn(p, p*lags) + [eye(p) zeros(p)];
+      phiRaw = 0.2*randn(p, p*lags) + [.5*eye(p) zeros(p)];
       phi = phiRaw - ...
-        [eye(p)*2*(max(abs(eig(phi2T(phiRaw))))-1) zeros(p, p*(lags-1))];
+        [eye(p)*(max(abs(eig(phi2T(phiRaw))))-1) zeros(p, p*(lags-1))];
       const = randn(p,1);
       sigmaRaw = randn(p);
       sigma = eye(p) + 0.5 * (sigmaRaw + sigmaRaw');
@@ -97,28 +101,40 @@ classdef mfvar_test < matlab.unittest.TestCase
       F1 = ss.Z * P1 * ss.Z' + ss.H;
       N1 = ss.Z' / F1 * ss.Z;
       V1 = P1 - P1 * N1 * P1;
-      J = [];
-      
-      testCase.verifyEqual(ssV, V1, 'AbsTol', 1e-14);
-      testCase.verifyEqual(ssJ, J);
+      K1 = ss.T * P1 * ss.Z' / F1;
+      L1 = ss.T - K1 * ss.Z;
+      J = P1 * L1';
+
+      testCase.verifyEqual(ssV, V1, 'AbsTol', 5e-14);
+      testCase.verifyEqual(ssJ, J, 'AbsTol', 5e-14);
     end
     
+    %% Integration tests of MFVAR
+    function testEM_AR1_improve(testCase)
+      % Test that the the EM always improved the likelihood
+      nile = testCase.data.nile;
+      varE = MFVAR(nile, 1);
+      testCase.verifyWarningFree(@varE.estimate);
+    end
     
-    %% Test that the EM is working by comparing it to general ML estimation
     function testEM_AR1(testCase)
+      % Test that the EM is working by comparing it to general ML estimation
+      
       nile = testCase.data.nile;
       
-      % Estimate MFVAR 
-      varE = MFVAR(nile, 1); 
+      % Estimate MFVAR
+      varE = MFVAR(nile, 1);
       varOpt = varE.estimate();
+      [~, llEM] = varOpt.filter(nile);
       
       % Estimate general state space optimization
       ssE = StateSpaceEstimation(1, 0, nan, nan, 'c', nan);
-      ssOpt = ssE.estimate(nile);
+      ssE.a0 = varOpt.a0;
+      ssE.P0 = varOpt.P0;
+      ssOpt = ssE.estimate(nile, varOpt);
+      [~, llOpt] = ssOpt.filter(nile);
       
-      testCase.verifyEqual(ssOpt.T, varOpt.T, 'RelTol', 1e-4);
-      testCase.verifyEqual(ssOpt.c, varOpt.c, 'RelTol', 1e-4);
-      testCase.verifyEqual(ssOpt.Q, varOpt.Q, 'RelTol', 1e-4);
+      testCase.verifyEqual(llEM, llOpt, 'AbsTol', 1e-2);
     end
     
   end
