@@ -599,14 +599,18 @@ classdef ThetaMap < AbstractSystem
       if ~obj.usingDefaultP0 && ~isempty(obj.fixed.R0)
         if isempty(obj.LowerBound.P0)
           % Setting A0/R0/Q0 for the first time
-          % (4/21) I don't think we can actually get here anymore?
           finiteQ0 = ssLB.Q0;
           finiteQ0(~isfinite(finiteQ0)) = 1; % Value doesn't matter.
-          P0 = ssLB.R0 * finiteQ0 * ssLB.R0';
-          P0(obj.LowerBound.A0 * obj.LowerBound.A0' == 1) = Inf;
+          P0lb = ssLB.R0 * finiteQ0 * ssLB.R0';
+          P0lb(obj.LowerBound.A0 * obj.LowerBound.A0' == 1) = Inf;
           
-          obj.LowerBound.P0 = P0;
-          obj.UpperBound.P0 = P0;      
+          obj.LowerBound.P0 = P0lb;
+          
+          finiteQ0 = ssUB.Q0;
+          finiteQ0(~isfinite(finiteQ0)) = realmax; % Value doesn't matter.
+          P0ub = ssUB.R0 * finiteQ0 * ssUB.R0';
+          P0ub(obj.UpperBound.A0 * obj.UpperBound.A0' == 1) = Inf;
+          obj.UpperBound.P0 = P0ub;      
         end
         
         [trans, inver, transInx, lbMat, ubMat] = obj.restrictParamMat(ssLB, ssUB, 'Q0');

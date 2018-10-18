@@ -12,7 +12,7 @@ classdef MFVAR
     
     nLags
     constant = true;
-    verbose = false;
+    verbose = true;
     
     tol = 1e-7;
     maxIter = 10000;
@@ -63,7 +63,7 @@ classdef MFVAR
       V = zeroMats;
       J = zeroMats;
       a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
-      P0 = 10 * eye(size(alpha0, 2) + length(obj.accumulator.index));
+      P0 = 1000 * eye(size(alpha0, 2) + length(obj.accumulator.index));
       
       params = obj.estimateOLS_VJ(alpha, V, J);
      
@@ -98,7 +98,7 @@ classdef MFVAR
         params = obj.estimateOLS_VJ(alpha, V, J);
        
         % E-step: Get state conditional on parameters
-        [alpha, logli, V, J, a0, P0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
+        [alpha, logli, V, J, a0, ~, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -133,6 +133,7 @@ classdef MFVAR
       
       ssML = obj.params2system(params);
       ssML.a0 = a0;
+      ssML.P0 = P0;
       if obj.verbose
         fprintf('%s\n', line('-'));
       end
@@ -161,13 +162,22 @@ classdef MFVAR
       [state, sOut, fOut] = ssVAR.smooth(obj.Y);
       logli = sOut.logli;
       
-      a0tilde = state(1,:)'; 
-      V0 = sOut.V(:,:,1); 
+      a1tilde = state(1,:)'; 
+      V1 = sOut.V(:,:,1); 
       
-      % No observed data in period 0, L_0 = T_1. 
-%       L0 = ssVAR.T(:,:,ssVAR.tau.T(1));
-%       a0tilde = ssVAR.a0 + ssVAR.P0 * L0' * sOut.r(:,1);
-%       V0 = ssVAR.P0 - ssVAR.P0 * L0' * sOut.N(:,:,1) * L0 * ssVAR.P0;
+      % No observed data in period 0, L_0 = T_1.
+      if isempty(ssVAR.tau)
+        L0 = ssVAR.T;
+      else
+        L0 = ssVAR.T(:,:,ssVAR.tau.T(1));
+      end
+      r0 = L0' * sOut.r(:,1);
+      a0tilde = ssVAR.a0 + ssVAR.P0 * r0;
+%       N0 = L0' * sOut.N(:,:,1) * L0;
+%       V0 = AbstractSystem.enforceSymmetric(ssVAR.P0 - ssVAR.P0 * N0 * ssVAR.P0);
+      
+%       a0tilde = a1tilde; 
+      V0 = V1;
       
       if nargout > 2
         ssVAR = ssVAR.setDefaultInitial();
