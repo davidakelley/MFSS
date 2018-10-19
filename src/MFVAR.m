@@ -55,7 +55,7 @@ classdef MFVAR
 
       % Initialize with simple interpolation
       interpY = obj.interpolateData(obj.Y, obj.accumulator);
-      alpha0 = lagmatrix(interpY, 1:obj.nLags);
+      alpha0 = lagmatrix(interpY, 0:obj.nLags-1);
       alpha0(any(isnan(alpha0),2),:) = [];
       zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
 
@@ -81,7 +81,6 @@ classdef MFVAR
       else
         tm = ssE.ThetaMapping;
       end
-      
       
       % Set up progress window
       [ssVAR, theta] = obj.params2system(params, tm);

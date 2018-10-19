@@ -560,7 +560,7 @@ classdef StateSpace < AbstractStateSpace
       % Get the smoothed state variance and covariance matricies
       % Produces V = Var(alpha | Y_n) and J = Cov(alpha_{t+1}, alpha_t | Y_n)
       
-      components = obj.build_smoother_weight_parts(y, fOut);
+      Ldagger = obj.build_Ldagger(y, fOut);
       
       I = eye(obj.m);
       V = nan(obj.m, obj.m, obj.n);
@@ -568,7 +568,7 @@ classdef StateSpace < AbstractStateSpace
       for iT = obj.n:-1:1
         iP = fOut.P(:,:,iT);
         V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;   
-        J(:,:,iT) = iP * components.Ldagger(:,:,iT)' * ...
+        J(:,:,iT) = iP * Ldagger(:,:,iT)' * ...
           (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
       end
     end
@@ -1584,6 +1584,78 @@ classdef StateSpace < AbstractStateSpace
       
       weights = struct('y', {omegar}, 'd', {omegard}, 'x', {omegarx}, ...
         'c', {omegarc}, 'w', {omegarw}, 'a0', {omegara0});
+    end
+    
+    function Ldagger = build_Ldagger(obj, y, fOut)
+      % Build the quantities we need to build the smoother weights
+      % A^a, A^y, L^\dagger & M^\dagger
+      % 
+      % Because we would have to set the last value of all of the * quantities in the
+      % diffuse smoother with the corresponding values from the non-diffuse smoother, the
+      % * values will stored in the non-diffuse smoother value arrays. 
+      
+      Im = eye(obj.m);
+      
+      % A^a*, A^a\infty, M^*, \tilde{M}^\infty, L^* and L^\infty
+%       Aa = zeros(obj.p, obj.m, obj.n);
+      Ldagger = zeros(obj.m, obj.m, obj.n);
+%       Mdagger = zeros(obj.m, obj.p, obj.n);
+
+%       Aainfty = zeros(obj.p, obj.m, fOut.dt);
+%       Linfty = zeros(obj.m, obj.m, fOut.dt);
+%       MinftyTilde = zeros(obj.m, obj.p, fOut.dt);
+      
+      for iT = 1:fOut.dt
+        SstarProd = Im;
+%         SinftyProd = Im;
+        
+        for jP = 1:obj.p
+          if isnan(y(jP,iT))
+            continue
+          end
+          
+          Z = obj.Z(jP,:,obj.tau.Z(iT));
+%           Aa(jP,:,iT) = Z * SstarProd;
+%           Aainfty(jP,:,iT) = Z * SinftyProd;
+          
+          if fOut.Fd(jP,iT) ~= 0
+            Sinfty = (Im - fOut.Kd(:,jP,iT) * Z);
+            Sstar = Sinfty;
+%             MinftyTilde(:,jP,iT) = SstarProd' * Z' / fOut.Fd(jP,iT);
+          else
+            Sstar = (Im - fOut.K(:,jP,iT) * Z);
+%             Sinfty = Im;
+%             Mdagger(:,jP,iT) = SstarProd' * Z' / fOut.F(jP,iT);
+          end
+          
+          SstarProd = Sstar * SstarProd;
+%           SinftyProd = Sinfty * SinftyProd;
+        end
+        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SstarProd;
+%         Linfty(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SinftyProd;
+      end
+      
+      % A^a, Mdagger and Ldagger
+      for iT = fOut.dt+1:obj.n
+        Lprod = Im;
+        for jP = 1:obj.p
+          if isnan(y(jP,iT))
+            continue
+          end
+          
+          Z = obj.Z(jP,:,obj.tau.Z(iT));
+          K = fOut.K(:,jP,iT);
+          
+%           Aa(jP,:,iT) = Z * Lprod;
+          Lprod = (Im - K * Z) * Lprod;
+        end
+        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lprod;
+        
+        % I think this is right - check this if things don't work:
+%         FinvDiag = zeros(obj.p, obj.p);
+%         FinvDiag(~isnan(y(:,iT)), ~isnan(y(:,iT))) = diag(1./fOut.F(~isnan(y(:,iT)),iT));
+%         Mdagger(:,:,iT) = Aa(:,:,iT)' * FinvDiag;
+      end
     end
     
     function components = build_smoother_weight_parts(obj, y, fOut)
