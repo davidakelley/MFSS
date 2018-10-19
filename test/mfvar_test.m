@@ -129,7 +129,7 @@ classdef mfvar_test < matlab.unittest.TestCase
       
       % Estimate general state space optimization
       ssE = StateSpaceEstimation(1, 0, nan, nan, 'c', nan);
-      ssE.a0 = nan;
+      ssE.a0 = varOpt.a0;
       ssE.P0 = varOpt.P0;
       ssOpt = ssE.estimate(nile, varOpt);
       [~, llOpt] = ssOpt.filter(nile);

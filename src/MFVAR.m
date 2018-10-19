@@ -15,7 +15,7 @@ classdef MFVAR
     verbose = true;
     
     tol = 1e-7;
-    maxIter = 10000;
+    maxIter = 20000;
     
     diagnosticPlot = true;
   end
@@ -103,7 +103,13 @@ classdef MFVAR
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
         progress.ss = ssVAR;
-        oVals.fval = -logli;
+        if iter < 2
+          % Initialization has low likelihood - makes plot uninformative
+          oVals.fval = nan;
+        else
+          oVals.fval = -logli;
+        end
+        progress.totalEvaluations = progress.totalEvaluations + 1;
         stop = progress.update(theta, oVals);
 
         % Compute improvement
