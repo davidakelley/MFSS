@@ -1,7 +1,7 @@
 % Estimate a local-level model on the Nile River dataset
 
 %% Load data
-data = load('examples\data\dk.mat');
+data = load('durbin_koopman.mat');
 y = data.nile';
 
 %% Set up the state space
@@ -19,8 +19,8 @@ state = ssOpt.smooth(y);
 [~, ~, fOut] = ssOpt.filter(y, x);
 ssOpt = ssOpt.checkSample(y, x);
 ssMulti = ssOpt;
-[ssOpt, ~, ~, C] = ssOpt.prepareFilter(y, x);
-weights = ssOpt.smoother_weights(y, x, fOut, ssMulti, C);
+[ssOpt, ~, ~, C] = ssOpt.prepareFilter(y, x, []);
+[~, ~, ~, ~, weights] = ssOpt.decompose_smoothed(y);
 
 w = cell2mat(weights.y);
 
