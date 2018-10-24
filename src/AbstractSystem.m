@@ -4,11 +4,9 @@ classdef (Abstract) AbstractSystem
   % David Kelley, 2016-2017
   
   properties (Dependent, Hidden)
-    % Static Properties
-    
+    % Static properties
     % Indicator for use of compiled functions
-    useMex    
-    
+    useMex
     % Indicator for use of parallel toolbox
     useParallel
   end
@@ -24,9 +22,10 @@ classdef (Abstract) AbstractSystem
   end
   
   properties (Hidden)
-    n % Observed time periods
-    
-    stationaryStates % Logical vector for which states are stationary
+    % Observed time periods
+    n     
+    % Logical vector for which states are stationary
+    stationaryStates 
   end
   
   methods
@@ -139,29 +138,6 @@ classdef (Abstract) AbstractSystem
     function mat = enforceSymmetric(mat)
       % Force a matrix to be symmetric. Corrects for small rounding errors in recursions.
       mat = 0.5 .* (mat + mat');
-    end
-    
-    function [Finv, logDetF] = pseudoinv(F, tol)
-      % Returns the pseudo-inverse and log determinent of F
-      %
-      % [Finv, logDetF] = pseudoinv(F, tol) finds the inverse and log
-      % determinent of F. Elements of the SVD of F less than tol are taken as 0.
-      
-      tempF = 0.5 .* (F + F');
-      
-      [PSVD, DSDV, PSVDinv] = svd(tempF);
-      
-      % Truncate small singular values
-      firstZero = find(diag(DSDV) < tol, 1, 'first');
-      
-      if ~isempty(firstZero)
-        PSVD = PSVD(:, 1:firstZero - 1);
-        PSVDinv = PSVDinv(:, 1:firstZero - 1);
-        DSDV = DSDV(1:firstZero - 1, 1:firstZero - 1);
-      end
-      
-      Finv = PSVD * (DSDV\eye(length(DSDV))) * PSVDinv';
-      logDetF = sum(log(diag(DSDV)));
     end
   end
   

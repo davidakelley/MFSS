@@ -1,9 +1,10 @@
 function result = execTests(tests)
-% EXECTESTS runs all of the tests for StateSpace.
+% Run all of the tests for MFSS 
+% 
 % Pass a cell array of strings containing the shortcuts to run subsets of
-% the tests. Subsets include 'mex', 'gradient', and 'ml'.
+% the tests. Subsets include 'basic', 'kalman', 'Accumulator', 'ml', and 'decomp'.
 
-% David Kelley, 2016
+% David Kelley, 2016-2018
 
 defaultTests = {'basic', 'kalman', 'Accumulator', 'ml', 'decomp'};
 if nargin == 0

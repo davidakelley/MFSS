@@ -1,7 +1,5 @@
 classdef MFVAR
-  % MFVAR Mixed-Frequency VAR
-  %
-  % Mixed-frequency VAR estimated via maximum likelihood and Bayesian methods
+  % Mixed-frequency VAR estimated via maximum likelihood
   
   % David Kelley, 2018
   
@@ -25,23 +23,33 @@ classdef MFVAR
   end
   
   methods
-    
     function obj = MFVAR(data, lags, accumulator)
+      % Constructor
+      % 
+      % Inputs: 
+      %     data (double): data for VAR (T x p)
+      %     lags (double): number of lags to include in VAR
+      %     accumulator (Accumulator): timing specification of data
+      % Output: 
+      %     obj (MFVAR): estimation object
       
-      obj.Y = data;
-      
+      obj.Y = data;      
       obj.nLags = lags;
       if nargin > 2 
         obj.accumulator = accumulator;
       else 
         obj.accumulator = Accumulator([], [], []);
       end
-      
       obj.p = size(obj.Y, 2);
     end
     
     function ssML = estimate(obj)
       % Estimate maximum likelihood parameters via EM algorithm
+      % 
+      % Inputs:
+      %     [none]
+      % Outputs: 
+      %     ssML: StateSpace of estimated MF-VAR
       
       if obj.verbose
         algoTitle = 'Mixed-Frequency VAR EM Estimation';
@@ -70,7 +78,8 @@ classdef MFVAR
       % Generate ThetaMap for progress window
       Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
       H = zeros(obj.p);
-      T = [nan(size(params.phi)); [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
+      T = [nan(size(params.phi)); ...
+        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
       c = [nan(size(params.cons)); zeros(obj.p * (obj.nLags - 1), 1)];
       R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
       Q = nan(size(params.sigma));
@@ -97,7 +106,7 @@ classdef MFVAR
         params = obj.estimateOLS_VJ(alpha, V, J);
        
         % E-step: Get state conditional on parameters
-        [alpha, logli, V, J, a0, ~, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
+        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -159,17 +168,16 @@ classdef MFVAR
   
   %% EM algorithm
   methods (Hidden)
-    function [state, logli, V, J, a0tilde, V0, ssVAR, theta] = stateEstimate(obj, params, a0, P0, tm)
+    function [state, logli, V, J, a0tilde, ssVAR, theta] = stateEstimate(obj, params, a0, P0, tm)
+      % Estimate latent state and variances
+      
       [ssVAR, theta] = obj.params2system(params, tm);
       ssVAR.a0 = a0;
       ssVAR.P0 = P0;
       
       [state, sOut, fOut] = ssVAR.smooth(obj.Y);
       logli = sOut.logli;
-      
-      a1tilde = state(1,:)'; 
-      V1 = sOut.V(:,:,1); 
-      
+            
       % No observed data in period 0, L_0 = T_1.
       if isempty(ssVAR.tau)
         L0 = ssVAR.T;
@@ -178,11 +186,6 @@ classdef MFVAR
       end
       r0 = L0' * sOut.r(:,1);
       a0tilde = ssVAR.a0 + ssVAR.P0 * r0;
-%       N0 = L0' * sOut.N(:,:,1) * L0;
-%       V0 = AbstractSystem.enforceSymmetric(ssVAR.P0 - ssVAR.P0 * N0 * ssVAR.P0);
-      
-%       a0tilde = a1tilde; 
-      V0 = V1;
       
       if nargout > 2
         ssVAR = ssVAR.setDefaultInitial();
@@ -215,7 +218,7 @@ classdef MFVAR
     end
     
     function params = estimateOLS_VJ(obj, alpha, V, J)
-      % Estimate an OLS VAR taking the uncertainty of the state into account. 
+      % Estimate the OLS VAR taking the uncertainty of the state into account. 
       %
       % Everything here is in the companion VAR(1) form from the smoother. 
       % We just need to worry about estimating the VAR(1) case then. 
@@ -240,7 +243,7 @@ classdef MFVAR
       yyT = addVy + yvals' * yvals;
       
       OLS = yxT/xxT;
-      Sigma = (yyT-OLS*yxT') ./ (size(alpha,1) - 1); % FIXME: -1? obj.nLags?
+      Sigma = (yyT-OLS*yxT') ./ (size(alpha,1) - 1);
       Sigma = (Sigma + Sigma') ./ 2;
       
       params = struct('phi', OLS(:, 1:obj.p*obj.nLags), 'cons', OLS(:,end), ...

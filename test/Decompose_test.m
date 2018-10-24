@@ -829,7 +829,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       dataEff = reshape(sum(decomp_data, 2), size(alpha));
       reconstruct_alpha = dataEff + decomp_const;
       
-      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-11, 'AbsTol', 1e-12);
+      testCase.verifyEqual(alpha, reconstruct_alpha, 'RelTol', 1e-12, 'AbsTol', 1e-12);
     end
     
     function testARp_uni_d_alpha(testCase)

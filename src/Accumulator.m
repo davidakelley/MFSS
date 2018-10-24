@@ -1,22 +1,16 @@
 classdef Accumulator < AbstractSystem
-  % State space augmenting accumulators, enforcing sum and average aggregation
+  % State space augmenting accumulators, enforcing sum and average aggregation.
   %
   % Accumulators may be defined for each observable series in the accumulator
   % structure. Three fields need to be defined:
   %   index     - linear indexes of series needing accumulation
   %   calendar  - calendar of observations for accumulated series
   %   horizon   - periods covered by each observation
-  % These fields may also be named xi, psi, and Horizon. For more
-  % information, see the readme.
+  % These fields may also be named xi, psi, and Horizon.
   %
-  % David Kelley, 2016-2017
-  %
-  % TODO (1/17/17)
-  % ---------------
-  %   - Write method that checks if a dataset follows the pattern an accumulator
-  %     would expect.
+  % David Kelley, 2016-2018
   
-  properties % (Access = protected)
+  properties 
     % Linear index of observation dimensions under aggregation
     index
     
@@ -37,6 +31,14 @@ classdef Accumulator < AbstractSystem
   methods
     function obj = Accumulator(index, calendar, horizon)
       % Constructor
+      % 
+      % Arguments: 
+      %     index (double): linear index of series needing aggregation
+      %     calendar (double): calendar variable specific to accumulator type
+      %     horizon (double): number of high-freq periods in low-freq period
+      % Outputs: 
+      %     obj (Accumulator): Accumulator object
+      
       if islogical(index)
         index = find(index);
       end
@@ -59,27 +61,34 @@ classdef Accumulator < AbstractSystem
     
     function ssNew = augmentStateSpace(obj, ss)
       % Augment the state of a system to enforce accumulator constraints
+      %      
+      % Arguments:
+      %     ss (StateSpace): StateSpace to augment
+      % Outputs: 
+      %     ssNew (StateSpace): augmented StateSpace
       %
       % Note that augmenting a system removes initial values.
       
-%       ss.checkConformingSystem(obj);
       obj.checkConformingSystem(ss);
-      aug = obj.computeAugSpecification(ss);
-      
+      aug = obj.computeAugSpecification(ss);      
       ssNew = obj.buildAccumulatorStateSpace(ss, aug);
     end
     
     function tmNew = augmentThetaMap(obj, tm)
-      % Create a ThetaMap that produces StateSpaces that obey the accumulator.
+      % Augment a ThetaMap so that it produces an augmented StateSpace.
+      %      
+      % Arguments:
+      %     tm (ThetaMap): ThetaMap to augment
+      % Outputs: 
+      %     tmNew (ThetaMap): augmented ThetaMap
+      %
       % The size of the theta vector will stay the same.
       
       obj.checkConformingSystem(tm);
-      
       aug = obj.comptueThetaMapAugSpecification(tm);
       
       % Since everything is elementwise in the augmentation, augmenting the
       % fixed system will work almost the same as a regular StateSpace.
-      
       fixedNew = obj.buildAccumulatorStateSpace(tm.fixed, aug);
       
       % Augmenting the index is different. We need to simply copy the rows as
@@ -109,10 +118,8 @@ classdef Accumulator < AbstractSystem
       tmNew.thetaLowerBound = tm.thetaLowerBound;
       tmNew.thetaUpperBound = tm.thetaUpperBound;
       tmNew.thetaNames = tm.thetaNames;
-%       warning off 'ThetaMap:setRestrictions'
       tmNew = tmNew.addRestrictions(obj.buildAccumulatorStateSpace(tm.LowerBound, aug), ...
         obj.buildAccumulatorStateSpace(tm.UpperBound, aug));
-%       warning on 'ThetaMap:setRestrictions'
       
       % Have to use internal ThetaMap method to set nTheta
       tmNew = tmNew.validateThetaMap();
@@ -120,6 +127,12 @@ classdef Accumulator < AbstractSystem
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)
       % Augment a StateSpaceEstimation to obey the accumulators.
+      %      
+      % Arguments:
+      %     sse (StateSpaceEstimation): StateSpaceEstimation to augment
+      % Outputs: 
+      %     sseNew (StateSpaceEstimation): augmented StateSpaceEstimation
+     
       % This is actually simple: augment the system matricies (and let the nans
       % propogate) and augment the ThetaMap.
       
@@ -152,6 +165,14 @@ classdef Accumulator < AbstractSystem
   methods (Static)
     function accum = GenerateRegular(data, types, horizons)
       % Generate calendar and horizon for regularly spaced observations
+      %
+      % Arguments:
+      %     data (double): observed data (y) in sample
+      %     types (cell): cell array of strings indicating 'sum' or 'avg' accumulators
+      %     horizons (double): horizon of each accumulator
+      % Outputs: 
+      %     accum (Accumulator): accumulator 
+      %
       % The first period of the data must be the first period for each
       % accumulator.
       
@@ -201,8 +222,12 @@ classdef Accumulator < AbstractSystem
     end
     
     function calendar = group2calendar(group)
-      % Utility method to generate calendar from a group vector, such as the month within
-      % a year.
+      % Utility method to generate average calendar from a group indicator.
+      % 
+      % Arguments:
+      %     group (double): vector of group (ie, month of year)
+      % Outputs: 
+      %     calendar (double): calendar variable for average accumulator
       
       calendar = nan(size(group));
       for iVec = 1:size(group,2)

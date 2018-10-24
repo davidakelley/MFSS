@@ -3,9 +3,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   %
   % Provides the structural parts of the parameter manipulation and some
   % utility functions.
-  %
-  % Two current subclasses: StateSpace (for systems with known parameters) and
-  % StateSpaceEstimation (to estimate unknown parameters of a system).
   
   % David Kelley, 2016-2017
 
@@ -59,8 +56,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     
     % Lists of variables used across methods
     systemParam = {'Z', 'd', 'beta', 'H', 'T', 'c', 'gamma', 'R', 'Q'};
-    symmetricParams = {'H', 'Q', 'Q0', 'P'};    % Include P0? P?
-    % FIXME: Why P in symmetricParams?
+    symmetricParams = {'H', 'Q', 'Q0'};
   end
   
   methods
@@ -70,8 +66,8 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     end
     
     function obj = set.a0Private(obj, newa0)
-      % Check if obj.m is empty - if it is, we're loading a saved object so ignore the
-      % assertion. 
+      % Check if obj.m is empty. If it is, it means that a saved object is being loaded, 
+      % so the assertion should pass. 
       assert(isempty(obj.m) || isempty(newa0) || size(newa0, 1) == obj.m, ...
         'a0 should be a m X 1 vector');
       obj.a0Private = newa0;
@@ -84,7 +80,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     end
     
     function obj = set.P0Private(obj, newP0)
-      
       if isempty(newP0)
         % Unset initial value
         obj.A0 = [];
@@ -131,7 +126,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
   methods
     %% Constructor
     function obj = AbstractStateSpace(Z, d, beta, H, T, c, gamma, R, Q)
-      % Constructor
       % Inputs: Parameters matricies or a structure of parameters
       if nargin == 1
         % Structure of parameter values or AbstractStateSpace object passed
@@ -144,7 +138,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       else
         error('MFSS:inputError', 'Input error.');
       end
-      
       obj = obj.setSystemParameters(parameters);
     end
 
@@ -160,11 +153,12 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
 
     function [nLags, positions] = LagsInState(obj, varPos)
       % Finds the lags of a variable in the state space
-      % Input:
-      %   varPos    - linear index of vector position of variable of interest
-      % Output:
-      %   nLags     - number of lags in the state of variable of interest
-      %   positions - linear index position of the lags
+      % 
+      % Arguments:
+      %     varPos (double):  linear index of vector position of variable of interest
+      % Outputs:
+      %     nLags (double): number of lags in the state of variable of interest
+      %     positions (double): linear index position of the lags
       %
       % Criteria for determining if a candidate variable is a "lag variable":
       %   - The variable of interest loads on to the candidate with a 1.
@@ -175,7 +169,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       
       eVec = @(size, elem) [false(elem-1, 1); true; false(size-elem, 1)];
 
-      % FIXME: Shouldn't c and gamma show up here too? 
       criteriaFn = @(interest) all([(obj.T(:, interest, obj.tau.T(1)) == 1) ...
         all(obj.T(:,((1:size(obj.T,1)) ~= interest), obj.tau.T(1)) == 0,2) ...
         all(obj.R(:, :, obj.tau.R(1)) == 0, 2) ~eVec(obj.m, interest)], 2);
@@ -196,9 +189,6 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       %     y (double) : observed data
       %     x (double) : exogenous series in measurement equation
       %     w (double) : exogenous series in state equation
-      % 
-      % TODO: 
-      %     - check that we're only observing accumulated series when we should
       
       if size(y, 1) ~= obj.p && size(y,2) == obj.p
         y = y';
@@ -286,6 +276,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     %% Constructor helper methods
     function obj = setSystemParameters(obj, parameters)
       % Obtain system matrices from structure
+      % 
       % By passing both the different types of system matrices and the calendar
       % vector corresponding to the particular type used at any particular time
       % we allow for an arbitrary number of structural "breaks" in the state
@@ -497,6 +488,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     end
     
     function obj = setTimeVarrying(obj, n)
+      % Set the time dimension 
       if obj.timeInvariant
         obj.timeInvariant = false;
         obj.n = n;

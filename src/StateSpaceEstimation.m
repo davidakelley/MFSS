@@ -1,43 +1,34 @@
 classdef StateSpaceEstimation < AbstractStateSpace
   % Maximum likelihood estimation of parameters 
-  % -------------------------------------------
-  %   ss_estimated = ss.estimate(y, ss0)
   %
   % Estimate parameter values of a state space system. Indicate values to
-  % be estimated by setting them to nan. An initial set of parameters must
-  % be provided in ss0.
-  %
-  % Pseudo maximum likelihood estimation
-  % ------------------------------------
-  %   ss_estimated = ss.em_estimate(y, ss0)
-  %
-  % Initial work on implementing a general EM algorithm.
+  % be estimated by setting them to nan or with symbolic variables. 
   
   % David Kelley, 2016-2017
   
   properties
+    % Mapping from theta vector to parameters
+    ThetaMapping      
+    
     % Screen output during ML estimation
     verbose = false;
+    % Show window during estimation
     diagnosticPlot = true;
     
+    % Solver options
     solver = {'fmincon', 'fminsearch'};
     solveIterMax = 20;
+    % Tolerance for each solver 
+    stepTol = 1e-8;     
+    % Tolerance for improvement between solvers
+    solveTol = 1e-10;   
     
-    % ML-estimation tolerances
-    tol = 1e-10;      % Final estimation tolerance
-    stepTol = 1e-8;  % Step-size tolerance for ML theta elements
-    solveTol = 1e-11;   % EM tolerance
-    
-    % ML Estimation parameters
-    ThetaMapping      % Mapping from theta vector to parameters
+    % Compute gradient internally (or else let fminunc/fmincon do so)
+    useInternalNumericGrad = true;
     
     % Function handle to constraints on theta
     constraints
-    
     fminsearchMaxIter = 500;
-    
-    % Indicator to use more accurate, slower gradient
-    useInternalNumericGrad = false;
     
     % Allowable flags in estimation
     flagsAllowed = -1:5;
@@ -79,6 +70,18 @@ classdef StateSpaceEstimation < AbstractStateSpace
   methods
     %% Constructor
     function obj = StateSpaceEstimation(Z, H, T, Q, varargin)
+      % Constructor 
+      % 
+      % Arguments: 
+      %   Z, H, T Q (double): state space parameters
+      % Optional arguments (name-value pairs): 
+      %   d, beta, c, gamma, R (double) state space parameters
+      %   a0, P0 (double): initial state values
+      %   LowerBound, UpperBound (StateSpace): bounds on parameters
+      %   ThetaMap (ThetaMap): mapping from parameter vector to state space parameters
+      % Output: 
+      %   obj (StateSpaceEstimation): estimation object
+      
       inP = inputParser;
       inP.addParameter('d', []);
       inP.addParameter('beta', []);
@@ -118,15 +121,20 @@ classdef StateSpaceEstimation < AbstractStateSpace
     end
     
     %% Estimation methods
-    function [ss_out, diagnostic, thetaHat, gradient] = estimate(obj, y, ss0, x, w)
+    function [ss, diagnostic, thetaHat, gradient] = estimate(obj, y, ss0, x, w)
       % Estimate missing parameter values via maximum likelihood.
       %
-      % ss = ss.estimate(y, ss0) estimates any missing parameters in ss via
-      % maximum likelihood on the data y using ss0 as an initialization.
-      %
-      % ss.estimate(y, ss0, a0, P0) uses the initial values a0 and P0
-      %
-      % [ss, flag] = ss.estimate(...) also returns the fmincon flag
+      % Arguments: 
+      %     y (double): observe data
+      % Optional arguments (additional inputs): 
+      %     ss0 (StateSpace or double): StateSpace or theta vector of initial values
+      %     x (double): exogenous measurement equation data
+      %     w (double): exogenous state equation data
+      % Outputs: 
+      %     ss (StateSpace): estimated StateSpace
+      %     diagnostic (structure): structure containing diagnostics on estimation
+      %     thetaHat (double): estimated parameter vector
+      %     gradient (double): gradient of the likelihood at estimated theta
       
       if nargin < 4
         x = [];
@@ -186,8 +194,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       assert(isnumeric(x), 'x must be numeric.');
       assert(isnumeric(w), 'w must be numeric.');
       assert(isa(ss0, 'StateSpace') || isnumeric(ss0));
-      assert(obj.ThetaMapping.nTheta > 0, ...
-        'All parameters known. Unable to estimate.');
+      assert(obj.ThetaMapping.nTheta > 0, 'All parameters known. Unable to estimate.');
       
       % Run fminunc/fmincon
       nonlconFn = @obj.nlConstraintFun;
@@ -207,8 +214,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 1000, ...
-        'FunctionTolerance', obj.tol, ...
-        'OptimalityTolerance', obj.tol, ...
+        'FunctionTolerance', obj.stepTol, ...
+        'OptimalityTolerance', obj.stepTol, ...
         'StepTolerance', obj.stepTol, ...
         'TolCon', 0, ...
         'OutputFcn', outputFcn);
@@ -220,8 +227,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'Display', displayType, ...
         'MaxFunctionEvaluations', 50000, ...
         'MaxIterations', 1000, ...
-        'FunctionTolerance', obj.tol, ...
-        'OptimalityTolerance', obj.tol, ...
+        'FunctionTolerance', obj.stepTol, ...
+        'OptimalityTolerance', obj.stepTol, ...
         'StepTolerance', obj.stepTol, ...
         'OutputFcn', outputFcn);
       
@@ -343,11 +350,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
   
       % Save estimated system to current object
       thetaHat = obj.ThetaMapping.restrictTheta(thetaUHat);
-      ss_out = obj.ThetaMapping.theta2system(thetaHat);
+      ss = obj.ThetaMapping.theta2system(thetaHat);
       
       % Run smoother, plot smoothed state
       if obj.diagnosticPlot
-        progress.alpha = ss_out.smooth(y, x, w);
+        progress.alpha = ss.smooth(y, x, w);
         if progress.visible && isvalid(progress.figHandle) && ...
             strcmpi(progress.updateStatus, 'active')     
           progress.updateFigure();
@@ -362,7 +369,8 @@ classdef StateSpaceEstimation < AbstractStateSpace
   methods (Hidden = true)
     %% Maximum likelihood estimation helper methods
     function [negLogli, gradient] = minimizeFun(obj, thetaU, y, x, w, progress, calcGrad)
-      % Get the likelihood of
+      % Get the likelihood of thetaU
+      
       theta = obj.ThetaMapping.restrictTheta(thetaU);
       ss1 = obj.ThetaMapping.theta2system(theta);
       ss1 = ss1.setDefaultInitial();
@@ -441,12 +449,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
     function [cx, ceqx] = nlConstraintFun(obj, thetaU)
       % Constraints of the form c(x) <= 0 and ceq(x) = 0.
       scale = 1e6;
-      % vec = @(M) reshape(M, [], 1);
-
       theta = obj.ThetaMapping.restrictTheta(thetaU);
 
       % User constraints
-      % TODO/FIXME: Is it a problem that deltaCX doesn't match this now? Yes.
       cx = [];
       if ~isempty(obj.constraints)
         if ~iscell(obj.constraints)
@@ -460,8 +465,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
       
       % Return the negative determinants in cx
       ss1 = obj.ThetaMapping.theta2system(theta);
-      % cx = scale * -[det(ss1.H) det(ss1.Q)]';
-      % cx = []; % Removed H, Q dets on 1/25
       if ~obj.ThetaMapping.usingDefaultP0
         cx = [cx; scale * -det(ss1.Q0)];
       end         
@@ -473,7 +476,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
         eigs = eig(ss1.T(obj.stationaryStates,obj.stationaryStates,obj.tau.T(1)));
         stationaryCx = scale * (max(abs(eigs)) - 1);
         cx = [cx; stationaryCx];
-        % deltaCX = [];
       end
       
       if any(isnan(cx))
@@ -489,7 +491,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
       iLogli = nan(obj.initializeAttempts, 1); 
       iTheta0U = nan(obj.ThetaMapping.nTheta, obj.initializeAttempts);
       
-      %while (~isfinite(ll0) || any(~isfinite(grad0))) && iAttempt < obj.initializeAttempts
       for iAttempt = 1:obj.initializeAttempts
         iTheta0U(:,iAttempt) = obj.initializeRange(1) + rand(obj.ThetaMapping.nTheta, 1) * ...
           (obj.initializeRange(2) - obj.initializeRange(1));

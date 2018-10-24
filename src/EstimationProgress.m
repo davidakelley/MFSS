@@ -1,9 +1,7 @@
 classdef EstimationProgress < handle
   % Progress management for estimation
-  %
-  % 
   
-  % David Kelley, 2017
+  % David Kelley, 2017-2018
   
   properties
     theta
@@ -47,7 +45,7 @@ classdef EstimationProgress < handle
     winSize = [725 700];   
     
     m     % State dimension
-    ss
+    ss    % StateSpace
     
     usedParams
   end
@@ -60,7 +58,16 @@ classdef EstimationProgress < handle
   methods
     %% Constructor
     function obj = EstimationProgress(theta0, visible, m, ss)
-
+      % Constructor
+      % 
+      % Arguments: 
+      %   theta0 (double): initial theta
+      %   visible (boolean): if false, no window is created
+      %   m (double): state dimension
+      %   ss (StateSpace): StateSpace of theta0
+      % Outputs: 
+      %   obj (EstimationProgress) 
+      
       % Set up tracking values
       obj.theta0 = theta0;
       obj.m = m;
@@ -103,7 +110,7 @@ classdef EstimationProgress < handle
         end
         obj.visible = true;
         
-        obj.setupWindow(paramChar, paramSlice, stateSelect);
+        obj.setupWindow(paramChar, paramSlice);
         obj.setupPlots(paramChar, paramSlice, stateSelect);
       end
       
@@ -113,14 +120,16 @@ classdef EstimationProgress < handle
   methods
     function stopCond = update(obj, x, optimValues)
       % Update after each iteration
-      %   theta: estimate of parameters
-      %   optimValues: structure 
-      %   state: string of whats going on
+      % 
+      % Arguments:
+      %     x (double): theta vector
+      %     optimValues (struct): structure containing negative likelihood in fval
+      % Outputs: 
+      %     stopCond (boolean): true indicates solver should stop
 
       % Update current values
       obj.theta = x;
       obj.logli = -optimValues.fval;
-      % obj.ss = ss;
       
       % Update tracking values
       obj.thetaIter = obj.thetaIter + 1;
@@ -194,6 +203,8 @@ classdef EstimationProgress < handle
     end
     
     function nextSolver(obj)
+      % Move to the next solver
+      
       obj.solverIter = obj.solverIter + 1;
       
       % Reset stop condition for solver
@@ -248,7 +259,7 @@ classdef EstimationProgress < handle
       EstimationProgress.getWindow(newwin);
     end
     
-    function setupWindow(obj, paramChar, paramSlice, stateSelect)
+    function setupWindow(obj, paramChar, paramSlice)
       % Create basic figure elements
       
       newwin = EstimationProgress.getWindow();
@@ -480,7 +491,6 @@ classdef EstimationProgress < handle
     end    
     
     %% Utility getters
-    
     function maxSlice = getSliceNum(obj, ssParamName)
       % Find out the number of slices in a given parameter
       if any(strcmpi(ssParamName, {'Z', 'beta', 'H', 'T', 'gamma', 'R', 'Q'}))

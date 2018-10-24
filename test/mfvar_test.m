@@ -2,7 +2,7 @@
 % Assumes that the Matlab version of the univariate filter/smoother are
 % correct.
 
-% David Kelley, 2016
+% David Kelley, 2018
 
 classdef mfvar_test < matlab.unittest.TestCase
   

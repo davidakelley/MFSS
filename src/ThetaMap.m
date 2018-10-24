@@ -316,10 +316,10 @@ classdef ThetaMap < AbstractSystem
     function ss = theta2system(obj, theta)
       % Generate a StateSpace from a vector theta
       % 
-      % Inputs
-      %   theta: Vector of varried parameters
+      % Arguments: 
+      %     theta (double): vector of parameters
       % Output 
-      %   ss:    A StateSpace
+      %     ss (StateSpace): a StateSpace object
       
       % Handle inputs
       assert(all(size(theta) == [obj.nTheta 1]), ...
@@ -378,10 +378,10 @@ classdef ThetaMap < AbstractSystem
     function theta = system2theta(obj, ss)
       % Get the theta vector that would determine a system
       % 
-      % Inputs
-      %   ss:    A StateSpace
+      % Arguments: 
+      %     ss (StateSpace): a StateSpace object
       % Output 
-      %   theta: Vector of varried parameters
+      %     theta (double): vector of parameters
             
       % Handle inputs
       obj.index.checkConformingSystem(ss);
@@ -502,31 +502,48 @@ classdef ThetaMap < AbstractSystem
     end
     
     %% Theta restrictions
-    function transformedTheta = restrictTheta(obj, theta)
+    function theta = restrictTheta(obj, thetaU)
       % Create restricted version of theta
+      % 
+      % Arguments: 
+      %     thetaU (double): unrestricted theta vector
+      % Output 
+      %     theta (double): restricted theta
+      
       trans = obj.getThetaTransformations();
       
-      transformedTheta = nan(obj.nTheta, 1);
+      theta = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
-        transformedTheta(iTheta) = trans{iTheta}(theta(iTheta));
+        theta(iTheta) = trans{iTheta}(thetaU(iTheta));
       end
     end
     
-    function untransformedTheta = unrestrictTheta(obj, theta)
-      % Get theta^U given theta
+    function thetaU = unrestrictTheta(obj, theta)
+      % Get unrestricted theta given restricted theta
+      %  
+      % Arguments: 
+      %     theta (double): restricted theta
+      % Output 
+      %     thetaU (double): unrestricted theta vector
       
       assert(all(theta+eps > obj.thetaLowerBound), 'Theta lower bound violated.');
       assert(all(theta-eps < obj.thetaUpperBound), 'Theta upper bound violated.');
             
       [~, thetaInverses] = obj.getThetaTransformations();
-      untransformedTheta = nan(obj.nTheta, 1);
+      thetaU = nan(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
-        untransformedTheta(iTheta) = thetaInverses{iTheta}(theta(iTheta));
+        thetaU(iTheta) = thetaInverses{iTheta}(theta(iTheta));
       end
     end
     
     function GtransformedTheta = thetaUthetaGrad(obj, thetaU)
-      % Construct G_{theta^U}(theta)
+      % Construct the gradient of theta restriction
+      % 
+      % Arguments: 
+      %     thetaU (double): unrestricted theta vector
+      % Output 
+      %     GtransformedTheta (double): gradient of the theta restrictions
+      
       [~, ~, thetaUDeriv] = obj.getThetaTransformations();
       GtransformedTheta = zeros(obj.nTheta);
       for iTheta = 1:obj.nTheta
@@ -539,11 +556,11 @@ classdef ThetaMap < AbstractSystem
       % Restrict the possible StateSpaces that can be created by altering the
       % transformations used
       % 
-      % Inputs
-      %   ssLB: Lower bound StateSpace
-      %   ssUB: Upper bound StateSpace
+      % Arguments: 
+      %     ssLB (StateSpace): Lower bound StateSpace
+      %     ssUB (StateSpace): Upper bound StateSpace
       % Output
-      %   obj:  Altered ThetaMap with added lower and upper bounds
+      %     obj (ThetaMap):  Altered ThetaMap with added lower and upper bounds
       
       % Handle inputs
       if nargin < 3 || isempty(ssUB)
@@ -630,13 +647,13 @@ classdef ThetaMap < AbstractSystem
     function obj = addStructuralRestriction(obj, symbol, lb, ub)
       % Set the bounds on an element of theta
       % 
-      % Inputs: 
-      %   symbol: which element of theta to restrict. Index, symbol or character accepted.
-      %   lb: lower bound 
-      %   ub: upper bound
-      %
-      % If the lower or upper bounds passed are empty, the bound is unchanged. 
- 
+      % Arguments: 
+      %     sybmol (symbol or char): symbolic variable being restricted
+      %     lb (StateSpace): lower bound
+      %     ub (StateSpace): upper bound
+      % Output
+      %     obj (ThetaMap):  Altered ThetaMap with added lower and upper bounds
+      
       % Find the element of theta we'll restrict
       if isnumeric(symbol)
         assert(symbol <= obj.nTheta) 
@@ -658,6 +675,11 @@ classdef ThetaMap < AbstractSystem
     
     function obj = validateThetaMap(obj)
       % Verify that the ThetaMap is valid after user modifications. 
+      % 
+      % Arguments: 
+      %     [none]
+      % Outputs: 
+      %     obj (ThetaMap): valid, compressed object
       
       % Minimize the size of theta and psi needed after edits have been made to 
       % index: If the user changes an element to be a function of a different 
@@ -696,6 +718,11 @@ classdef ThetaMap < AbstractSystem
     
     function obj = compressTheta(obj, deletedTheta)
       % Remove unused elements of theta
+      % 
+      % Arguments: 
+      %     deletedTheta (double): indexes to deleted elements
+      % Outputs: 
+      %     obj (ThetaMap): compressed object
       
       % Delete unused index elements, decrement those we're still keeping if
       % we're deleting indexes below them.
@@ -720,6 +747,11 @@ classdef ThetaMap < AbstractSystem
       % Removes unused or duplicate transformations.
       % For duplicates, set their indexes to the lower-indexed version and 
       % delete the higher-indexed version.
+      % 
+      % Arguments: 
+      %     [none]
+      % Outputs: 
+      %     obj (ThetaMap): compressed object
       
       % Make sure we don't have any transformations on fixed elements
       possibleParamNames = [obj.transformationIndex.systemParam, {'a0', 'Q0'}];
@@ -779,6 +811,12 @@ classdef ThetaMap < AbstractSystem
       %
       % Inputs may contain nans indicating the elements to be estimated. Note
       % that this causes a0 and P0 to be freely estimated. 
+      % 
+      % Arguments: 
+      %     a0 (double): initial state mean
+      %     P0 (double): initial state variance
+      % Outputs: 
+      %     obj (ThetaMap): updated object
       
       % Get the identity transformation to add later
       [trans, inverse] = obj.boundedTransform(-Inf, Inf);
@@ -873,6 +911,11 @@ classdef ThetaMap < AbstractSystem
     
     function thetaStr = paramString(obj)
       % Create a cell vector of which parameter each theta element influences
+      % 
+      % Arguments: 
+      %     [none]
+      % Outputs: 
+      %     thetaStr (cell): cell array describing each element of theta
       
       % Find parameters affected
       thetaStr  = cell(obj.nTheta, 1);
@@ -903,7 +946,6 @@ classdef ThetaMap < AbstractSystem
     end
     
     function constructed = constructParamMat(obj, psi, matName)
-
       % Create parameter value matrix from fixed and varried values
       
       % Get fixed values
@@ -926,6 +968,8 @@ classdef ThetaMap < AbstractSystem
     end
     
     function [thetaTrans, thetaInv, thetaDeriv] = getThetaTransformations(obj)
+      % Get cell array of transformations given bounds 
+      
       thetaTrans = cell(obj.nTheta, 1);
       thetaInv = cell(obj.nTheta, 1);
       thetaDeriv = cell(obj.nTheta, 1);
@@ -937,7 +981,7 @@ classdef ThetaMap < AbstractSystem
     
     function [newTrans, newInver, transInx, newLBmat, newUBmat] = ...
         restrictParamMat(obj, ssLB, ssUB, iParam)
-      % Get the new version of a parameter after new restrictions
+      % Get the new version of a parameter transformation after new restrictions
       
       % Find the higher lower bound and lower upper bound
       oldLBmat = obj.LowerBound.(iParam);
@@ -968,56 +1012,6 @@ classdef ThetaMap < AbstractSystem
       
       newTrans(cellfun(@isempty, newTrans)) = [];
       newInver(cellfun(@isempty, newInver)) = [];
-    end
-    
-    function outStr = getMatList(obj)
-      % Utility: create a cell vector of parameters each theta element affects
-      
-      outStr  = cell(obj.nTheta, 1);
-      
-      params = obj.fixed.systemParam;
-      matParam = repmat({''}, [obj.nTheta, length(params)]);
-      for iP = 1:length(params)
-        indexes = obj.index.(params{iP});
-        matParam(indexes(indexes~=0), iP) = repmat(params(iP), [sum(indexes(:)~=0), 1]);
-      end
-      
-      for iT = 1:obj.nTheta
-        goodStrs = matParam(iT,:);
-        goodStrs(cellfun(@isempty, goodStrs)) = [];
-        outStr{iT} = strjoin(goodStrs, ', ');
-      end
-    end
-    
-    function obj = reconstructBoundSystems(obj)
-      % Find what the bounds on the system matricies are given the
-      % transformations inclueded in the ThetaMap. 
-      %
-      % Note that this function assumes all transformations are monotonic.
-      
-      posInfSys = obj.theta2system(Inf([obj.nTheta 1]));
-      negInfSys = obj.theta2system(-Inf([obj.nTheta 1]));
-      
-      lower = negInfSys;
-      upper = negInfSys;
-      
-      for iM = 1:length(lower.systemParam)
-        iMat = lower.systemParam{iM};
-        lower.(iMat) = min(negInfSys.(iMat), posInfSys.(iMat));
-        upper.(iMat) = max(negInfSys.(iMat), posInfSys.(iMat));        
-      end
-      
-      % FIXME: a0 and Q0
-      
-      obj.LowerBound = lower;
-      obj.UpperBound = upper;
-    end
-    
-    function obj = setRestrictions(obj, ssLB, ssUB)
-      % Utility function not to be used 
-      warning('ThetaMap:setRestrictions', 'setRestrictions not to be used externally.');
-      obj.LowerBound = ssLB;
-      obj.UpperBound = ssUB;
     end
   end
   
@@ -1235,7 +1229,8 @@ classdef ThetaMap < AbstractSystem
       %   upperBound: Scalar upper bound
       % Outputs
       %   trans: transformation mapping [-Inf, Inf] to the specified interval
-      %   inver: the inverse of trans      
+      %   inver: the inverse of trans    
+      %   deriv: derivative of trans
       
       if isfinite(lowerBound) && isfinite(upperBound)
         % Logistic function
@@ -1273,26 +1268,23 @@ classdef ThetaMap < AbstractSystem
         assert(size(fn1) == size(fn2), 'Cell array inputs must be the same size.');
       end
       
-      % Needed since we can't use a certain word with sphinx-matlabdomain:
-      fnc = ['f' 'unction'];
-      
       if iscell(fn1)
         fnInfo1 = cellfun(@functions, fn1);
-        fn1Strs = cellfun(@(x) x.(fnc), fnInfo1, 'Uniform', false);
+        fn1Strs = cellfun(@(x) x.function, fnInfo1, 'Uniform', false);
         fn1Workspace = cellfun(@(x) x.workspace{1}, fnInfo1);
       else
         fnInfo1 = functions(fn1);
-        fn1Strs = repmat({fnInfo1.(fnc)}, [1 nComp]);
+        fn1Strs = repmat({fnInfo1.function}, [1 nComp]);
         fn1Workspace = repmat({fnInfo1.workspace{1}}, [1 nComp]);
       end
       
       if iscell(fn2)
         fnInfo2 = cellfun(@functions, fn2, 'Uniform', false);
-        fn2Strs = cellfun(@(x) x.(fnc), fnInfo2, 'Uniform', false);
+        fn2Strs = cellfun(@(x) x.function, fnInfo2, 'Uniform', false);
         fn2Workspace = cellfun(@(x) x.workspace{1}, fnInfo2, 'Uniform', false);
       else
         fnInfo2 = functions(fn2);
-        fn2Strs = repmat({fnInfo2.(fnc)}, [1 nComp]);
+        fn2Strs = repmat({fnInfo2.function}, [1 nComp]);
         fn2Workspace = repmat({fnInfo2.workspace{1}}, [1 nComp]);
       end
       

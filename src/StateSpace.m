@@ -34,12 +34,12 @@ classdef StateSpace < AbstractStateSpace
     function obj = StateSpace(Z, H, T, Q, varargin)
       % StateSpace constructor
       %
-      % Args:
+      % Arguments:
       %     Z (matrix): Observation loadings
       %     H (matrix): Observation error covariances
       %     T (matrix): State transition coefficients
       %     Q (matrix): State error covariances
-      % Optional args: 
+      % Optional Arguments: 
       %     d (matrix): Observation constants
       %     beta (matrix): Exogenous measurement series loadings
       %     c (matrix): State constants
@@ -74,7 +74,6 @@ classdef StateSpace < AbstractStateSpace
   end
   
   methods
-    %% State estimation methods
     function [a, logli, filterOut] = filter(obj, y, x, w)
       % Estimate the filtered state
       %
@@ -87,9 +86,6 @@ classdef StateSpace < AbstractStateSpace
       %     a (double) : filtered state (m x [T+1])
       %     logli (double) : log-likelihood
       %     filterOut (struct) : structure of additional intermeidate quantites
-      %
-      % See Also:
-      %     smooth
       
       if nargin < 3
         x = [];
@@ -116,13 +112,17 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [alpha, smootherOut, filterOut] = smooth(obj, y, x, w)
-      % SMOOTH Estimate the smoothed state
+      % Estimate the smoothed state
       %
-      % alpha = StateSpace.SMOOTH(y) returns the smoothed state given the data y.
-      % [alpha, smootherOut] = StateSpace.SMOOTH(...) also returns additional
-      % quantities computed in the smoothed state calculation.
-      % [alpha, smootherOut, filterOut] = StateSpace.SMOOTH(...) returns
-      % additional quantities computed in the filtered state calculation.
+      % Arguments:
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %
+      % Returns:
+      %     alpha (double) : smoothed state (m x T)
+      %     smootherOut (struct) : structure of additional intermeidate quantites
+      %     filterOut (struct) : structure of additional intermeidate quantites
       
       if nargin < 3
         x = [];
@@ -150,9 +150,20 @@ classdef StateSpace < AbstractStateSpace
       smootherOut.logli = logli;
     end
     
-    function [logli, gradient, fOut] = gradient(obj, y, x, w, tm, theta)
-      % Returns the likelihood and the change in the likelihood given the
-      % change in any system parameters that are currently set to nans.
+    function [logli, gradient, filterOut] = gradient(obj, y, x, w, tm, theta)
+      % Evaluate the likelihood and gradient of a set of parameters
+      %
+      % Arguments:
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %     tm (ThetaMap): ThetaMap that builds StateSpace system from parameter vector
+      %     theta (double): parameters to evaluate likelihood and gradient (nTheta x 1)
+      %
+      % Returns:
+      %     logli (double) : log-likelihood
+      %     gradient (double) : vector of change in likelihood given change in theta
+      %     filterOut (struct) : structure of additional intermeidate quantites
       
       % Handle inputs
       assert(isa(tm, 'ThetaMap'), 'tm must be a ThetaMap.');
@@ -163,17 +174,29 @@ classdef StateSpace < AbstractStateSpace
         'theta must be a nTheta x 1 vector.');
       
       if obj.useParallel
-        [logli, gradient, fOut] = obj.gradientFiniteDifferences_parallel(y, x, w, tm, theta);
+        [logli, gradient, filterOut] = obj.gradFinDiff_parallel(y, x, w, tm, theta);
       else
-        [logli, gradient, fOut] = obj.gradientFiniteDifferences(y, x, w, tm, theta);
+        [logli, gradient, filterOut] = obj.gradFinDiff(y, x, w, tm, theta);
       end
     end
     
     function [dataContr, paramContr, exogMContr, exogSContr, weights] = ...
         decompose_filtered(obj, y, x, w)
-      % Decompose the smoothed states by data contributions
+      % Decompose the filtered states by contribution effect at each time. 
       %
-      % Output ordered by (state, observation, effectPeriod, contributingPeriod)
+      % Arguments:
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %
+      % Returns:
+      %     dataContr (double) : contrib. from the data (m x p x T+1)
+      %     paramContr (double) : contrib. from the parameters (m x T+1)
+      %     exogMContr (double) : contrib. from the exogenous measurement data (m x k x T+1)
+      %     exogSContr (double) : contrib. from the exogenous state data (m x l x T+1)
+      %     weights (struct) : contrib. separated by weight function. Cell arrays for each
+      %       weight ordered by contributing time then effect time. The first dimension 
+      %       of each cell element is ordered by state effected then quantity contributnig.
       
       if nargin < 3
         x = [];
@@ -237,9 +260,21 @@ classdef StateSpace < AbstractStateSpace
     
     function [dataContr, paramContr, exogMContr, exogSContr, weights] = ...
         decompose_smoothed(obj, y, x, w)
-      % Decompose the smoothed states by data contributions
+      % Decompose the smoothed states by contribution effect at each time. 
       %
-      % Output ordered by (state, observation, effectPeriod, contributingPeriod)
+      % Arguments:
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %
+      % Returns:
+      %     dataContr (double) : contrib. from the data (m x p x T)
+      %     paramContr (double) : contrib. from the parameters (m x T)
+      %     exogMContr (double) : contrib. from the exogenous measurement data (m x k x T)
+      %     exogSContr (double) : contrib. from the exogenous state data (m x l x T)
+      %     weights (struct) : contrib. separated by weight function. Cell arrays for each
+      %       weight ordered by contributing time then effect time. The first dimension 
+      %       of each cell element is ordered by state effected then quantity contributnig.
       
       if nargin < 3
         x = [];
@@ -300,7 +335,16 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function irf = impulseState(obj, nPeriods)
-      % Impulse response functions for the states to a one standard deviation shock
+      % Impulse response functions for the states to a one standard deviation shock.
+      % 
+      % Arguments:
+      %     nPeriods (double): observed data (p x T)
+      %
+      % Returns:
+      %     irf (double): impulse response, ordered by (state, period, shock).
+      %
+      % The calendar used for the parameters assumes the shock occurs in period 1 of the
+      % data sample. 
       
       if ~isscalar(nPeriods)
         irfTau = nPeriods;
@@ -324,10 +368,94 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    %% Utilties
+    function [obsErr, stateErr] = getErrors(obj, y, x, w, state, a0)
+      % Get the errors epsilon & eta given an estimate of the state. 
+      % Either the filtered or smoothed estimates can be calculated by passing
+      % either the filtered state (a) or smoothed state (alphaHat).
+      %
+      % Arguments:
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %     state (double): state estimate (either a or alphaHat)
+      %     a0 (double): initial state estimate
+      %
+      % Returns:
+      %     obsErr (double): observation errors, estimates of epsilon
+      %     stateErr (double): state errors, estimate of eta
+      
+      % Make sure the object is set up correctly but DO NOT factor as is done
+      % for the univariate filter.
+      if isempty(obj.n)
+        obj.n = size(state, 2);
+        obj = obj.setInvariantTau();
+      else
+        assert(obj.n == size(state, 2), ...
+          'Size of state doesn''t match time dimension of StateSpace.');
+      end
+      
+      % Iterate through observations
+      obsErr = nan(obj.p, obj.n);
+      for iT = 1:obj.n
+        obsErr(:,iT) = y(:,iT) - ...
+          obj.Z(:,:,obj.tau.Z(iT)) * state(:,iT) - ...
+          obj.d(:,obj.tau.d(iT)) - ...
+          obj.beta(:,:,obj.tau.beta(iT)) * x(:,iT);
+      end
+      
+      % Potentially return early
+      if nargout < 2
+        stateErr = [];
+        return
+      end
+      
+      % Iterate through states
+      Rbar = nan(obj.g, obj.m, size(obj.R, 3));
+      for iR = 1:size(obj.R, 3)
+        Rbar(:,:,iR) = (obj.R(:,:,iR)' * obj.R(:,:,iR)) \ obj.R(:,:,iR)';
+      end
+      
+      stateErr = nan(obj.g, obj.n);
+      stateErr(:,1) = Rbar(:,:,obj.tau.R(iT)) * (state(:,1) - ...
+        obj.T(:,:,obj.tau.T(1)) * a0 - obj.c(:,obj.tau.c(1)));
+      for iT = 2:obj.n
+        stateErr(:,iT) = Rbar(:,:,obj.tau.R(iT)) * (state(:,iT) - ...
+          obj.T(:,:,obj.tau.T(iT)) * state(:,iT-1) - ...
+          obj.c(:,obj.tau.c(iT))) - ...
+          obj.gamma(:,:,obj.tau.gamma(iT)) * w(:,iT);
+      end
+    end
+    
+    function [V, J] = getErrorVariances(obj, y, fOut, sOut)
+      % Get the smoothed state variance and covariance matricies
+      % Either the filtered or smoothed estimates can be calculated by passing
+      % either the filtered state (a) or smoothed state (alphaHat).
+      %
+      % Arguments:
+      %     y (double): observed data (p x T)
+      %     fOut (struct): structure of additional quantites from the filter
+      %     sOut (struct): structure of additional quantites from the smoother
+      %
+      % Returns:
+      %     V (double): Var(alpha | Y_n). (m x m x T)
+      %     J (double): Cov(alpha_{t+1}, alpha_t | Y_n).  (m x m x T)
+      
+      Ldagger = obj.build_Ldagger(y, fOut);
+      
+      I = eye(obj.m);
+      V = nan(obj.m, obj.m, obj.n);
+      J = nan(obj.m, obj.m, obj.n);
+      for iT = obj.n:-1:1
+        iP = fOut.P(:,:,iT);
+        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;   
+        J(:,:,iT) = iP * Ldagger(:,:,iT)' * ...
+          (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
+      end
+    end
+    
     function obj = setDefaultInitial(obj)
       % Set default a0 and P0.
-      % Run before filter/smoother after a0 & P0 inputs have been processed
+      % Run before filter/smoother after a0 & P0 inputs have been processed.
       
       if ~isempty(obj.a0) && ~isempty(obj.P0)
         % User provided a0 and P0.
@@ -389,6 +517,8 @@ classdef StateSpace < AbstractStateSpace
   methods
     %% Filter/smoother Helper Methods
     function [obj, y, x, w, factorC, oldTau] = prepareFilter(obj, y, x, w)
+      % Common setup tasks needed for the filter/smoother.
+      
       % Make sure data matches observation dimensions
       obj.validateKFilter();
       [obj, y, x, w] = obj.checkSample(y, x, w);
@@ -401,7 +531,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function validateKFilter(obj)
-      % Validate parameters
+      % Validate parameters to ensure we can compute the likelihood.
       
       obj.validateStateSpace();
       
@@ -414,7 +544,7 @@ classdef StateSpace < AbstractStateSpace
     function [ssUni, yUni, factorC, oldTau] = factorMultivariate(obj, y)
       % Compute new Z and H matricies so the univariate treatment can be applied
       %
-      % Args:
+      % Arguments:
       %     y : observed data
       %
       % Returns:
@@ -422,9 +552,7 @@ classdef StateSpace < AbstractStateSpace
       %     yUni : data modified for ssUni
       %     factorC : diagonalizing matrix(s) for original H matrix
       %     oldTau : structure of mapping from original tau to new tau
-      
-      % TODO: What happens when H and Z don't match periods?
-      
+            
       [uniqueOut, ~, newTauH] = unique([obj.tau.H ~isnan(y')], 'rows');
       oldTauH = uniqueOut(:,1);
       obsPatternH = uniqueOut(:,2:end);
@@ -507,74 +635,9 @@ classdef StateSpace < AbstractStateSpace
         'obsPattern', obsPatternH);
     end
     
-    function [obsErr, stateErr] = getErrors(obj, y, x, w, state, a0)
-      % Get the errors epsilon & eta given an estimate of the state
-      % Either the filtered or smoothed estimates can be calculated by passing
-      % either the filtered state (a) or smoothed state (alphaHat).
-      
-      % With the state already estimated, we simply have to back out the errors.
-      
-      % Make sure the object is set up correctly but DO NOT factor as is done
-      % for the univariate filter.
-      if isempty(obj.n)
-        obj.n = size(state, 2);
-        obj = obj.setInvariantTau();
-      else
-        assert(obj.n == size(state, 2), ...
-          'Size of state doesn''t match time dimension of StateSpace.');
-      end
-      
-      % Iterate through observations
-      obsErr = nan(obj.p, obj.n);
-      for iT = 1:obj.n
-        obsErr(:,iT) = y(:,iT) - ...
-          obj.Z(:,:,obj.tau.Z(iT)) * state(:,iT) - ...
-          obj.d(:,obj.tau.d(iT)) - ...
-          obj.beta(:,:,obj.tau.beta(iT)) * x(:,iT);
-      end
-      
-      % Potentially return early
-      if nargout < 2
-        stateErr = [];
-        return
-      end
-      
-      % Iterate through states
-      Rbar = nan(obj.g, obj.m, size(obj.R, 3));
-      for iR = 1:size(obj.R, 3)
-        Rbar(:,:,iR) = (obj.R(:,:,iR)' * obj.R(:,:,iR)) \ obj.R(:,:,iR)';
-      end
-      
-      stateErr = nan(obj.g, obj.n);
-      stateErr(:,1) = Rbar(:,:,obj.tau.R(iT)) * (state(:,1) - ...
-        obj.T(:,:,obj.tau.T(1)) * a0 - obj.c(:,obj.tau.c(1)));
-      for iT = 2:obj.n
-        stateErr(:,iT) = Rbar(:,:,obj.tau.R(iT)) * (state(:,iT) - ...
-          obj.T(:,:,obj.tau.T(iT)) * state(:,iT-1) - ...
-          obj.c(:,obj.tau.c(iT))) - ...
-          obj.gamma(:,:,obj.tau.gamma(iT)) * w(:,iT);
-      end
-    end
-    
-    function [V, J] = getErrorVariances(obj, y, fOut, sOut)
-      % Get the smoothed state variance and covariance matricies
-      % Produces V = Var(alpha | Y_n) and J = Cov(alpha_{t+1}, alpha_t | Y_n)
-      
-      Ldagger = obj.build_Ldagger(y, fOut);
-      
-      I = eye(obj.m);
-      V = nan(obj.m, obj.m, obj.n);
-      J = nan(obj.m, obj.m, obj.n);
-      for iT = obj.n:-1:1
-        iP = fOut.P(:,:,iT);
-        V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;   
-        J(:,:,iT) = iP * Ldagger(:,:,iT)' * ...
-          (I - sOut.N(:,:,iT+1) * fOut.P(:,:,iT+1));
-      end
-    end
-    
-    function [ll, grad, fOut] = gradientFiniteDifferences(obj, y, x, w, tm, theta)
+    function [ll, grad, fOut] = gradFinDiff(obj, y, x, w, tm, theta)
       % Compute numeric gradient using central differences
+      
       [~, ll, fOut] = obj.filter(y, x, w);
       
       nTheta = tm.nTheta;
@@ -617,8 +680,9 @@ classdef StateSpace < AbstractStateSpace
       grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
     end
     
-    function [ll, grad, fOut] = gradientFiniteDifferences_parallel(obj, y, x, w, tm, theta)
+    function [ll, grad, fOut] = gradFinDiff_parallel(obj, y, x, w, tm, theta)
       % Compute numeric gradient using central differences
+      
       [~, ll, fOut] = obj.filter(y, x, w);
       
       nTheta = tm.nTheta;
@@ -700,10 +764,6 @@ classdef StateSpace < AbstractStateSpace
     %% Filter/smoother/gradient mathematical methods
     function [a, logli, filterOut] = filter_m(obj, y, x, w)
       % Filter using exact initial conditions
-      %
-      % Note that the quantities v, F and K are those that come from the
-      % univariate filter and cannot be transfomed via the Cholesky
-      % factorization to get the quanties from the multivariate filter.
       %
       % See "Fast Filtering and Smoothing for Multivariate State Space Models",
       % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
@@ -998,25 +1058,29 @@ classdef StateSpace < AbstractStateSpace
     function fWeights = filter_weights(obj, y, x, w, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       %
-      % The outputs of this function should satisfy
-      %   a_t = \omega_t^{a_0}
-      %         + \sum_{j=1}^{t} \omega_{tj} + \omega_{tj}^c + \omega_{tj}^d
       % Inputs:
-      %   y - univariate data
-      %   fOut - detailed output from Kalman filter
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %     fOut (double): additional quantities from the filter
+      %     ssMulti (double): StateSpace before trasformed to univariate
+      %     C (double): Cholesky from univariate transformation
+      %
       % Outputs:
-      %   omega - (m X p X T+1 X T) array organized as
+      %     omega: (m x p x T+1 x T) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
-      %   omegac - (m X m X T+1 X T+1) array organized as
+      %     omegac: (m x m x T+1 x T+1) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
-      %   omegad - (m X p X T+1 X T) array organized as
+      %     omegad: (m  p x T+1 x T) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
-      %   omegaa0 - (m X m X T+1) array organized as
+      %     omegax: (m x k x T+1 x T) array organized as
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %     omegaw: (m x l x T+1 x T) array organized as
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %     omegaa0: (m x m x T+1) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
       
-      % See MFSS Estimation Methods for the derivation of this recursion.
-      
-      % Create cell arrays that are (T+1 X T) where weight matricies will be placed.
+      % Create cell arrays that are (T+1 x T) where weight matricies will be placed.
       omega = cell(obj.n+1, obj.n);
       omegac = cell(obj.n+1, obj.n+1);
       omegad = cell(obj.n+1, obj.n);
@@ -1183,23 +1247,27 @@ classdef StateSpace < AbstractStateSpace
     
     function sWeights = smoother_weights(obj, y, x, w, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
-      %
-      % The outputs of this function should satisfy
-      %   alpha_t = \omega_t^{a_0}
-      %         + \sum_{j=1}^{t} \omega_{tj} + \omega_{tj}^c + \omega_{tj}^d
       % Inputs:
-      %   y - univariate data
-      %   fOut - detailed output from Kalman filter
-      %   
+      %     y (double): observed data (p x T)
+      %     x (double): exogenous measreument data (k x T)
+      %     w (double): exogenous state data (l x T)
+      %     fOut (double): additional quantities from the filter
+      %     ssMulti (double): StateSpace before trasformed to univariate
+      %     C (double): Cholesky from univariate transformation
+      %
       % Outputs:
-      %   omega - (m X p X T X T) array organized as
+      %     omega: (m x p x T x T) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
-      %   omegac - (m X m X T X T+1) array organized as
+      %     omegac: (m x m x T x T) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
-      %   omegad - (m X p X T X T) array organized as
+      %     omegad: (m x p x T x T) array organized as
       %           (state, observation, effectPeriod, contributionPeriod)
-      %   omegaa0 - (m X T) array organized as
-      %           (state, effectPeriod)
+      %     omegax: (m x k x T x T) array organized as
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %     omegaw: (m x l x T x T) array organized as
+      %           (state, observation, effectPeriod, contributionPeriod)
+      %     omegaa0: (m x m x T) array organized as
+      %           (state, observation, effectPeriod, contributionPeriod)      
       
       % Filter weights (a_t)
       fWeight = obj.filter_weights(y, x, w, fOut, ssMulti, C);
@@ -1390,8 +1458,9 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [r, r1] = r_weights(obj, y, x, fOut, fWeight, ssMulti, C)
-      % Ordering:
-      %    (state, observation, effectPeriod, contributionPeriod)
+      % Construct weight functions for r
+      %
+      % Ordered (state, observation, effectPeriod, contributionPeriod)
       
       comp = obj.build_smoother_weight_parts(y, fOut);
       
@@ -1586,78 +1655,6 @@ classdef StateSpace < AbstractStateSpace
         'c', {omegarc}, 'w', {omegarw}, 'a0', {omegara0});
     end
     
-    function Ldagger = build_Ldagger(obj, y, fOut)
-      % Build the quantities we need to build the smoother weights
-      % A^a, A^y, L^\dagger & M^\dagger
-      % 
-      % Because we would have to set the last value of all of the * quantities in the
-      % diffuse smoother with the corresponding values from the non-diffuse smoother, the
-      % * values will stored in the non-diffuse smoother value arrays. 
-      
-      Im = eye(obj.m);
-      
-      % A^a*, A^a\infty, M^*, \tilde{M}^\infty, L^* and L^\infty
-%       Aa = zeros(obj.p, obj.m, obj.n);
-      Ldagger = zeros(obj.m, obj.m, obj.n);
-%       Mdagger = zeros(obj.m, obj.p, obj.n);
-
-%       Aainfty = zeros(obj.p, obj.m, fOut.dt);
-%       Linfty = zeros(obj.m, obj.m, fOut.dt);
-%       MinftyTilde = zeros(obj.m, obj.p, fOut.dt);
-      
-      for iT = 1:fOut.dt
-        SstarProd = Im;
-%         SinftyProd = Im;
-        
-        for jP = 1:obj.p
-          if isnan(y(jP,iT))
-            continue
-          end
-          
-          Z = obj.Z(jP,:,obj.tau.Z(iT));
-%           Aa(jP,:,iT) = Z * SstarProd;
-%           Aainfty(jP,:,iT) = Z * SinftyProd;
-          
-          if fOut.Fd(jP,iT) ~= 0
-            Sinfty = (Im - fOut.Kd(:,jP,iT) * Z);
-            Sstar = Sinfty;
-%             MinftyTilde(:,jP,iT) = SstarProd' * Z' / fOut.Fd(jP,iT);
-          else
-            Sstar = (Im - fOut.K(:,jP,iT) * Z);
-%             Sinfty = Im;
-%             Mdagger(:,jP,iT) = SstarProd' * Z' / fOut.F(jP,iT);
-          end
-          
-          SstarProd = Sstar * SstarProd;
-%           SinftyProd = Sinfty * SinftyProd;
-        end
-        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SstarProd;
-%         Linfty(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SinftyProd;
-      end
-      
-      % A^a, Mdagger and Ldagger
-      for iT = fOut.dt+1:obj.n
-        Lprod = Im;
-        for jP = 1:obj.p
-          if isnan(y(jP,iT))
-            continue
-          end
-          
-          Z = obj.Z(jP,:,obj.tau.Z(iT));
-          K = fOut.K(:,jP,iT);
-          
-%           Aa(jP,:,iT) = Z * Lprod;
-          Lprod = (Im - K * Z) * Lprod;
-        end
-        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lprod;
-        
-        % I think this is right - check this if things don't work:
-%         FinvDiag = zeros(obj.p, obj.p);
-%         FinvDiag(~isnan(y(:,iT)), ~isnan(y(:,iT))) = diag(1./fOut.F(~isnan(y(:,iT)),iT));
-%         Mdagger(:,:,iT) = Aa(:,:,iT)' * FinvDiag;
-      end
-    end
-    
     function components = build_smoother_weight_parts(obj, y, fOut)
       % Build the quantities we need to build the smoother weights
       % A^a, A^y, L^\dagger & M^\dagger
@@ -1723,8 +1720,6 @@ classdef StateSpace < AbstractStateSpace
           Lprod = (Im - K * Z) * Lprod;
         end
         Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lprod;
-        
-        % I think this is right - check this if things don't work:
         FinvDiag = zeros(obj.p, obj.p);
         FinvDiag(~isnan(y(:,iT)), ~isnan(y(:,iT))) = diag(1./fOut.F(~isnan(y(:,iT)),iT));
         Mdagger(:,:,iT) = Aa(:,:,iT)' * FinvDiag;
@@ -1841,6 +1836,44 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
+    function Ldagger = build_Ldagger(obj, y, fOut)
+      % Build L^\dagger needed for the error variances.
+      
+      Im = eye(obj.m);
+      Ldagger = zeros(obj.m, obj.m, obj.n); 
+      
+      for iT = 1:fOut.dt
+        SstarProd = Im;
+
+        for jP = 1:obj.p
+          if isnan(y(jP,iT))
+            continue
+          end
+          Z = obj.Z(jP,:,obj.tau.Z(iT));
+          if fOut.Fd(jP,iT) ~= 0
+            Sinfty = (Im - fOut.Kd(:,jP,iT) * Z);
+            Sstar = Sinfty;
+          else
+            Sstar = (Im - fOut.K(:,jP,iT) * Z);
+          end
+          SstarProd = Sstar * SstarProd;
+        end
+        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * SstarProd;
+      end
+      
+      for iT = fOut.dt+1:obj.n
+        Lprod = Im;
+        for jP = 1:obj.p
+          if isnan(y(jP,iT))
+            continue
+          end
+          Z = obj.Z(jP,:,obj.tau.Z(iT));
+          K = fOut.K(:,jP,iT);
+          Lprod = (Im - K * Z) * Lprod;
+        end
+        Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lprod;
+      end
+    end
   end
   
   methods (Static)
