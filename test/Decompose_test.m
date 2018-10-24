@@ -12,7 +12,7 @@ classdef Decompose_test < matlab.unittest.TestCase
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
       
-      data_load = load(fullfile(baseDir, 'examples', 'data', 'dk.mat'));
+      data_load = load(fullfile(baseDir, 'examples', 'durbin_koopman.mat'));
       testCase.data.nile = data_load.nile;
     end
   end

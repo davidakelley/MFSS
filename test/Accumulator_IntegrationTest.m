@@ -4,18 +4,6 @@
 
 classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
   
-  properties
-  end
-  
-  methods(TestClassSetup)
-    function setupOnce(testCase)
-      % Factor model data
-      baseDir = fileparts(fileparts(mfilename('fullpath')));
-      addpath(baseDir);
-      addpath(fullfile(baseDir, 'examples'));
-    end
-  end
-  
   methods (Test)
     %% StateSpace parameter tests
     function testSumParameters(testCase)
@@ -800,7 +788,4 @@ classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
     end
     
   end
-  
-  
-  
 end

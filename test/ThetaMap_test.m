@@ -17,8 +17,8 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       addpath(baseDir);
       addpath(fullfile(baseDir, 'examples'));
       
-      data_dk = load(fullfile(baseDir, 'examples', 'data', 'dk.mat'));
-      testCase.data.nile = data_dk.nile;
+      data_load = load(fullfile(baseDir, 'examples', 'durbin_koopman.mat'));
+      testCase.data.nile = data_load.nile;
     end
   end
   
