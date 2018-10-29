@@ -15,8 +15,8 @@ lambda_g = 0.01183685;
 lambda_z = 0.04195394;
 
 %% Estimate the models
-csda4_r_star_quarterly
-csda4_r_star_monthly
+pgmtmfss4_r_star_quarterly
+pgmtmfss4_r_star_monthly
 
 %% Decompose r* by data series that determine it
 % Monthly model
@@ -87,4 +87,4 @@ xlim([datesq(8+startPadQ), datesq(end)]);
 title('Contributions to Quarterly r*');
 ylabel('percent');
 
-print csda4_rstar.png -dpng
+print pgmtmfss4_rstar.png -dpng

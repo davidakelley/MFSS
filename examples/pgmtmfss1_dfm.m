@@ -61,4 +61,4 @@ recessionplot
 xlim(dates([1 end]))
 title('Quarterly factor and GDP (annualized growth rate)');
 
-print 'csda1_dfm.png' -dpng
+print 'pgmtmfss1_dfm.png' -dpng

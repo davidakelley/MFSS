@@ -76,4 +76,4 @@ xlim([1 48])
 xlabel('Months');
 ylabel('Log change');
 
-print 'csda2_var.png' -dpng
+print 'pgmtmfss2_var.png' -dpng

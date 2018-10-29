@@ -90,4 +90,4 @@ xlim(dates([1 end]));
 ylim([-.1 .1]);
 title('Cycle growth rate');
 
-print csda3_trend_cycle.png -dpng
+print pgmtmfss3_trend_cycle.png -dpng
