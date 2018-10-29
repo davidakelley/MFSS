@@ -10,7 +10,7 @@ classdef MFVAR
     
     nLags
     constant = true;
-    verbose = true;
+    verbose = false;
     
     tol = 1e-7;
     maxIter = 20000;

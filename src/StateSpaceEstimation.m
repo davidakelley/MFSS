@@ -512,8 +512,12 @@ classdef StateSpaceEstimation < AbstractStateSpace
         ss0 = obj.ThetaMapping.theta2system(theta0);
         try
           [ll0, grad0] = ss0.gradient(y, x, w, obj.ThetaMapping, theta0);
-        catch
-          continue
+        catch ex
+          if strcmpi('MATLAB:UndefinedFunction', ex.identifier)
+            rethrow(ex)
+          else
+            continue
+          end          
         end
         
         if isfinite(ll0) && all(isfinite(grad0))
