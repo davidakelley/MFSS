@@ -11,11 +11,11 @@ The easiest way to use MFSS is to install it via the toolbox (MFSS.mltbx) by dra
 
 MFSS requires the following Matlab toolboxes: 
 - Optimization Toolbox
-- Statistics Toolbox
+- Statistics and Machine Learning Toolbox
 
 Further functionality is available through the use of additional toolboxes: 
 - Global Optimization Toolbox
-- Symbolic Toolbox
+- Symbolic Math Toolbox
 - Parallel Computing Toolbox
 
 Some examples and tests additionally use the Econometrics Toolbox. 
