@@ -12,15 +12,19 @@ The easiest way to use MFSS is to install it via the toolbox (MFSS.mltbx) by dra
 MFSS requires the following Matlab toolboxes: 
 - Optimization Toolbox
 - Statistics Toolbox
+
 Further functionality is available through the use of additional toolboxes: 
 - Global Optimization Toolbox
 - Symbolic Toolbox
 - Parallel Computing Toolbox
+
 Some examples and tests additionally use the Econometrics Toolbox. 
 
 Compatibility
 -------------
-MFSS has been tested on Matlab 2017b-2018b. It is incompatible with Octave (through at least 4.4.1). 
+MFSS has been tested on Matlab 2017b-2018b. 
+
+It is incompatible with Octave (through at least 4.4.1). 
 
 Building the mex files
 ----------------------
