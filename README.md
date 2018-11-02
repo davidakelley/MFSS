@@ -29,7 +29,8 @@ It is incompatible with Octave (through at least 4.4.1).
 Getting Started 
 ----------------
 State space models take the form 
-<img src="docs/statespace_eq.png"  width="120" height="120">
+
+<img src="docs/statespace_eq.png"  width="150" height="10">
 
 For more information on how to put models into this form, see the examples in `/examples`.
 
