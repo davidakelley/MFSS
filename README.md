@@ -29,7 +29,7 @@ It is incompatible with Octave (through at least 4.4.1).
 Getting Started 
 ----------------
 State space models take the form 
-![](docs/statespace_eq.png)
+![](docs/statespace_eq.png){:height="40%" width="40%"}
 
 For more information on how to put models into this form, see the examples in `/examples`.
 
