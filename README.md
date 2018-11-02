@@ -29,7 +29,7 @@ It is incompatible with Octave (through at least 4.4.1).
 Getting Started 
 ----------------
 State space models take the form 
-![state space equations][docs/statespace_eq.png]
+![](docs/statespace_eq.png)
 
 For more information on how to put models into this form, see the examples in `/examples`.
 
@@ -52,7 +52,7 @@ With the accumulators defined, we can "augment" a `StateSpace` or `StateSpaceEst
 For more information on how to specify and use accumulators, see the User Guide. 
 
 ### Working with known parameters
-With the matrices `Z, d, β, H, T, c, γ, R, Q` known, we can create a `StateSpace` object: 
+With the matrices Z, d, β, H, T, c, γ, R, Q known, we can create a `StateSpace` object: 
 
     ss = StateSpace(Z, H, T, Q);
     ss = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'gamma', gamma, R', R);
