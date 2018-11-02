@@ -30,7 +30,7 @@ Getting Started
 ----------------
 State space models take the form 
 
-<img src="docs/statespace_eq.png"  width="150" height="10">
+<img src="docs/statespace_eq.png"  width="750" height="60">
 
 For more information on how to put models into this form, see the examples in `/examples`.
 
