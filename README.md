@@ -113,3 +113,9 @@ When updating the installed version of the toolbox, previous versions should be 
 Credits
 --------
 This library uses [Armadillo](http://arma.sourceforge.net/).
+
+For details on any references in the code, see "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models" by Scott Brave, Andrew Butters, and David Kelley.
+
+How To Cite
+-----------
+If you use this toolbox in preparing a publication, please cite "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models" by Scott Brave, Andrew Butters, and David Kelley. 

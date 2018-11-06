@@ -20,7 +20,7 @@ Z = [1; nan(4,1)];
 d = [nan; zeros(4,1)];
 H = diag(nan(5,1));
 T = nan;
-Q = 1;
+Q = nan;
 
 ssE = StateSpaceEstimation(Z, H, T, Q, 'd', d);
 

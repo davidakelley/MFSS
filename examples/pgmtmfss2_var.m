@@ -7,7 +7,7 @@
 %   - The level of the effective federal funds rate.
 % The data in yMonthly replaces GDP with: 
 %   - The log-level of All Employees: Total Nonfarm Payrolls
-% Data retreived from FRED as of October 10, 2018. 
+% Data retrieved from FRED as of October 10, 2018. 
 
 load('data_var');
 

@@ -54,16 +54,6 @@ assert(all(abs(check) < 1e-8));
 plotDataQ = [alphaQ(:,decompState) rGDP rInf rR rOil rImport];
 startPadQ = 2;
 
-%% Compare estimated r* measures
-figure('Color', ones(1,3));
-plot(datesq, alphaQ(:,end));
-hold on;
-plot(datesm, alphaM(:,end-1));
-box off;
-datetick('x');
-legend('Quarterly', 'Monthly');
-title('Monthly and Quarterly r* Estimates');
-
 %% Plot comparison of decompositions
 figure('Color', ones(1,3));
 subplot(2,1,1);
