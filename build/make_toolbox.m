@@ -4,11 +4,9 @@ function make_toolbox(major, minor, build)
 % To create the toolbox: 
 %   1. Add the /src and /build paths to your Matlab path. Make sure you haven't added
 %   anything else to your Matlab path. 
-%   2. Run this file, calling it with a new major and minor build number unless you are
-%   creating a bug-fix release. 
+%   2. Run this file.
 %   3. Test that the toolbox works by removing the earlier added paths, installing the
 %   toolbox and running a model.
-%   4. Commit the changes to git with a commit that starts with the version number.
 
 buildDir = fileparts(mfilename('fullpath'));
 
