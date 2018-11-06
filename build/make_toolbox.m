@@ -1,4 +1,4 @@
-function make_toolbox(major, minor)
+function make_toolbox(major, minor, build)
 % Build script to create the toolbox.
 %
 % To create the toolbox: 
@@ -12,69 +12,11 @@ function make_toolbox(major, minor)
 
 buildDir = fileparts(mfilename('fullpath'));
 
-%% Get version number from prj file
+%% Get prj file
 % Edit .prj file to update version numbers
 prjFile = fullfile(buildDir, '..', 'toolbox.prj');
 prjText = fileread(prjFile);
 
-prjVers = regexp(prjText, ...
-  '<param.version>([\d*]*)\.([\d*]*)\.([\d*]*)<\/param.version>', 'tokens');
-oldMajor = str2double(prjVers{1}{1});
-oldMinor = str2double(prjVers{1}{2});
-oldBuild = str2double(prjVers{1}{3});
-
-% Set new version number
-if nargin < 1
-  major = oldMajor;
-  newMajorVersion = false;
-else
-  assert(major == oldMajor | major == oldMajor + 1, ...
-    ['Cannot decrease major version or iterate version by more than one. ' ...
-    'Current minor version %d.'], oldMajor);
-  newMajorVersion = major == oldMajor + 1;
-end
-
-if nargin < 2
-  minor = oldMinor;
-  newMinorVersion = false;
-else
-  assert(newMajorVersion | minor == oldMinor | minor == oldMinor + 1, ...
-    ['Cannot decrease minor version within major release or iterate ', ...
-    'version by more than one. Current minor version %d.'], oldMajor);
-  newMinorVersion = minor == oldMinor + 1;
-end
-
-if newMajorVersion
-  assert(nargin < 2 | minor == 0, 'Minor release must be set to 0 for new major release.');
-  minor = 0;
-end
-if newMajorVersion || newMinorVersion
-  build = 0;
-else
-  build = oldBuild + 1;
-end
-
-%% Compile HTML documentation
-confFile = fullfile(buildDir, '..', 'docs', 'source', 'conf.py');
-confText = fileread(confFile);
-
-confTextTemp = regexprep(confText, 'version = u''([\d*]*)\.([\d*]*)''', ...
-  sprintf('version = u''%d.%d''', major, minor));
-confTextNew = regexprep(confTextTemp, 'release = u''([\d*]*)\.([\d*]*)''', ...
-  sprintf('version = u''%d.%d.%d''', major, minor, build));
-if major ~= oldMajor || minor ~= oldMinor
-  assert(~isequal(confTextNew, confText), ...
-    'No change in documentation version.');
-end
-
-% docs_status = compile_docs;
-% if docs_status == 0
-%   fprintf('Successfully compiled documentation.\n');
-% else
-%   disp('Error in compiling documentation. Run ''make html'' in the docs folder.');
-% end
-
-%% Iterate version number in prj file
 % Save new .prj file with updated version numbers
 prjTextNew = regexprep(prjText, '<param.version>.*<\/param.version>', ...
   sprintf('<param.version>%d.%d.%d</param.version>', major, minor, build));
