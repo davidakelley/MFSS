@@ -9,7 +9,7 @@ data = load('data_gdp.mat');
 y = data.y;
 dates = data.dates;
 
-%% Code Example 2: Estimating a Mixed Frequency Stochastic Trend-Cycle Decomposition
+%% Code Example 3: Estimating a Mixed Frequency Stochastic Trend-Cycle Decomposition
 syms lambda rho sigmaKappa sigmaZeta
 Z = [1, 0, 1, 0];
 H = 0;
