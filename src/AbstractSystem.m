@@ -23,22 +23,21 @@ classdef (Abstract) AbstractSystem
   
   properties (Hidden)
     % Observed time periods
-    n     
+    n
     % Logical vector for which states are stationary
-    stationaryStates 
+    stationaryStates
   end
   
   methods
-    %% Constructor
-    % Empty - should do nothing
     function obj = AbstractSystem()
+      % Constructor - empty, should do nothing
       if nargin == 0
         return
       end
     end
   end
   
-  methods 
+  methods
     %% Getter/setter methods for static properties
     function use = get.useMex(obj)
       use = obj.getsetGlobalUseMex();
@@ -122,7 +121,7 @@ classdef (Abstract) AbstractSystem
       if ~isempty(sys.l)
         assert(obj.l == sys.l, 'Exogenous state dimension mismatch (l).');
       end
-
+      
       assert(obj.timeInvariant == sys.timeInvariant, ...
         'Mismatch in time varrying parameters.');
       if ~obj.timeInvariant

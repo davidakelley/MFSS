@@ -5,7 +5,6 @@ classdef MFVAR
   
   properties
     Y
-    presample
     accumulator
     
     nLags
@@ -24,13 +23,13 @@ classdef MFVAR
   
   methods
     function obj = MFVAR(data, lags, accumulator)
-      % Constructor
+      % MFVAR Constructor
       % 
-      % Inputs: 
+      % Arguments: 
       %     data (double): data for VAR (T x p)
       %     lags (double): number of lags to include in VAR
       %     accumulator (Accumulator): timing specification of data
-      % Output: 
+      % Returns: 
       %     obj (MFVAR): estimation object
       
       obj.Y = data;      
@@ -46,9 +45,9 @@ classdef MFVAR
     function ssML = estimate(obj)
       % Estimate maximum likelihood parameters via EM algorithm
       % 
-      % Inputs:
+      % Arguments:
       %     [none]
-      % Outputs: 
+      % Returns: 
       %     ssML: StateSpace of estimated MF-VAR
       
       if obj.verbose

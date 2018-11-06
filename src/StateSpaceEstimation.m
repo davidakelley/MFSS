@@ -79,9 +79,14 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %   a0, P0 (double): initial state values
       %   LowerBound, UpperBound (StateSpace): bounds on parameters
       %   ThetaMap (ThetaMap): mapping from parameter vector to state space parameters
-      % Output: 
+      %
+      % Returns: 
       %   obj (StateSpaceEstimation): estimation object
-      
+      %
+      % Other Properties: 
+      %   solver: (string or cell) which optimization routine to use when estimate is
+      %     called. Options include fmincon, fminunc, fminsearch, and sa. 
+     
       inP = inputParser;
       inP.addParameter('d', []);
       inP.addParameter('beta', []);
@@ -130,7 +135,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %     ss0 (StateSpace or double): StateSpace or theta vector of initial values
       %     x (double): exogenous measurement equation data
       %     w (double): exogenous state equation data
-      % Outputs: 
+      % Returns: 
       %     ss (StateSpace): estimated StateSpace
       %     diagnostic (structure): structure containing diagnostics on estimation
       %     thetaHat (double): estimated parameter vector
@@ -309,6 +314,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
             gradient = [];
             
           case 'swarm'
+            % This does not work all that well currently.
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, false);
             
             [thetaUHat, logli, outflag] = particleswarm(...

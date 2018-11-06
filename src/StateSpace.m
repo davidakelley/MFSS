@@ -30,24 +30,23 @@ classdef StateSpace < AbstractStateSpace
   end
   
   methods
-    %% Constructor
     function obj = StateSpace(Z, H, T, Q, varargin)
       % StateSpace constructor
       %
       % Arguments:
-      %     Z (matrix): Observation loadings
-      %     H (matrix): Observation error covariances
-      %     T (matrix): State transition coefficients
-      %     Q (matrix): State error covariances
+      %   Z (matrix): Observation loadings
+      %   H (matrix): Observation error covariances
+      %   T (matrix): State transition coefficients
+      %   Q (matrix): State error covariances
       % Optional Arguments: 
-      %     d (matrix): Observation constants
-      %     beta (matrix): Exogenous measurement series loadings
-      %     c (matrix): State constants
-      %     gamma (matrix): Exogenous state series loadings
-      %     R (matrix): Error selection
+      %   d (matrix): Observation constants
+      %   beta (matrix): Exogenous measurement series loadings
+      %   c (matrix): State constants
+      %   gamma (matrix): Exogenous state series loadings
+      %   R (matrix): Error selection
       %
       % Returns:
-      %     obj (StateSpace): a StateSpace object
+      %   obj (StateSpace): a StateSpace object
       
       inP = inputParser();
       inP.addParameter('d', []); 
@@ -78,14 +77,14 @@ classdef StateSpace < AbstractStateSpace
       % Estimate the filtered state
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
       %
       % Returns:
-      %     a (double) : filtered state (m x [T+1])
-      %     logli (double) : log-likelihood
-      %     filterOut (struct) : structure of additional intermeidate quantites
+      %   a (double) : filtered state (m x [T+1])
+      %   logli (double) : log-likelihood
+      %   filterOut (struct) : structure of additional intermeidate quantites
       
       if nargin < 3
         x = [];
@@ -115,14 +114,14 @@ classdef StateSpace < AbstractStateSpace
       % Estimate the smoothed state
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
       %
       % Returns:
-      %     alpha (double) : smoothed state (m x T)
-      %     smootherOut (struct) : structure of additional intermeidate quantites
-      %     filterOut (struct) : structure of additional intermeidate quantites
+      %   alpha (double) : smoothed state (m x T)
+      %   smootherOut (struct) : structure of additional intermeidate quantites
+      %   filterOut (struct) : structure of additional intermeidate quantites
       
       if nargin < 3
         x = [];
@@ -154,16 +153,16 @@ classdef StateSpace < AbstractStateSpace
       % Evaluate the likelihood and gradient of a set of parameters
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
-      %     tm (ThetaMap): ThetaMap that builds StateSpace system from parameter vector
-      %     theta (double): parameters to evaluate likelihood and gradient (nTheta x 1)
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
+      %   tm (ThetaMap): ThetaMap that builds StateSpace system from parameter vector
+      %   theta (double): parameters to evaluate likelihood and gradient (nTheta x 1)
       %
       % Returns:
-      %     logli (double) : log-likelihood
-      %     gradient (double) : vector of change in likelihood given change in theta
-      %     filterOut (struct) : structure of additional intermeidate quantites
+      %   logli (double) : log-likelihood
+      %   gradient (double) : vector of change in likelihood given change in theta
+      %   filterOut (struct) : structure of additional intermeidate quantites
       
       % Handle inputs
       assert(isa(tm, 'ThetaMap'), 'tm must be a ThetaMap.');
@@ -185,18 +184,18 @@ classdef StateSpace < AbstractStateSpace
       % Decompose the filtered states by contribution effect at each time. 
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
       %
       % Returns:
-      %     dataContr (double) : contrib. from the data (m x p x T+1)
-      %     paramContr (double) : contrib. from the parameters (m x T+1)
-      %     exogMContr (double) : contrib. from the exogenous measurement data (m x k x T+1)
-      %     exogSContr (double) : contrib. from the exogenous state data (m x l x T+1)
-      %     weights (struct) : contrib. separated by weight function. Cell arrays for each
-      %       weight ordered by contributing time then effect time. The first dimension 
-      %       of each cell element is ordered by state effected then quantity contributnig.
+      %   dataContr (double) : contrib. from the data (m x p x T+1)
+      %   paramContr (double) : contrib. from the parameters (m x T+1)
+      %   exogMContr (double) : contrib. from the exogenous measurement data (m x k x T+1)
+      %   exogSContr (double) : contrib. from the exogenous state data (m x l x T+1)
+      %   weights (struct) : contrib. separated by weight function. Cell arrays for each
+      %     weight ordered by contributing time then effect time. The first dimension 
+      %     of each cell element is ordered by state effected then quantity contributnig.
       
       if nargin < 3
         x = [];
@@ -220,8 +219,6 @@ classdef StateSpace < AbstractStateSpace
       
       % Weights are ordered (state, observation, effect, origin) so we need to collapse 
       % the 4th dimension for the data and the 2nd and 4th dimensions for the parameters. 
-      
-      % sum(weights.y,4);
       dataContr = zeros(obj.m, obj.p, obj.n+1);
       paramContr = zeros(obj.m, obj.n+1);
       exogMContr = zeros(obj.m, obj.k, obj.n+1);
@@ -263,18 +260,18 @@ classdef StateSpace < AbstractStateSpace
       % Decompose the smoothed states by contribution effect at each time. 
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
       %
       % Returns:
-      %     dataContr (double) : contrib. from the data (m x p x T)
-      %     paramContr (double) : contrib. from the parameters (m x T)
-      %     exogMContr (double) : contrib. from the exogenous measurement data (m x k x T)
-      %     exogSContr (double) : contrib. from the exogenous state data (m x l x T)
-      %     weights (struct) : contrib. separated by weight function. Cell arrays for each
-      %       weight ordered by contributing time then effect time. The first dimension 
-      %       of each cell element is ordered by state effected then quantity contributnig.
+      %   dataContr (double) : contrib. from the data (m x p x T)
+      %   paramContr (double) : contrib. from the parameters (m x T)
+      %   exogMContr (double) : contrib. from the exogenous measurement data (m x k x T)
+      %   exogSContr (double) : contrib. from the exogenous state data (m x l x T)
+      %   weights (struct) : contrib. separated by weight function. Cell arrays for each
+      %     weight ordered by contributing time then effect time. The first dimension 
+      %     of each cell element is ordered by state effected then quantity contributnig.
       
       if nargin < 3
         x = [];
@@ -338,10 +335,10 @@ classdef StateSpace < AbstractStateSpace
       % Impulse response functions for the states to a one standard deviation shock.
       % 
       % Arguments:
-      %     nPeriods (double): observed data (p x T)
+      %   nPeriods (double): observed data (p x T)
       %
       % Returns:
-      %     irf (double): impulse response, ordered by (state, period, shock).
+      %   irf (double): impulse response, ordered by (state, period, shock).
       %
       % The calendar used for the parameters assumes the shock occurs in period 1 of the
       % data sample. 
@@ -374,15 +371,15 @@ classdef StateSpace < AbstractStateSpace
       % either the filtered state (a) or smoothed state (alphaHat).
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
-      %     state (double): state estimate (either a or alphaHat)
-      %     a0 (double): initial state estimate
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
+      %   state (double): state estimate (either a or alphaHat)
+      %   a0 (double): initial state estimate
       %
       % Returns:
-      %     obsErr (double): observation errors, estimates of epsilon
-      %     stateErr (double): state errors, estimate of eta
+      %   obsErr (double): observation errors, estimates of epsilon
+      %   stateErr (double): state errors, estimate of eta
       
       % Make sure the object is set up correctly but DO NOT factor as is done
       % for the univariate filter.
@@ -432,13 +429,13 @@ classdef StateSpace < AbstractStateSpace
       % either the filtered state (a) or smoothed state (alphaHat).
       %
       % Arguments:
-      %     y (double): observed data (p x T)
-      %     fOut (struct): structure of additional quantites from the filter
-      %     sOut (struct): structure of additional quantites from the smoother
+      %   y (double): observed data (p x T)
+      %   fOut (struct): structure of additional quantites from the filter
+      %   sOut (struct): structure of additional quantites from the smoother
       %
       % Returns:
-      %     V (double): Var(alpha | Y_n). (m x m x T)
-      %     J (double): Cov(alpha_{t+1}, alpha_t | Y_n).  (m x m x T)
+      %   V (double): Var(alpha | Y_n). (m x m x T)
+      %   J (double): Cov(alpha_{t+1}, alpha_t | Y_n).  (m x m x T)
       
       Ldagger = obj.build_Ldagger(y, fOut);
       
@@ -514,7 +511,7 @@ classdef StateSpace < AbstractStateSpace
     end
   end
   
-  methods
+  methods (Hidden)
     %% Filter/smoother Helper Methods
     function [obj, y, x, w, factorC, oldTau] = prepareFilter(obj, y, x, w)
       % Common setup tasks needed for the filter/smoother.
@@ -545,13 +542,13 @@ classdef StateSpace < AbstractStateSpace
       % Compute new Z and H matricies so the univariate treatment can be applied
       %
       % Arguments:
-      %     y : observed data
+      %   y : observed data
       %
       % Returns:
-      %     ssUni : StateSpace model with diagonal measurement error
-      %     yUni : data modified for ssUni
-      %     factorC : diagonalizing matrix(s) for original H matrix
-      %     oldTau : structure of mapping from original tau to new tau
+      %   ssUni : StateSpace model with diagonal measurement error
+      %   yUni : data modified for ssUni
+      %   factorC : diagonalizing matrix(s) for original H matrix
+      %   oldTau : structure of mapping from original tau to new tau
             
       [uniqueOut, ~, newTauH] = unique([obj.tau.H ~isnan(y')], 'rows');
       oldTauH = uniqueOut(:,1);
@@ -645,6 +642,7 @@ classdef StateSpace < AbstractStateSpace
       
       stepSize = 0.5 * obj.delta;
       for iTheta = 1:nTheta
+        % For each element of theta, compute finite differences derivative
         try
           thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
           ssDown = tm.theta2system(thetaDown);
@@ -684,7 +682,6 @@ classdef StateSpace < AbstractStateSpace
       % Compute numeric gradient using central differences
       
       [~, ll, fOut] = obj.filter(y, x, w);
-      
       nTheta = tm.nTheta;
       
       if obj.numericGradPrec ~= 1
@@ -694,7 +691,6 @@ classdef StateSpace < AbstractStateSpace
       
       % Compile likelihoods
       grad = nan(nTheta, 1);
-      
       stepSize = 0.5 * obj.delta;
       parfor iTheta = 1:nTheta
         thetaDown = theta - [zeros(iTheta-1,1); stepSize; zeros(nTheta-iTheta,1)];
@@ -732,7 +728,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [Z, H, T, Q, d, beta, c, gamma, R] = getInputParameters(obj)
-      % Get parameters to input to constructor
+      % Helper function to get parameters for constructor
       
       if ~isempty(obj.tau)
         Z = struct('Tt', obj.Z, 'tauT', obj.tau.Z);
@@ -765,8 +761,8 @@ classdef StateSpace < AbstractStateSpace
     function [a, logli, filterOut] = filter_m(obj, y, x, w)
       % Filter using exact initial conditions
       %
-      % See "Fast Filtering and Smoothing for Multivariate State Space Models",
-      % Koopman & Durbin (2000) and Durbin & Koopman, sec. 7.2.5.
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix A. 
       
       assert(all(arrayfun(@(iH) isdiag(obj.H(:,:,iH)), ...
         1:size(obj.H, 3))), 'Univarite only!');
@@ -786,7 +782,7 @@ classdef StateSpace < AbstractStateSpace
       
       LogL = zeros(obj.p, obj.n);
       
-      % Initialize - Using the FRBC timing
+      % Initialize
       iT = 0;
       Tii = obj.T(:,:,obj.tau.T(iT+1));
       a(:,iT+1) = Tii * obj.a0 + obj.c(:,obj.tau.c(iT+1)) + ...
@@ -888,16 +884,15 @@ classdef StateSpace < AbstractStateSpace
           obj.R(:,:,obj.tau.R(iT+1)) * obj.Q(:,:,obj.tau.Q(iT+1)) * obj.R(:,:,obj.tau.R(iT+1))');
       end
       
-      % Consider changing to
-      %   sum(sum(F(:,d+1:end)~=0)) + sum(sum(Fstar(:,1:d)~=0))
-      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));
-      
+      logli = -(0.5 * sum(sum(isfinite(y)))) * log(2 * pi) - 0.5 * sum(sum(LogL));      
       filterOut = struct('a', a, 'P', P, 'Pd', Pd, 'v', v, 'F', F, 'Fd', Fd, ...
         'K', K, 'Kd', Kd, 'dt', dt);
     end
     
     function [a, logli, filterOut] = filter_mex(obj, y, x, w)
       % Call mex function filter_uni
+      %
+      % Provides identical output to filter_m but is roughtly 15x faster.
       
       if isempty(obj.beta)
         % Correction to pass arrays to mex 
@@ -923,8 +918,12 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [alpha, smootherOut] = smoother_m(obj, y, fOut)
-      % Univariate smoother
+      % Univarite smoother taking exact initial conditions into account
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix A. 
       
+      % Preallocation
       alpha = zeros(obj.m, obj.n);
       V     = zeros(obj.m, obj.m, obj.n);
       eta   = zeros(obj.g, obj.n);
@@ -977,10 +976,7 @@ classdef StateSpace < AbstractStateSpace
           if fOut.Fd(iP,iT) ~= 0
             % Diffuse case
             Ldti = Im - fOut.Kd(:,iP,iT) * Zti;
-            % NOTE: minus sign!
             L0ti = (fOut.Kd(:,iP,iT) - fOut.K(:,iP,iT)) * Zti * fOut.F(iP,iT) ./ fOut.Fd(iP,iT);
-            
-            % NOTE: plus sign!
             r1ti = Zti' / fOut.Fd(iP,iT) * fOut.v(iP,iT) + L0ti' * r0ti + Ldti' * r1ti;
             % Be sure to compute r0ti after r1ti since it is used in r1ti
             r0ti = Ldti' * r0ti;
@@ -1003,7 +999,6 @@ classdef StateSpace < AbstractStateSpace
         r1(:,iT) = r1ti;
         N(:,:,iT) = N0ti;
         
-        % What here needs tau_{iT+1}?
         alpha(:,iT) = fOut.a(:,iT) + fOut.P(:,:,iT) * r(:,iT) + ...
           fOut.Pd(:,:,iT) * r1(:,iT);
         V(:,:,iT) = fOut.P(:,:,iT) - ...
@@ -1035,7 +1030,9 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function [alpha, smootherOut] = smoother_mex(obj, y, fOut)
-      % Smoother mex mathematical function
+      % Call mex function smoother_uni
+      %
+      % Provides identical output to smoother_m but is roughtly 10x faster.
       
       ssStruct = struct('Z', obj.Z, 'H', obj.H, ...
         'T', obj.T, 'R', obj.R, 'Q', obj.Q, ...
@@ -1059,26 +1056,29 @@ classdef StateSpace < AbstractStateSpace
       % Decompose the effect of the data on the filtered state.
       %
       % Inputs:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
-      %     fOut (double): additional quantities from the filter
-      %     ssMulti (double): StateSpace before trasformed to univariate
-      %     C (double): Cholesky from univariate transformation
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
+      %   fOut (double): additional quantities from the filter
+      %   ssMulti (double): StateSpace before trasformed to univariate
+      %   C (double): Cholesky from univariate transformation
       %
       % Outputs:
-      %     omega: (m x p x T+1 x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegac: (m x m x T+1 x T+1) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegad: (m  p x T+1 x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegax: (m x k x T+1 x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegaw: (m x l x T+1 x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegaa0: (m x m x T+1) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
+      %   omega: (m x p x T+1 x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegac: (m x m x T+1 x T+1) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegad: (m  p x T+1 x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegax: (m x k x T+1 x T) array organized as
+      %        (state, observation, effectPeriod, contributionPeriod)
+      %   omegaw: (m x l x T+1 x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegaa0: (m x m x T+1) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       % Create cell arrays that are (T+1 x T) where weight matricies will be placed.
       omega = cell(obj.n+1, obj.n);
@@ -1248,26 +1248,29 @@ classdef StateSpace < AbstractStateSpace
     function sWeights = smoother_weights(obj, y, x, w, fOut, ssMulti, C)
       % Decompose the effect of the data on the filtered state.
       % Inputs:
-      %     y (double): observed data (p x T)
-      %     x (double): exogenous measreument data (k x T)
-      %     w (double): exogenous state data (l x T)
-      %     fOut (double): additional quantities from the filter
-      %     ssMulti (double): StateSpace before trasformed to univariate
-      %     C (double): Cholesky from univariate transformation
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
+      %   fOut (double): additional quantities from the filter
+      %   ssMulti (double): StateSpace before trasformed to univariate
+      %   C (double): Cholesky from univariate transformation
       %
       % Outputs:
-      %     omega: (m x p x T x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegac: (m x m x T x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegad: (m x p x T x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegax: (m x k x T x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegaw: (m x l x T x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)
-      %     omegaa0: (m x m x T) array organized as
-      %           (state, observation, effectPeriod, contributionPeriod)      
+      %   omega: (m x p x T x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegac: (m x m x T x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegad: (m x p x T x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegax: (m x k x T x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegaw: (m x l x T x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)
+      %   omegaa0: (m x m x T) array organized as
+      %         (state, observation, effectPeriod, contributionPeriod)      
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       % Filter weights (a_t)
       fWeight = obj.filter_weights(y, x, w, fOut, ssMulti, C);
@@ -1461,6 +1464,9 @@ classdef StateSpace < AbstractStateSpace
       % Construct weight functions for r
       %
       % Ordered (state, observation, effectPeriod, contributionPeriod)
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       comp = obj.build_smoother_weight_parts(y, fOut);
       
@@ -1479,9 +1485,12 @@ classdef StateSpace < AbstractStateSpace
       % The recursions for the weights are similar regardless of if its for r,
       % r^0 or r^1. This function generalizes it so that they all can all be
       % performed by changing the inputs. 
-      
+      %
       % If this is for r, we need to compute the decomposition of r_1 to r_T (since r^0 is
       % stored at the beginning of r). If this is for r^1, we only need r_1 to r_dt.
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       omegar = cell(T, obj.n);
       omegarc = cell(T, obj.n+1);
@@ -1662,6 +1671,9 @@ classdef StateSpace < AbstractStateSpace
       % Because we would have to set the last value of all of the * quantities in the
       % diffuse smoother with the corresponding values from the non-diffuse smoother, the
       % * values will stored in the non-diffuse smoother value arrays. 
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       Im = eye(obj.m);
       Ip = eye(obj.p);
@@ -1813,6 +1825,9 @@ classdef StateSpace < AbstractStateSpace
     
     function M0ti = build_M0ti(obj, y, fOut, iT, iP)
       % Build the M_{t,i}^{(0)} matrix for use in the diffuse smoother recursion
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       M0ti = zeros(obj.m, obj.p);
       Im = eye(obj.m);
@@ -1838,6 +1853,9 @@ classdef StateSpace < AbstractStateSpace
     
     function Ldagger = build_Ldagger(obj, y, fOut)
       % Build L^\dagger needed for the error variances.
+      %
+      % See "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space 
+      % Models", Appendix C.
       
       Im = eye(obj.m);
       Ldagger = zeros(obj.m, obj.m, obj.n); 

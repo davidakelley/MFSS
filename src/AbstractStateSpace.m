@@ -20,12 +20,13 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     R
     Q
     
-    % Structure of time-varrying parameter indexes
+    % Structure of time-varying parameter indexes
     tau
   end
   
   properties (Hidden)
     % Numeric gradient precision order (either 1 or 2)
+    % Doubles gradient computation time with a chance of improving accuracy.
     numericGradPrec = 1;
     % Numeric gradient step size
     delta = 1e-8;    
@@ -156,7 +157,7 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
       % 
       % Arguments:
       %     varPos (double):  linear index of vector position of variable of interest
-      % Outputs:
+      % Returns:
       %     nLags (double): number of lags in the state of variable of interest
       %     positions (double): linear index position of the lags
       %
@@ -185,10 +186,18 @@ classdef (Abstract) AbstractStateSpace < AbstractSystem
     function [obj, y, x, w] = checkSample(obj, y, x, w)
       % Check the data timing against the time-varrying parameters
       % 
-      % Args: 
-      %     y (double) : observed data
-      %     x (double) : exogenous series in measurement equation
-      %     w (double) : exogenous series in state equation
+      % Arguments: 
+      %   y (double) : observed data
+      %   x (double) : exogenous series in measurement equation
+      %   w (double) : exogenous series in state equation
+      % 
+      % Returns: 
+      %   obj (StateSpace or StateSpaceEstimation): system with time properties set
+      %   y (double) : observed data, with time in the first dimension
+      %   x (double) : exogenous series in measurement equation, with time in the first 
+      %     dimension
+      %   w (double) : exogenous series in state equation, with time in the first 
+      %     dimension
       
       if size(y, 1) ~= obj.p && size(y,2) == obj.p
         y = y';

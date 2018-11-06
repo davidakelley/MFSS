@@ -10,7 +10,7 @@ classdef Accumulator < AbstractSystem
   %
   % David Kelley, 2016-2018
   
-  properties 
+  properties
     % Linear index of observation dimensions under aggregation
     index
     
@@ -30,14 +30,14 @@ classdef Accumulator < AbstractSystem
   
   methods
     function obj = Accumulator(index, calendar, horizon)
-      % Constructor
-      % 
-      % Arguments: 
-      %     index (double): linear index of series needing aggregation
-      %     calendar (double): calendar variable specific to accumulator type
-      %     horizon (double): number of high-freq periods in low-freq period
-      % Outputs: 
-      %     obj (Accumulator): Accumulator object
+      % Accumulator constructor
+      %
+      % Arguments:
+      %   index (double): linear index of series needing aggregation
+      %   calendar (double): calendar variable specific to accumulator type
+      %   horizon (double): number of high-freq periods in low-freq period
+      % Returns:
+      %   obj (Accumulator): Accumulator object
       
       if islogical(index)
         index = find(index);
@@ -51,35 +51,32 @@ classdef Accumulator < AbstractSystem
       
       obj.accumulatorTypes = any(obj.calendar == 0)';
       
-      % obj.m = [];
       obj.p = max(index);
-      % obj.g = [];
-      % obj.k = [];
       obj.n = size(obj.calendar, 1) - 1;
       obj.timeInvariant = false;
     end
     
     function ssNew = augmentStateSpace(obj, ss)
       % Augment the state of a system to enforce accumulator constraints
-      %      
+      %
       % Arguments:
-      %     ss (StateSpace): StateSpace to augment
-      % Outputs: 
-      %     ssNew (StateSpace): augmented StateSpace
+      %   ss (StateSpace): StateSpace to augment
+      % Returns:
+      %   ssNew (StateSpace): augmented StateSpace
       %
       % Note that augmenting a system removes initial values.
       
       obj.checkConformingSystem(ss);
-      aug = obj.computeAugSpecification(ss);      
+      aug = obj.computeAugSpecification(ss);
       ssNew = obj.buildAccumulatorStateSpace(ss, aug);
     end
     
     function tmNew = augmentThetaMap(obj, tm)
       % Augment a ThetaMap so that it produces an augmented StateSpace.
-      %      
+      %
       % Arguments:
       %     tm (ThetaMap): ThetaMap to augment
-      % Outputs: 
+      % Returns:
       %     tmNew (ThetaMap): augmented ThetaMap
       %
       % The size of the theta vector will stay the same.
@@ -127,12 +124,12 @@ classdef Accumulator < AbstractSystem
     
     function sseNew = augmentStateSpaceEstimation(obj, sse)
       % Augment a StateSpaceEstimation to obey the accumulators.
-      %      
+      %
       % Arguments:
       %     sse (StateSpaceEstimation): StateSpaceEstimation to augment
-      % Outputs: 
+      % Returns:
       %     sseNew (StateSpaceEstimation): augmented StateSpaceEstimation
-     
+      
       % This is actually simple: augment the system matricies (and let the nans
       % propogate) and augment the ThetaMap.
       
@@ -170,8 +167,8 @@ classdef Accumulator < AbstractSystem
       %     data (double): observed data (y) in sample
       %     types (cell): cell array of strings indicating 'sum' or 'avg' accumulators
       %     horizons (double): horizon of each accumulator
-      % Outputs: 
-      %     accum (Accumulator): accumulator 
+      % Returns:
+      %     accum (Accumulator): accumulator
       %
       % The first period of the data must be the first period for each
       % accumulator.
@@ -223,10 +220,10 @@ classdef Accumulator < AbstractSystem
     
     function calendar = group2calendar(group)
       % Utility method to generate average calendar from a group indicator.
-      % 
+      %
       % Arguments:
       %     group (double): vector of group (ie, month of year)
-      % Outputs: 
+      % Returns:
       %     calendar (double): calendar variable for average accumulator
       
       calendar = nan(size(group));
@@ -267,7 +264,7 @@ classdef Accumulator < AbstractSystem
       augSpec.baseFreqState = used.state;
       
       augSpec.accumulatorTypes = used.Types;
-
+      
       [augSpec.addLagsFrom, LagRowPos, m.withLag] = ...
         obj.determineNeededLags(ss, ...
         augSpec.baseFreqState(~used.Types), used.Horizon(:,~used.Types));
@@ -275,15 +272,16 @@ classdef Accumulator < AbstractSystem
       % Dimension calculations
       augSpec.nAccumulatorStates = size(used.Calendar, 2);
       m.final = m.withLag + augSpec.nAccumulatorStates;
-      augSpec.m = m; 
+      augSpec.m = m;
       
+      % TODO: Add paragraph about accumulator ordering
       % I'm pretty sure I just need to know what order the accumulators go in - do they go
-      % by observations then by states or by states then by observations? 
+      % by observations then by states or by states then by observations?
       Zspec.originIndexes = find(Zinx);
       [accumObs, ~] = find(Zinx);
       accumStates = m.withLag + Zend(Zinx);
       Zspec.finalIndexes = sub2ind([size(ss.Z, 1) augSpec.m.final], accumObs, accumStates);
-
+      
       augSpec.Z = Zspec;
       
       % T augmentation:
@@ -327,28 +325,28 @@ classdef Accumulator < AbstractSystem
       Rtypes = [ss.tau.R used.Calendar(:,used.Types == 0)];
       [~, iA_R, Rspec.newtau] = unique(Rtypes, 'rows');
       Rspec.cal = used.Calendar(iA_R,:);
-      Rspec.oldtau = ss.tau.c(sort(iA_R));      
+      Rspec.oldtau = ss.tau.c(sort(iA_R));
       augSpec.R = Rspec;
     end
     
     function [stateAgg, Zinx, Zend] = computeUsed(obj, ss)
-      % Compute which of the possible aggregated states we need are being used based on 
-      % the structure of the given state space model. 
+      % Compute which of the possible aggregated states we need are being used based on
+      % the structure of the given state space model.
       %
       % Determines which states need to be aggregated based on whether a low-frequency
       % observation occurs from that state. The ordering of the aggregated states matters
-      % here since it will be used to determine the structure of the Z and T matricies. 
+      % here since it will be used to determine the structure of the Z and T matricies.
       
       % Compute definitions of possible aggregated states
-      % An accumulator variable is defined by (original state, type, cal, hor) that says 
+      % An accumulator variable is defined by (original state, type, cal, hor) that says
       % what the low-frequency version of a latent state will be. Get the list of states
-      % we need aggregated versions for ordered by the observation they will be used for. 
+      % we need aggregated versions for ordered by the observation they will be used for.
       [lowFreqObsInx, statesToAggregate] = obj.findUsedAccum(ss.Z);
       [lowFreqObsInxOrdered, tempUnsort] = sort(lowFreqObsInx);
       statesToBeAugmentedOrdered = statesToAggregate(tempUnsort);
-
+      
       % Find the different accumulators we need: anything that has the same
-      % (state, type, horizon, calendar) doesn't need to be done twice. 
+      % (state, type, horizon, calendar) doesn't need to be done twice.
       [~, inxOrder] = sort(obj.index);
       sortTypes = obj.accumulatorTypes(inxOrder);
       sortHorizon = obj.horizon(:,inxOrder);
@@ -361,7 +359,7 @@ classdef Accumulator < AbstractSystem
       [~, iA_neededDefs, iC_usedDefs] = unique(possibleAggregateDefs', 'rows');
       
       % The definitions were already sorted in the order we want them. Make sure we
-      % maintain that order going forward. 
+      % maintain that order going forward.
       aggregateStateDefs = possibleAggregateDefs(:, sort(iA_neededDefs));
       
       % Pick out structural elements now that we know what we need:
@@ -372,7 +370,7 @@ classdef Accumulator < AbstractSystem
       stateAgg.Horizon = aggregateStateDefs(3:nPer + 2, :);
       
       % (2) Find the order that the aggregated states will be used in.
-      % 
+      %
       % Compute where Z elements should be moved from and to (linear indexes)
       % Original Z elements: any nonzero elements of rows of Z for used
       %
@@ -384,12 +382,12 @@ classdef Accumulator < AbstractSystem
       
       % Find where the index of the aggregated states each observation needs. This will be
       % sorted by observation then by state but any state that's used for multiple
-      % observations will occur according to the first observation that needs it. 
-      % 
+      % observations will occur according to the first observation that needs it.
+      %
       % To find where these go, start with the list of used aggregate state definitions.
       % Iterate through each one, adding one to the current count as you come across a new
-      % definition. 
-      endState = nan(sum(Zinx(:)), 1); 
+      % definition.
+      endState = nan(sum(Zinx(:)), 1);
       count = 0;
       for iE = 1:length(iC_usedDefs)
         if any(iC_usedDefs(iE) == iC_usedDefs(1:iE-1))
@@ -399,7 +397,7 @@ classdef Accumulator < AbstractSystem
           endState(iE) = count;
         end
       end
-      ZendT = zeros(ss.m, ss.p); % FIXME? For symbolic specifications. 
+      ZendT = zeros(ss.m, ss.p); 
       ZendT(Zinx') = endState;
       Zend = ZendT';
     end
@@ -531,7 +529,7 @@ classdef Accumulator < AbstractSystem
       % The transformations are linear. The full definitions are then given by
       % what elements of T are getting added to them and mutliplied by:
       addendT = Accumulator.augmentParamT(zeros(aug.m.withLag), aug);
-      factorT = Accumulator.augmentParamT(ones(aug.m.withLag), aug) - addendT; % FIXME: dimensions
+      factorT = Accumulator.augmentParamT(ones(aug.m.withLag), aug) - addendT; 
       isAugElemT = false(size(transIndex.T));
       isAugElemT(augStates, 1:aug.m.original, :) = true;
       [transIndex.T, newTransT, newInvT] = Accumulator.computeNewTrans(...
@@ -590,8 +588,6 @@ classdef Accumulator < AbstractSystem
       % hiFreqStates - The states that will be accumulated to a lower frequency
       %   before they are observed.
       % augHorizon - horizon the high-frequency states will be accumulated by.
-      
-      % TODO: move lagRowPos to separate function (ss.LagsInState)
       
       % How many lags we need to add by each state we're concerned with
       usedStates = unique(hiFreqStates);
@@ -697,7 +693,6 @@ classdef Accumulator < AbstractSystem
       T.Tt = zeros(mWithLag, mWithLag, size(ss.T, 3), class(ss.T));
       T.Tt(1:ss.m, 1:ss.m, :) = ss.T;
       lagsIndex = sub2ind([mWithLag mWithLag], (ss.m+1:mWithLag)', addLagsFrom);
-      % FIXME: I don't think this handles slices correctly:
       T.Tt(lagsIndex) = 1;
       T.tauT = ss.tau.T;
       
@@ -722,7 +717,7 @@ classdef Accumulator < AbstractSystem
       
       % Create new system
       ss = StateSpace(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'R', R, 'gamma', gamma);
-         
+      
       if ~isempty(ss.a0)
         error('Unable to add lags of initial state.');
       end
@@ -735,7 +730,7 @@ classdef Accumulator < AbstractSystem
       % Construct new T matrix
       mNew = aug.m.withLag + aug.nAccumulatorStates;
       
-      states = unique(aug.baseFreqState);  % used to be: aug.augmentedStates
+      states = unique(aug.baseFreqState); 
       
       % Add accumulator elements
       Tslices = size(aug.T.oldtau, 1);
@@ -866,6 +861,11 @@ classdef Accumulator < AbstractSystem
     function [newa0, newP0] = augmentParamInit(a0, P0, T, aug)
       % Compute augmented state initial values.
       %
+      % Currently nonfunctional. Set any initial values (a0 and P0) after augmenting the
+      % StateSpace or StateSpaceEstimation. 
+      %
+      % For more details, see the function body.
+      
       % Ideally, you want to think about what these values are in expectation given the
       % existing elements of a0. That is like running the smoother with no data
       % where we know the terminal values of the high-frequency states, the accumulating

@@ -86,10 +86,30 @@ classdef ThetaMap < AbstractSystem
   end
   
   methods
-    %% Constructor
     function obj = ThetaMap(fixed, index, transformationIndex, ...
         transformations, inverses, varargin)
-      % Generate map from elements of theta to StateSpace parameters
+      % ThetaMap constructor
+      %
+      % Arguments: 
+      %   fixed (StateSpace): all elements not being estimated
+      %   index (StateSpace): index of psi vector affecting each element estimated
+      %   transformationIndex (StateSpace): index of which transformation applied to psi
+      %     elements
+      %   transformations (cell of functions): transoformations from psi to parameters
+      %   inverses (cell of functions): inverses of transformations
+      %   
+      % Optional arguments (name-value pairs): 
+      %   explicita0 (boolean): true if a0 is explicitly given
+      %   explicitP0 (boolean): true if P0 is explicitly given
+      %   PsiTransformation (cell of functions): functions that determine each element of
+      %     psi
+      %   PsiInverse (cell of functions): inverses of PsiTransformation
+      %   PsiIndexes (cell of integers): linear indexes of theta elements that determine
+      %     each elememt of psi
+      %   Names (cell): names of each element of theta
+      %
+      % Returns: 
+      %   obj (ThetaMap): ThetaMap object
       
       inP = inputParser();
       inP.addParameter('explicita0', false);
@@ -188,10 +208,12 @@ classdef ThetaMap < AbstractSystem
       % Generate a ThetaMap where all parameters values to be estimated are
       % independent elements of theta
       % 
-      % Inputs
-      %   ss: StateSpace or StateSpaceEstimation
-      % Outputs
-      %   tm: ThetaMap
+      % Arguments: 
+      %   ss (StateSpace or StateSpaceEstimation): system where estimated elements are
+      %     identified with nan values
+      % 
+      % Returns: 
+      %   tm: ThetaMap object
 
       assert(isa(ssE, 'AbstractStateSpace'));
       
@@ -202,6 +224,8 @@ classdef ThetaMap < AbstractSystem
       paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
         ssE.T(:); ssE.c(:); ssE.gamma(:); ssE.R(:); ssE.Q(:)];
       
+      % Theta to Psi transformations
+      % Cell of length nPsi of which theta elements determine element of Psi
       if isa(paramVec, 'sym')
         % theta is ordered by symbolic variables, then nan variables
         symTheta = symvar(paramVec);
@@ -235,8 +259,6 @@ classdef ThetaMap < AbstractSystem
       names = [symNames; ...
         arrayfun(@(iT) sprintf('theta_%d', iT), length(symTheta)+1:nTheta, 'Uniform', false)'];
       
-      % Theta to Psi transformations
-      % Cell of length nPsi of which theta elements determine element of Psi
       symPsiInx = cell(length(symPsi),1);
       for iPsi = 1:length(symPsi)
         symPsiInx{iPsi} = find(arrayfun(@(iTheta) has(symPsi(iPsi), iTheta), symTheta));
@@ -297,10 +319,11 @@ classdef ThetaMap < AbstractSystem
       % Generate a ThetaMap where every element of the system parameters is 
       % included in theta
       % 
-      % Inputs
-      %   ss: StateSpace or StateSpaceEstimation
-      % Outputs
-      %   tm: ThetaMap
+      % Arguments: 
+      %   ss (StateSpace or StateSpaceEstimation): system
+      % 
+      % Returns: 
+      %   tm: ThetaMap object
       
       assert(isa(ss, 'AbstractStateSpace'));
       
@@ -318,7 +341,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     theta (double): vector of parameters
-      % Output 
+      % 
+      % Returns: 
       %     ss (StateSpace): a StateSpace object
       
       % Handle inputs
@@ -380,7 +404,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     ss (StateSpace): a StateSpace object
-      % Output 
+      % 
+      % Returns: 
       %     theta (double): vector of parameters
             
       % Handle inputs
@@ -507,7 +532,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     thetaU (double): unrestricted theta vector
-      % Output 
+      % 
+      % Returns: 
       %     theta (double): restricted theta
       
       trans = obj.getThetaTransformations();
@@ -523,7 +549,8 @@ classdef ThetaMap < AbstractSystem
       %  
       % Arguments: 
       %     theta (double): restricted theta
-      % Output 
+      % 
+      % Returns: 
       %     thetaU (double): unrestricted theta vector
       
       assert(all(theta+eps > obj.thetaLowerBound), 'Theta lower bound violated.');
@@ -541,7 +568,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     thetaU (double): unrestricted theta vector
-      % Output 
+      % 
+      % Returns: 
       %     GtransformedTheta (double): gradient of the theta restrictions
       
       [~, ~, thetaUDeriv] = obj.getThetaTransformations();
@@ -559,7 +587,8 @@ classdef ThetaMap < AbstractSystem
       % Arguments: 
       %     ssLB (StateSpace): Lower bound StateSpace
       %     ssUB (StateSpace): Upper bound StateSpace
-      % Output
+      % 
+      % Returns: 
       %     obj (ThetaMap):  Altered ThetaMap with added lower and upper bounds
       
       % Handle inputs
@@ -651,7 +680,8 @@ classdef ThetaMap < AbstractSystem
       %     sybmol (symbol or char): symbolic variable being restricted
       %     lb (StateSpace): lower bound
       %     ub (StateSpace): upper bound
-      % Output
+      %
+      % Returns: 
       %     obj (ThetaMap):  Altered ThetaMap with added lower and upper bounds
       
       % Find the element of theta we'll restrict
@@ -678,7 +708,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     [none]
-      % Outputs: 
+      %
+      % Returns: 
       %     obj (ThetaMap): valid, compressed object
       
       % Minimize the size of theta and psi needed after edits have been made to 
@@ -721,7 +752,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     deletedTheta (double): indexes to deleted elements
-      % Outputs: 
+      %
+      % Returns: 
       %     obj (ThetaMap): compressed object
       
       % Delete unused index elements, decrement those we're still keeping if
@@ -750,7 +782,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     [none]
-      % Outputs: 
+      %
+      % Returns:
       %     obj (ThetaMap): compressed object
       
       % Make sure we don't have any transformations on fixed elements
@@ -813,10 +846,11 @@ classdef ThetaMap < AbstractSystem
       % that this causes a0 and P0 to be freely estimated. 
       % 
       % Arguments: 
-      %     a0 (double): initial state mean
-      %     P0 (double): initial state variance
-      % Outputs: 
-      %     obj (ThetaMap): updated object
+      %   a0 (double): initial state mean
+      %   P0 (double): initial state variance
+      %
+      % Returns: 
+      %   obj (ThetaMap): updated object
       
       % Get the identity transformation to add later
       [trans, inverse] = obj.boundedTransform(-Inf, Inf);
@@ -914,7 +948,8 @@ classdef ThetaMap < AbstractSystem
       % 
       % Arguments: 
       %     [none]
-      % Outputs: 
+      %
+      % Returns: 
       %     thetaStr (cell): cell array describing each element of theta
       
       % Find parameters affected
@@ -1093,12 +1128,12 @@ classdef ThetaMap < AbstractSystem
       % Set up index StateSpace for default case where all unknown elements of 
       % the parameters are to be estimated individually
       % 
-      % Inputs 
-      %   ssE:        StateSpaceEstimation with nan or symbolic values for elements to be 
-      %               determined by a ThetaMap
-      % Outputs
-      %   transIndex: A StateSpace with indexes for each element determined by
-      %               theta that indicates the element of thete to be used
+      % Arguments:
+      %   ssE (StateSpaceEstimation): with nan or symbolic values for elements to be 
+      %     determined by a ThetaMap
+      % Returns: 
+      %   transIndex (StateSpace): indexes for each element determined by theta that 
+      %     indicates the element of thete to be used
       
       paramEstimIndexes = cell(length(ssE.systemParam), 1);
       
@@ -1169,12 +1204,12 @@ classdef ThetaMap < AbstractSystem
       % Create the default transformationIndex - all parameters values are zeros
       % except where ss is nan, in which case they are ones. 
       % 
-      % Inputs 
-      %   ss:         StateSpaceEstimation with nan values for elements to be 
-      %               determined by a ThetaMap
-      % Outputs
-      %   transIndex: A StateSpace with indexes for each element determined by
-      %               theta that indicates the transformation to be applied
+      % Arguments:  
+      %   ss (StateSpace): StateSpaceEstimation with nan values for elements to be 
+      %     determined by a ThetaMap
+      % Returns: 
+      %   transIndex (StateSpace): A StateSpace with indexes for each element determined 
+      %     by theta that indicates the transformation to be applied
       
       transIndParams = cell(length(ssE.systemParam), 1);
       paramVec = [ssE.Z(:); ssE.d(:); ssE.beta(:); ssE.H(:); ...
@@ -1224,13 +1259,14 @@ classdef ThetaMap < AbstractSystem
       % Generate a restriction transformation from a lower and upper bound
       % Also returns the inverse of the transformation
       % 
-      % Inputs
-      %   lowerBound: Scalar lower bound
-      %   upperBound: Scalar upper bound
-      % Outputs
-      %   trans: transformation mapping [-Inf, Inf] to the specified interval
-      %   inver: the inverse of trans    
-      %   deriv: derivative of trans
+      % Inputs:
+      %   lowerBound (scalar): lower bound
+      %   upperBound (scalar): upper bound
+      %
+      % Returns: 
+      %   trans (function handle): transformation mapping [-Inf, Inf] to the interval
+      %   inver (function handle): the inverse of trans    
+      %   deriv (function handle): derivative of trans
       
       if isfinite(lowerBound) && isfinite(upperBound)
         % Logistic function
@@ -1257,12 +1293,12 @@ classdef ThetaMap < AbstractSystem
     
     function result = isequalTransform(fn1, fn2)
       % Determines if two function handles represent the same function
+      %
       % Also accepts cell arrays of function handles. If only one element is a
       % cell array, each is checked to see if they are equal to the non-cell
       % array input. If both elements are cell arrays, they must be the same
       % size and will be checked element-wise.
-      % David Kelley, 2017
-
+      
       nComp = max(length(fn1), length(fn2));
       if iscell(fn1) && iscell(fn2)
         assert(size(fn1) == size(fn2), 'Cell array inputs must be the same size.');
@@ -1294,12 +1330,12 @@ classdef ThetaMap < AbstractSystem
     function ssNew = cellParams2ss(cellParams)
       % Create StateSpace with system parameters passed in a cell array
       % 
-      % Inputs
-      %   cellParams: Cell array with 9 cells: Z, d, H, T, c, R, & Q
-      %   ssOld:      StateSpace or ThetaMap with information on handling of
-      %               initial values
-      % Outputs
-      %   ssNew:      StateSpace constructed with new parameters
+      % Arguments:
+      %   cellParams (cell): Cell array with 9 cells: Z, d, H, T, c, R, & Q
+      %   ssOld (StateSpace): StateSpace or ThetaMap with information on handling of
+      %     initial values
+      % Returns:
+      %   ssNew (StateSpace): StateSpace constructed with new parameters
       
       ssNew = StateSpace(cellParams{[1 4 5 9]}, ...
         'd', cellParams{2}, 'beta', cellParams{3}, ...
@@ -1309,15 +1345,15 @@ classdef ThetaMap < AbstractSystem
     function vecParam = vectorizeStateSpace(ss, explicita0, explicitP0)
       % Vectorize all parameters of the state space
       % 
-      % Arguements: 
-      %   ss : StateSpace
-      %   explicita0 (boolean) : indicates if a0 is explicit or a function of
-      %   the state parameters
-      %   explicitP0 (boolean) : indicates if P0 is explicit or a function of
-      %   the state parameters
+      % Arguments: 
+      %   ss (StateSpace): StateSpace to vectorize
+      %   explicita0 (boolean): indicates if a0 is explicit or a function of 
+      %     the state parameters
+      %   explicitP0 (boolean): indicates if P0 is explicit or a function of
+      %     the state parameters
       %
       % Returns: 
-      %   vecParam : the vectorized parameters
+      %   vecParam (vector): the vectorized parameters
       
       param = ss.parameters;
       if ~explicita0

@@ -124,7 +124,7 @@ classdef EstimationProgress < handle
       % Arguments:
       %     x (double): theta vector
       %     optimValues (struct): structure containing negative likelihood in fval
-      % Outputs: 
+      % Returns: 
       %     stopCond (boolean): true indicates solver should stop
 
       % Update current values
