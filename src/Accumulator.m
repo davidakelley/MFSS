@@ -274,9 +274,9 @@ classdef Accumulator < AbstractSystem
       m.final = m.withLag + augSpec.nAccumulatorStates;
       augSpec.m = m;
       
-      % TODO: Add paragraph about accumulator ordering
-      % I'm pretty sure I just need to know what order the accumulators go in - do they go
-      % by observations then by states or by states then by observations?
+      % State will be added so that the additional states needed for a given observation
+      % are groupped together before any additional states needed for other observations
+      % are added.
       Zspec.originIndexes = find(Zinx);
       [accumObs, ~] = find(Zinx);
       accumStates = m.withLag + Zend(Zinx);

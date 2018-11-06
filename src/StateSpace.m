@@ -44,6 +44,8 @@ classdef StateSpace < AbstractStateSpace
       %   c (matrix): State constants
       %   gamma (matrix): Exogenous state series loadings
       %   R (matrix): Error selection
+      %   a0 (vector): initial estimate of the state
+      %   P0 (matrix): variance of initial estimate of the state
       %
       % Returns:
       %   obj (StateSpace): a StateSpace object
@@ -54,8 +56,8 @@ classdef StateSpace < AbstractStateSpace
       inP.addParameter('c', []);
       inP.addParameter('gamma', []);
       inP.addParameter('R', []);
-      % inP.addParameter('a0', []);
-      % inP.addParameter('P0', []);
+      inP.addParameter('a0', []);
+      inP.addParameter('P0', []);
       inP.parse(varargin{:});
       parsed = inP.Results;
       
@@ -67,6 +69,12 @@ classdef StateSpace < AbstractStateSpace
       obj = obj@AbstractStateSpace(superArgs{:});
       if nargin == 0
         return;
+      end
+      if ~isempty(inP.a0)
+        obj.a0 = inP.a0;
+      end
+      if ~isempty(inP.P0)
+        obj.P0 = inP.P0;
       end
       obj.validateStateSpace();
     end

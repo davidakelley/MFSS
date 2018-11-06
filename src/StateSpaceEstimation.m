@@ -84,9 +84,22 @@ classdef StateSpaceEstimation < AbstractStateSpace
       %   obj (StateSpaceEstimation): estimation object
       %
       % Other Properties: 
-      %   solver: (string or cell) which optimization routine to use when estimate is
+      %   solver (string or cell): which optimization routine to use when estimate is
       %     called. Options include fmincon, fminunc, fminsearch, and sa. 
-     
+      %   verbose (boolean): display solver command window output
+      %   diagnosticPlot (boolean): display estimation progress window
+      %   solveIterMax (integer): maximum number of times to try calling solvers
+      %   stepTol (float): tolerance for improvement between solvers
+      %   useInternalNumericGrad (boolean): use internal gradient (more accurate) or allow
+      %     fmincon/fminunc to compute gradients (faster, less precise)
+      %   fminsearchMaxIter (integer): maximum iterations allowed on each call of
+      %     fminsearch
+      %   flagsAllowed (vector): allowable exit flags from an optimizer
+      %   initializeAttempts (integer): number of random starting values to try if no
+      %     initial parameter estimates are provided
+      %   initializeRange (1 x 2 vector): range on the unconstrained parameter space to
+      %     sample from for initialization attempts
+ 
       inP = inputParser;
       inP.addParameter('d', []);
       inP.addParameter('beta', []);
