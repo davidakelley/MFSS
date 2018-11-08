@@ -8,6 +8,9 @@
 %   - The monthly log-difference of Real Manufacturing and Trade Industries Sales
 % The monthly series are normalized have a mean of zero and a standard deviation of one. 
 % Data retreived from FRED as of August 2, 2018. 
+%
+% See Also:
+%   pgmtmfss_replication.m - Replication code runner script
 
 data = load('data_panel.mat');
 y = data.y;

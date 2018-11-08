@@ -1,4 +1,7 @@
 % Laubach-Williams estimate of the natural rate of interest at the monthly frequency
+%
+% See Also:
+%   pgmtmfss_r_star.m - Mixed-frequency Laubach & Williams Natural Rate of Interest 
 
 %% Data
 YM = [100*gdpM(27:end) inflationMA(27:end)];
@@ -19,6 +22,9 @@ datesm = linspace((dates(8))-60, dates(end), size(YM,1))';
 %     [pi_t-1 avg1(pi)_t avg2(pi)_t oil_t-1 import_t]'
 % The exogenous series in the state equation are 
 %     [r_t-1 r_t-2]' 
+%
+% See Also:
+%   pgmtmfss_replication.m - Replication code runner script
 
 syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2Ystar sigma2IS sigma2PC
 

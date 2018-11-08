@@ -63,9 +63,7 @@ classdef mfvar_test < matlab.unittest.TestCase
       V1 = P1 - P1 * N1 * P1;
       K1 = ss.T * P1 * ss.Z' / F1;
       L1 = ss.T - K1 * ss.Z;
-      % P2 = (ss.T^2 * P1 + ss.Q);
-      % N2 = 1./(P2 + ss.Q);
-      J = P1 * L1'; %* (eye(ss.m) - N2 * P2); % j = t + 1
+      J = P1 * L1'; 
       
       testCase.verifyEqual(ssV, V1);
       testCase.verifyEqual(ssJ, J);

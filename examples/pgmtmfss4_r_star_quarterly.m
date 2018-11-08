@@ -1,4 +1,7 @@
 % Laubach-Williams estimate of the natural rate of interest
+%
+% See Also:
+%   pgmtmfss_r_star.m - Mixed-frequency Laubach & Williams Natural Rate of Interest 
 
 %% Data
 YQ = [100*gdpQ(9:end) inflationQ(9:end)];

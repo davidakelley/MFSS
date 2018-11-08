@@ -8,6 +8,9 @@
 % The data in yMonthly replaces GDP with: 
 %   - The log-level of All Employees: Total Nonfarm Payrolls
 % Data retrieved from FRED as of October 10, 2018. 
+%
+% See Also:
+%   pgmtmfss_replication.m - Replication code runner script
 
 load('data_var');
 
