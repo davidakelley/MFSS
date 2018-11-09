@@ -7,21 +7,29 @@ classdef MFVAR
     Y
     accumulator
     
-    nLags
     constant = true;
     verbose = false;
     
     tol = 1e-7;
     maxIter = 20000;
+    stationaryTol = 1.0001;
     
     diagnosticPlot = true;
   end
   
-  properties (Hidden)
-    p  % Number of series
-    n  % Sample length
-    
-    stationaryTol = 1.0001;
+  properties (Access = protected)
+    % Number of series in VAR
+    p
+    % Number of lags in VAR
+    nLags
+  
+    % ThetaMap for VAR-theta vector transformations
+    tm
+  end
+
+  properties (Dependent, Hidden)
+    % Sample length
+    n
   end
   
   methods
@@ -35,6 +43,7 @@ classdef MFVAR
       % Returns: 
       %     obj (MFVAR): estimation object
       
+      obj.p = size(data, 2);      
       obj.Y = data;      
       obj.nLags = lags;
       if nargin > 2 
@@ -42,8 +51,38 @@ classdef MFVAR
       else 
         obj.accumulator = Accumulator([], [], []);
       end
-      obj.n = size(obj.Y, 1);
-      obj.p = size(obj.Y, 2);      
+    end
+    
+    function obj = set.Y(obj, Y)
+      % Setter for Y
+      assert(size(Y, 2) == obj.p, 'Incorrect number of series in data.');
+      obj.Y = Y;
+    end
+    
+    function n = get.n(obj)
+      % Getter for n
+      n = size(obj.Y, 1);
+    end
+      
+    function obj = set.accumulator(obj, accum)
+      % Setter for accumulator
+      obj.accumulator = accum;
+      
+      % Generate ThetaMap for VAR
+      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
+      H = zeros(obj.p);
+      T = [nan(obj.p, obj.p*obj.nLags); ...
+        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
+      c = [nan(obj.p,1); zeros(obj.p * (obj.nLags - 1), 1)];
+      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
+      Q = nan(obj.p);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
+      if ~isempty(obj.accumulator.index)
+        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
+        obj.tm = ssEA.ThetaMapping;
+      else
+        obj.tm = ssE.ThetaMapping;
+      end
     end
     
     function ssML = estimate(obj)
@@ -75,24 +114,8 @@ classdef MFVAR
       
       params = obj.estimateOLS_VJ(alpha, V, J);
      
-      % Generate ThetaMap for progress window
-      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
-      H = zeros(obj.p);
-      T = [nan(size(params.phi)); ...
-        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
-      c = [nan(size(params.cons)); zeros(obj.p * (obj.nLags - 1), 1)];
-      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
-      Q = nan(size(params.sigma));
-      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
-      if ~isempty(obj.accumulator.index)
-        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
-        tm = ssEA.ThetaMapping;
-      else
-        tm = ssE.ThetaMapping;
-      end
-      
       % Set up progress window
-      [ssVAR, theta] = obj.params2system(params, tm);
+      [ssVAR, theta] = obj.params2system(params, obj.tm);
       progress = EstimationProgress(theta, obj.diagnosticPlot, size(alpha0,2), ssVAR);
       stop = false;
       errorIndicator = '';
@@ -106,7 +129,7 @@ classdef MFVAR
         params = obj.estimateOLS_VJ(alpha, V, J);
        
         % E-step: Get state conditional on parameters
-        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
+        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, obj.tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -165,9 +188,17 @@ classdef MFVAR
       end
     end
     
-    function [sampleStates, ssMedian] = sample(obj, nBurn, nKeep)
+    function [sampleStates, paramSamples, ssMedian] = sample(obj, nBurn, nKeep)
       % Take samples of the parameters and states
-      
+      %
+      % Arguments: 
+      %   nBurn (integer): samples to discard in warmup
+      %   nKeep (integer): samples to keep
+      % 
+      % Returns: 
+      %   sampleStates (float, 3D): stacked samples of alphaHat
+      %   ssMedian (StateSpace): median parameters of the sampled state spaces
+
       if nargin < 3
         nKeep = 500;
       end
@@ -177,10 +208,10 @@ classdef MFVAR
       
       nTotal = nBurn + nKeep;
       iSamp = 1;
-      phiSample = nan(obj.p, obj.p*obj.nLags, nTotal);
-      consSample = nan(obj.p, nTotal);
-      sigmaSample = nan(obj.p, obj.p, nTotal);
-      sampleStates = nan(obj.n, obj.p, nTotal);
+      phiSample = nan(obj.p, obj.p*obj.nLags, nKeep);
+      consSample = nan(obj.p, nKeep);
+      sigmaSample = nan(obj.p, obj.p, nKeep);
+      sampleStates = nan(obj.n, obj.p, nKeep);
       
       % TODO: Add a few iterations of the EM to get near HPD region
       tempMdl = obj;
@@ -197,31 +228,33 @@ classdef MFVAR
         obj.p*obj.nLags, obj.params2system(paramSample));
       stop = false;
       
-      while iSamp < nTotal && ~stop
+      while iSamp < nTotal+1 && ~stop
         
         [alphaDraw, ssLogli] = obj.sampleState(paramSample);
         stateSample = alphaDraw(:,1:obj.p);
         
-        paramSample = obj.sampleParameters(alphaDraw);
+        [paramSample, paramLogML] = obj.sampleParameters(alphaDraw);
         
         % Update progress window
         progress.alpha = alphaDraw';  
         progress.ss = obj.params2system(paramSample);
-        oVals.fval = -ssLogli;
+        oVals.fval = -(ssLogli + paramLogML);
         stop = progress.update(theta, oVals);
 
         if iSamp > nBurn
           sampleStates(:,:,iSamp-nBurn) = stateSample;
-          phiSample(:,:,iSamp) = paramSample.phi;
-          consSample(:,iSamp) = paramSample.cons;
-          sigmaSample(:,:,iSamp) = paramSample.sigma;
+          phiSample(:,:,iSamp-nBurn) = paramSample.phi;
+          consSample(:,iSamp-nBurn) = paramSample.cons;
+          sigmaSample(:,:,iSamp-nBurn) = paramSample.sigma;
         end
         if ~all(all(isnan(paramSample.phi)))
           iSamp = iSamp + 1;
         end
       end
       
-      phiMedian = medain(phiSample, 3);
+      paramSamples = struct('phi', phiSample, 'cons', consSample, 'sigma', sigmaSample);
+      
+      phiMedian = median(phiSample, 3);
       consMedian = median(consSample, 2);
       sigmaMedian = median(sigmaSample, 3);
       ssMedian = obj.params2system(struct('phi', phiMedian', ...
@@ -316,7 +349,7 @@ classdef MFVAR
   
   %% Gibbs sampler
   methods (Hidden)
-    function paramsDraw = sampleParameters(obj, alphaDraw)
+    function [paramsDraw, logML] = sampleParameters(obj, alphaDraw)
       
       % Generate Lags and Regressor matrix X
       Ydraw = alphaDraw(2:end, 1:obj.p);
@@ -360,6 +393,18 @@ classdef MFVAR
       consDraw = Btemp(end,:)';
       
       paramsDraw = struct('phi', phiDraw, 'cons', consDraw, 'sigma', sigmaDraw);
+      
+      SChol = chol(S);
+      SDetLog = 2 * sum(log(diag(SChol)));
+      XXInv = PcholTranspose * PcholTranspose';
+      XXInvChol = chol(XXInv);
+      XXInvDetLog = 2 * sum(log(diag(XXInvChol)));
+      k = size(XXInv,1);
+      nS = size(S,1);
+
+      logML = -0.5 * (obj.n - k) * nS * log(pi) ...
+        - 0.5 * (obj.n - k) * SDetLog ...
+        + 0.5 * nS * XXInvDetLog + obj.mvgamma(nS,(obj.n - k)/2); 
     end
     
     function [alphaTilde, ssLogli] = sampleState(obj, params)
@@ -582,6 +627,24 @@ classdef MFVAR
       X=(PChol')*(randn(Nr,Nc))*WChol+muMat;
     end
     
+    function logGamma = mvgamma(n,degf)
+      % =====================================
+      % mvgamma
+      %
+      % function logGamma=mvgamma(n,degf)
+      %
+      % Multivariate Gamma Function of dimension *n* with *degf*
+      % degrees of freedom.
+      %
+      % Output is log(gamma^n(degf)) *including the constant*
+      %
+      % Alejandro Justiniano February 13 2014
+      if degf <= (n-1)/2
+        disp('logGamma is infinite!')
+      end
+      vecArg=(degf+.5*(0:-1:1-n));
+      logGamma=sum(gammaln(vecArg))+0.25*n*(n-1)*log(pi);
+    end
   end
 end
 
