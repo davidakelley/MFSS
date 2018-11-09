@@ -2,7 +2,7 @@
 
 % David Kelley, 2016-2018
 
-classdef Accumulator_IntegrationTest < matlab.unittest.TestCase
+classdef Accumulator_Integration_test < matlab.unittest.TestCase
   
   methods (Test)
     %% StateSpace parameter tests

@@ -4,7 +4,6 @@
 % To replicate the figures in the paper, run this file. 
 
 %% Install the toolbox 
-toolboxes = matlab.addons.toolbox.installedToolboxes;
 assert(exist('StateSpaceEstimation.m', 'file') == 2, ...
   'MFSS toolbox not installed.');
 

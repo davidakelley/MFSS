@@ -37,4 +37,4 @@ ylim([0 100]);
 box off;
 legend('Previous data', 'Current data', 'Subsequent data', ...
   'Location', 'southoutside', 'Orientation', 'horizontal');
-title('Percent Contribution to Estiamted Trend by Observations');
+title('Percent Contribution to Estimated Trend by Observations');

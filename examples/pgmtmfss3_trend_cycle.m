@@ -5,6 +5,10 @@
 % Variables: 
 %     y: vector time series of log levels of GDP. Quarterly obs. placed every 3rd period.
 %     dates: monthly dates aligned with y
+%
+% See Also:
+%   pgmtmfss_replication.m - Replication code runner script
+
 data = load('data_gdp.mat');
 y = data.y;
 dates = data.dates;

@@ -2,6 +2,9 @@
 %
 % Data are taken from code provided by the Federal Reserve Bank of San Fransisco, modified
 % or retreived from FRED to accomodate the monthly frequency.
+%
+% See Also:
+%   pgmtmfss_replication.m - Replication code runner script
 
 load('data_r_star_inputs.mat')
 
