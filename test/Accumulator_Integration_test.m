@@ -272,14 +272,6 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssA.R(6,1,:), reshape(1 ./ (1:6), [1 1 6]));
     end
     
-    function testAccumExistingTVP(testCase)
-      % Check to make sure we can add an accumulator to a StateSpace that's got
-      % slices of T, c or R. Easiest way to test this is to add 2 accumulators
-      % to a StateSpace separately.
-      
-      assumeFail(testCase); % Write full test
-    end
-        
     function testSameStateSumParameters(testCase)
       % Test that accumlators for the first and third observations work. This is really
       % testing the ordering of the accumulator variables. We should order them by
