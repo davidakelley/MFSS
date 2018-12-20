@@ -18,10 +18,19 @@ if ~exist(outputFolder, 'dir')
 end
 
 srcFolder = fullfile(baseDir, 'mex');
-blaslib = fullfile(matlabroot, 'extern', 'lib', ...
-  computer('arch'), 'microsoft', 'libmwblas.lib');
-lapacklib = fullfile(matlabroot, 'extern',  'lib', ...
-  computer('arch'), 'microsoft', 'libmwlapack.lib');
+
+switch computer('arch')
+  case 'win64'
+    blaslib = fullfile(matlabroot, 'extern', 'lib', ...
+      computer('arch'), 'microsoft', 'libmwblas.lib');
+    lapacklib = fullfile(matlabroot, 'extern',  'lib', ...
+      computer('arch'), 'microsoft', 'libmwlapack.lib');
+    
+  case {'maci64', 'g1nxa64'}
+    blaslib = '-lblas';
+    lapacklib = '-llapack';
+    
+end
 
 % Compile
 flags = {'-O', '-outdir', outputFolder};

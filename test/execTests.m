@@ -31,8 +31,8 @@ alltests = {basicTests kalmanTests accumulatorTests mlTests decompTests};
 selectedTests = alltests(ismember(defaultTests, tests));
 suite = [selectedTests{:}];
 
-runner = TestRunner.withTextOutput;
-runner.addPlugin(CodeCoveragePlugin.forFolder(srcDir));
+runner = matlab.unittest.TestRunner.withTextOutput;
+runner.addPlugin(matlab.unittest.plugins.CodeCoveragePlugin.forFolder(srcDir));
 result = runner.run(suite);
 
 display(result);
