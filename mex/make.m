@@ -26,7 +26,7 @@ switch computer('arch')
     lapacklib = fullfile(matlabroot, 'extern',  'lib', ...
       computer('arch'), 'microsoft', 'libmwlapack.lib');
     
-  case {'maci64', 'g1nxa64'}
+  case {'maci64', 'glnxa64'}
     blaslib = '-lblas';
     lapacklib = '-llapack';
     
