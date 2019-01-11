@@ -75,7 +75,7 @@ We can also get the decomposition of the smoothed or filtered estimates accordin
 To estimate parameters, set elements of the system matrices to `nan` or symbolic variables, then create a `StateSpaceEstimation`: 
 
     ssE = StateSpaceEstimation(Z, H, T, Q);
-    ss = StateSpaceEstimation(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'gamma', gamma, R', R);
+    ssE = StateSpaceEstimation(Z, H, T, Q, 'd', d, 'beta', beta, 'c', c, 'gamma', gamma, R', R);
 
 Before estimating, set parameters for estimation including choice of optimization, tolerance, and parallel computing preferences (among others): 
 
