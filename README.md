@@ -2,7 +2,7 @@
 
 Estimation and inference on state space models that allow for mixed-frequency time series data.
 
-For an introduction to mixed-frequency state space modeling see "[A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models]("A_Practitioners_Guide_and_Matlab_Toolbox_for_Mixed_Frequency_State_Space_Models.pdf")" by Scott Brave, Andrew Butters, and David Kelley.
+For an introduction to mixed-frequency state space modeling see "[A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models](A_Practitioners_Guide_and_Matlab_Toolbox_for_Mixed_Frequency_State_Space_Models.pdf)" by Scott Brave, Andrew Butters, and David Kelley.
 
 ## Installation
 
