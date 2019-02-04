@@ -343,8 +343,55 @@ classdef estimate_test < matlab.unittest.TestCase
       
       testCase.verifyEqual(loadvar.ssE.a0, 100);
       testCase.verifyEqual(loadvar.ssE.P0, 10);
-
+      
       delete(fullfile(tempdir, 'temp_testInitSave.mat'));
+    end
+    
+    %% Test restrictions on estimation
+    function testRestrictFmincon(testCase)
+      % Generate data from a system with eigenvalue greater than 1.
+      Z = eye(2);
+      H = zeros(2);
+      
+      T = [1.01, 0.001; 0.001, 1.003];
+      Q = diag([0.01, 0.02]);
+      
+      ssGen = StateSpace(Z, H, T, Q);
+      ssGen.a0 = [5; 6];
+      y = generateData(ssGen, 800);
+            
+      % Restrict
+      % We want to restrict the max eigenvalue of T to be less than 1.
+      ssE = StateSpaceEstimation(eye(2), zeros(2), nan(2), diag(nan(2,1)));
+      ssE.constraints{1} = @(theta, ss) max(abs(eig(ss.T))) - 1;
+      
+      ssE.solver = 'fmincon';
+      ssOpt = ssE.estimate(y);
+      
+      testCase.verifyLessThan(max(abs(eig(ssOpt.T))), 1);
+    end
+    
+    function testRestrictFminsearch(testCase)
+      % Generate data from a system with eigenvalue greater than 1.
+      Z = eye(2);
+      H = zeros(2);
+      
+      T = [1.01, 0.001; 0.001, 1.003];
+      Q = diag([0.01, 0.02]);
+      
+      ssGen = StateSpace(Z, H, T, Q);
+      ssGen.a0 = [5; 6];
+      y = generateData(ssGen, 800);
+            
+      % Restrict
+      % We want to restrict the max eigenvalue of T to be less than 1.
+      ssE = StateSpaceEstimation(eye(2), zeros(2), nan(2), diag(nan(2,1)));
+      ssE.constraints{1} = @(theta, ss) max(abs(eig(ss.T))) - 1;
+      
+      ssE.solver = 'fminsearch';
+      ssOpt = ssE.estimate(y);
+      
+      testCase.verifyLessThan(max(abs(eig(ssOpt.T))), 1);
     end
     
   end

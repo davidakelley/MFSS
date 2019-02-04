@@ -469,6 +469,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       % Constraints of the form c(x) <= 0 and ceq(x) = 0.
       scale = 1e6;
       theta = obj.ThetaMapping.restrictTheta(thetaU);
+      ss1 = obj.ThetaMapping.theta2system(theta);
 
       % User constraints
       cx = [];
@@ -478,12 +479,11 @@ classdef StateSpaceEstimation < AbstractStateSpace
         end
         
         for iC = 1:length(obj.constraints)
-          cx = [cx; obj.constraints{iC}(theta)]; %#ok<AGROW>
+          cx = [cx; obj.constraints{iC}(theta, ss1)]; %#ok<AGROW>
         end
       end
       
       % Return the negative determinants in cx
-      ss1 = obj.ThetaMapping.theta2system(theta);
       if ~obj.ThetaMapping.usingDefaultP0
         cx = [cx; scale * -det(ss1.Q0)];
       end         
@@ -518,6 +518,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
           theta0 = obj.ThetaMapping.restrictTheta(iTheta0U(:,iAttempt));
           ss0 = obj.ThetaMapping.theta2system(theta0);
           [~, iLogli(iAttempt)] = ss0.filter(y, x, w);
+          
+          if obj.nlConstraintFun(iTheta0U(:,iAttempt)) > 0
+            iLogli(iAttempt) = nan;
+          end
         catch
         end
       end
