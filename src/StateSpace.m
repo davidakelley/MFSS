@@ -17,6 +17,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function obj = set.a0(obj, newa0)
+      assert(isvector(newa0));
       obj.a0Private = newa0;
     end
     
@@ -25,6 +26,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function obj = set.P0(obj, newP0)
+      assert(ismatrix(newP0));
       obj.P0Private = newP0;
     end
   end
