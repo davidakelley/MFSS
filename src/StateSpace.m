@@ -339,6 +339,84 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
+    %{
+    function [alphaTilde, ssLogli] = smoothSample(obj, y, x, w)
+      % Take a draw of the state
+      %
+      % See "A note on implementing the Durbin and Koopman simulation smoother" by Marek
+      % Jarocinski (2015) for notation.
+      %
+      % Simulation smoothing by mean corrections:
+      % Step 0 - Run the smoother on y to get alphaHat.
+      % Step 1 - Simulate alpha+ and y+ from draws of epsilon & eta using system parameters.
+      % Step 2 - Construct y* = y - y+.
+      % Step 3 - Compute alpha* from Kalman smoother on y*
+      % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state.
+      
+      % Step 1 - Generate alpha+ and y+ (alpha and y from simulated shocks)
+      [yPlus, alphaPlus] = obj.generateData(params);
+      
+      % Step 2 - Construct y* = y - y+ and alpha* from Kalman smoother on y*
+      yStar = obj.Y - yPlus;
+      % alphaStar = obj.smooth_compact(params, yStar);
+      [alphaStar, sOut] = obj.smooth(yStar);
+      ssLogli = sOut.logli;
+      
+      % Step 3 - Comute alphaTilde = alphaHat + alpha+, a draw of the state.
+      alphaTilde = alphaStar(:,1:obj.p*obj.nLags) + alphaPlus;
+    end
+    %}
+    
+    function [alphaTilde, ssLogli] = smoothSample(obj, y, x, w, alphaHat, nSamples)
+      % Durbin & Koopman simulation smoother for draws of the smoothed state
+      %
+      % See Jarocinski (2015) for details on deviation from Durbin & Koopman.
+      %
+      % Simulation smoothing by mean corrections: 
+      % Step 0 - Run the smoother on y to get alphaHat. 
+      % Step 1 - Simulate alpha+ and y+ from draws of epsilon & eta using system parameters.
+      % Step 2 - Construct y* = y - y+.
+      % Step 3 - Compute alpha* from Kalman smoother on y*
+      % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state. 
+      
+      % Step 0 - Run the smoother on y to get alphaHat.
+      if nargin < 3 
+        x = [];
+      end
+      if nargin < 4
+        w = [];
+      end
+      
+      [obj, y, x, w] = obj.checkSample(y, x, w);
+
+      if nargin < 5 || isempty(alphaHat)
+        alphaHat = obj.smooth(y, x, w);
+      end
+      if nargin < 6
+        nSamples = 1;
+      end
+      
+      alphaTilde = nan([size(alphaHat) nSamples]);
+      ssLogli = nan(nSamples, 1);
+      for iS = 1:nSamples
+        % Step 1 - Generate alpha+ and y+
+        [yPlus, alphaPlus] = generateSimulationData(obj);
+        
+        % Step 2 - Construct y* = y - y+.
+        yStar = y - yPlus;
+        
+        % Step 3 - Compute alpha* from Kalman smoother on y*
+        [alphaStar, sOut] = obj.smooth(yStar, zeros(size(x)));
+        ssLogli(iS) = sOut.logli;
+        
+        % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state.
+        alphaTilde(:,:,iS) = alphaPlus + alphaStar;
+      end
+      if size(alphaTilde, 2) ~= obj.p
+        alphaTilde = permute(alphaTilde, [2 1 3]);
+      end
+    end
+    
     function irf = impulseState(obj, nPeriods)
       % Impulse response functions for the states to a one standard deviation shock.
       % 
@@ -1900,6 +1978,88 @@ classdef StateSpace < AbstractStateSpace
         Ldagger(:,:,iT) = obj.T(:,:,obj.tau.T(iT+1)) * Lprod;
       end
     end
+    
+    %% 
+    function [yPlus, alphaPlus] = generateSimulationData(obj)
+      % Used in simulation smoother. Returns generated data yPlus and alphaPlus.
+      
+      % Note that from Jarocinski (2015), we need to draw a0 from N(0, P0). %
+      %
+      % I believe that we don't want to do anything like x+ because we have no generative
+      % model for it. We only have a model for E(y | alpha, x). 
+      % 
+      % We also ignore the effects of c, d, beta*x and gamma*w since we're using 
+      % Jarocinski's simpler simulation smoother. 
+      
+      % Generate a0tilde
+      if isempty(obj.a0) || isempty(obj.Q0)
+        obj = obj.setDefaultInitial();
+      end
+      
+      Hsqrt = nan(size(obj.H));
+      for iH = 1:size(Hsqrt,3)
+        Hsqrt(:,:,iH) = obj.H(:,:,iH)^(1/2);
+      end
+      Qsqrt = nan(size(obj.Q));
+      for iQ = 1:size(Qsqrt,3)
+        Qsqrt(:,:,iQ) = obj.Q(:,:,iQ)^(1/2);
+      end
+      
+      % alpha0 ~ N(0, P0). If any elements use the diffuse initialization, it doesn't
+      % matter how we initialize them, so just replace those elements of P0 with 0 here.
+      P0_temp = obj.P0;
+      P0_temp(isinf(P0_temp)) = 0;
+      a0Draw = P0_temp^(1/2) * randn(obj.m, 1); 
+      
+      % Generate state 
+      eta = nan(obj.g, obj.n);
+      rawEta = randn(obj.g, obj.n);
+      alphaPlus = nan(obj.m, obj.n);
+      
+      alphaPlus(:,1) = obj.T(:,:,obj.tau.T(1)) * a0Draw;
+      for iT = 2:obj.n
+        eta(:,iT) = Qsqrt(:,:,obj.tau.Q(iT)) * rawEta(:, iT);
+        alphaPlus(:,iT) = obj.T(:,:,obj.tau.T(iT)) * alphaPlus(:,iT-1) + ...
+          obj.R(:,:,obj.tau.R(iT)) * eta(:,iT);
+      end
+      
+      % Generate observed data
+      rawEpsilon = randn(obj.p, obj.n);
+      epsilon = nan(obj.p, obj.n);
+      yPlus = nan(obj.p, obj.n);
+      for iT = 1:obj.n
+        epsilon(:,iT) = Hsqrt(:,:,obj.tau.H(iT)) * rawEpsilon(:,iT);
+        yPlus(:,iT) = obj.Z(:,:,obj.tau.Z(iT)) * alphaPlus(:,iT) + epsilon(:,iT);
+      end
+    end
+    
+    %{
+    function [y, alpha] = generateData(obj, params, a0)
+      % Generate data from a random set of shocks in the VAR
+      if nargin < 3
+        a0 = zeros(obj.p*obj.nLags, 1);
+      end
+      
+      T = [params.phi; eye(obj.p*(obj.nLags-1)) zeros(obj.p*(obj.nLags-1),obj.p)];
+      c = [params.cons; zeros(obj.p*(obj.nLags-1),1)];
+      R = [eye(obj.p); zeros(obj.p*(obj.nLags-1), obj.p)];
+      rootSigma = params.sigma^(1/2);
+      
+      eta = nan(obj.p, obj.n);
+      rawEta = randn(obj.p, obj.n);
+
+      alpha = nan(obj.p * obj.nLags, obj.n);
+      eta(:,1) = rootSigma * rawEta(:,1);
+      alpha(:,1) = T * a0 + c + R * eta(:,1);      
+      for iT = 2:obj.n
+        eta(:,iT) = rootSigma * rawEta(:, iT);
+        alpha(:,iT) = T * alpha(:,iT-1) + c + R * eta(:,iT);   
+      end
+      y = alpha(1:obj.p,:)';
+      alpha = alpha';
+    end
+    %}
+    
   end
   
   methods (Static)

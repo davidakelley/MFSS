@@ -386,30 +386,10 @@ classdef MFVAR
     function [alphaTilde, ssLogli] = sampleState(obj, params)
       % Take a draw of the state
       % 
-      % See "A note on implementing the Durbin and Koopman simulation smoother" by Marek
-      % Jarocinski (2015) for notation. 
-      %
-      % Simulation smoothing by mean corrections: 
-      % Step 0 - Run the smoother on y to get alphaHat. 
-      % Step 1 - Simulate alpha+ and y+ from draws of epsilon & eta using system parameters.
-      % Step 2 - Construct y* = y - y+.
-      % Step 3 - Compute alpha* from Kalman smoother on y*
-      % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state. 
       
       % TODO: add compact 
       ss = obj.params2system(params);
-      
-      % Step 1 - Generate alpha+ and y+ (alpha and y from simulated shocks)
-      [yPlus, alphaPlus] = obj.generateData(params);
-      
-      % Step 2 - Construct y* = y - y+ and alpha* from Kalman smoother on y*
-      yStar = obj.Y - yPlus;
-      % alphaStar = obj.smooth_compact(params, yStar);
-      [alphaStar, sOut] = ss.smooth(yStar);
-      ssLogli = sOut.logli;
-      
-      % Step 3 - Comute alphaTilde = alphaHat + alpha+, a draw of the state.
-      alphaTilde = alphaStar(:,1:obj.p*obj.nLags) + alphaPlus; 
+      [alphaTilde, ssLogli] = ss.smoothSample(obj.Y);
     end
     
     %{
@@ -495,33 +475,7 @@ classdef MFVAR
         'T', Tfull, 'c', cfull, 'R', Rfull, 'Q', Qfull);
       ssFull = StateSpace(Z, H, T, Q);
     end
-    %}
-    
-    function [y, alpha] = generateData(obj, params, a0)
-      % Generate data from a random set of shocks in the VAR
-      if nargin < 3
-        a0 = zeros(obj.p*obj.nLags, 1);
-      end
-      
-      T = [params.phi; eye(obj.p*(obj.nLags-1)) zeros(obj.p*(obj.nLags-1),obj.p)];
-      c = [params.cons; zeros(obj.p*(obj.nLags-1),1)];
-      R = [eye(obj.p); zeros(obj.p*(obj.nLags-1), obj.p)];
-      rootSigma = params.sigma^(1/2);
-      
-      eta = nan(obj.p, obj.n);
-      rawEta = randn(obj.p, obj.n);
-
-      alpha = nan(obj.p * obj.nLags, obj.n);
-      eta(:,1) = rootSigma * rawEta(:,1);
-      alpha(:,1) = T * a0 + c + R * eta(:,1);      
-      for iT = 2:obj.n
-        eta(:,iT) = rootSigma * rawEta(:, iT);
-        alpha(:,iT) = T * alpha(:,iT-1) + c + R * eta(:,iT);   
-      end
-      y = alpha(1:obj.p,:)';
-      alpha = alpha';
-    end
-    
+    %}    
   end  
     
   %% Utility methods
