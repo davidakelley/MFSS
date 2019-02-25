@@ -75,15 +75,15 @@ classdef mfvar_test < matlab.unittest.TestCase
       p = 2; 
       lags = 2;
       
-      [y, ss] = obj.generateDataVAR(p, lags, 1);
+      [y, ss] = mfvar_test.generateVAR(p, lags, 1);
       
       ss = ss.setDefaultInitial;
       
       [~, sOut, fOut] = ss.smooth(y);      
       ss = ss.setDefaultInitial();
-      ss = ss.prepareFilter(y, [], []);
+      [ss, yPrep] = ss.prepareFilter(y, [], []);
       sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
-      [ssV, ssJ] = ss.getErrorVariances(y, fOut, sOut);
+      [ssV, ssJ] = ss.getErrorVariances(yPrep, fOut, sOut);
       
       % Compute in multivariate for simplicity
       P1 = ss.T * ss.P0 * ss.T' + ss.R * ss.Q * ss.R';
@@ -94,8 +94,8 @@ classdef mfvar_test < matlab.unittest.TestCase
       L1 = ss.T - K1 * ss.Z;
       J = P1 * L1';
 
-      testCase.verifyEqual(ssV, V1, 'AbsTol', 5e-14);
-      testCase.verifyEqual(ssJ, J, 'AbsTol', 5e-14);
+      testCase.verifyEqual(ssV, V1, 'AbsTol', 5e-10);
+      testCase.verifyEqual(ssJ, J, 'AbsTol', 5e-10);
     end
     
     %% Integration tests of MFVAR
@@ -133,7 +133,7 @@ classdef mfvar_test < matlab.unittest.TestCase
       [~, paramSamples] = varE.sample(100, 1000);
       
       ssML = varE.estimate();
-      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 1e-3);
+      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 5e-3);
     end
     
     function testGibbs_VAR2(testCase)

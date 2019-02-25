@@ -70,11 +70,11 @@ classdef StateSpace < AbstractStateSpace
       if nargin == 0
         return;
       end
-      if ~isempty(inP.a0)
-        obj.a0 = inP.a0;
+      if ~isempty(parsed.a0)
+        obj.a0 = parsed.a0;
       end
-      if ~isempty(inP.P0)
-        obj.P0 = inP.P0;
+      if ~isempty(parsed.P0)
+        obj.P0 = parsed.P0;
       end
       obj.validateStateSpace();
     end

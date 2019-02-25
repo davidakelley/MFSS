@@ -18,16 +18,13 @@ classdef MFVAR
   end
   
   properties (Access = protected)
-    % Number of series in VAR
-    p
     % Number of lags in VAR
     nLags
-  
-    % ThetaMap for VAR-theta vector transformations
-    tm
   end
 
   properties (Dependent, Hidden)
+    % Number of series in VAR
+    p
     % Sample length
     n
   end
@@ -43,7 +40,6 @@ classdef MFVAR
       % Returns: 
       %     obj (MFVAR): estimation object
       
-      obj.p = size(data, 2);      
       obj.Y = data;      
       obj.nLags = lags;
       if nargin > 2 
@@ -53,36 +49,14 @@ classdef MFVAR
       end
     end
     
-    function obj = set.Y(obj, Y)
-      % Setter for Y
-      assert(size(Y, 2) == obj.p, 'Incorrect number of series in data.');
-      obj.Y = Y;
+    function p = get.p(obj)
+      % Getter for p
+      p = size(obj.Y, 2);
     end
     
     function n = get.n(obj)
       % Getter for n
       n = size(obj.Y, 1);
-    end
-      
-    function obj = set.accumulator(obj, accum)
-      % Setter for accumulator
-      obj.accumulator = accum;
-      
-      % Generate ThetaMap for VAR
-      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
-      H = zeros(obj.p);
-      T = [nan(obj.p, obj.p*obj.nLags); ...
-        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
-      c = [nan(obj.p,1); zeros(obj.p * (obj.nLags - 1), 1)];
-      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
-      Q = nan(obj.p);
-      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
-      if ~isempty(obj.accumulator.index)
-        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
-        obj.tm = ssEA.ThetaMapping;
-      else
-        obj.tm = ssE.ThetaMapping;
-      end
     end
     
     function ssML = estimate(obj)
@@ -102,6 +76,8 @@ classdef MFVAR
         tolLvl = num2str(abs(floor(log10(obj.tol)))+1);
         screenOutFormat = ['%11.0d | %16.8f | %12.' tolLvl 'f\n'];
       end
+      
+      tm = generateTM(obj);
 
       alpha = obj.initializeState();
       alpha0 = alpha;
@@ -115,7 +91,7 @@ classdef MFVAR
       params = obj.estimateOLS_VJ(alpha, V, J);
      
       % Set up progress window
-      [ssVAR, theta] = obj.params2system(params, obj.tm);
+      [ssVAR, theta] = obj.params2system(params, tm);
       progress = EstimationProgress(theta, obj.diagnosticPlot, size(alpha0,2), ssVAR);
       stop = false;
       errorIndicator = '';
@@ -129,7 +105,7 @@ classdef MFVAR
         params = obj.estimateOLS_VJ(alpha, V, J);
        
         % E-step: Get state conditional on parameters
-        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, obj.tm);
+        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -410,9 +386,15 @@ classdef MFVAR
     function [alphaTilde, ssLogli] = sampleState(obj, params)
       % Take a draw of the state
       % 
-      
-      % See A note on implementing the Durbin and Koopman simulation smoother by Marek
-      % Jarocinski for notation. 
+      % See "A note on implementing the Durbin and Koopman simulation smoother" by Marek
+      % Jarocinski (2015) for notation. 
+      %
+      % Simulation smoothing by mean corrections: 
+      % Step 0 - Run the smoother on y to get alphaHat. 
+      % Step 1 - Simulate alpha+ and y+ from draws of epsilon & eta using system parameters.
+      % Step 2 - Construct y* = y - y+.
+      % Step 3 - Compute alpha* from Kalman smoother on y*
+      % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state. 
       
       % TODO: add compact 
       ss = obj.params2system(params);
@@ -550,6 +532,25 @@ classdef MFVAR
       alpha = lagmatrix(interpY, 0:obj.nLags-1);
       alpha(isnan(alpha)) = 0;
     end
+    
+    function tm = generateTM(obj)
+      % Generate ThetaMap for VAR
+      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
+      H = zeros(obj.p);
+      T = [nan(obj.p, obj.p*obj.nLags); ...
+        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
+      c = [nan(obj.p,1); zeros(obj.p * (obj.nLags - 1), 1)];
+      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
+      Q = nan(obj.p);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
+      if ~isempty(obj.accumulator.index)
+        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
+        tm = ssEA.ThetaMapping;
+      else
+        tm = ssE.ThetaMapping;
+      end
+    end
+    
   end
   
   methods (Static, Hidden)
@@ -644,7 +645,7 @@ classdef MFVAR
       end
       vecArg=(degf+.5*(0:-1:1-n));
       logGamma=sum(gammaln(vecArg))+0.25*n*(n-1)*log(pi);
-    end
+    end    
   end
 end
 
