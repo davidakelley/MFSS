@@ -73,26 +73,15 @@ classdef mfvar_test < matlab.unittest.TestCase
       p = 2; 
       lags = 2;
       
-      phi2T = @(phi) [phi; eye(p*(lags-1)) zeros(p*(lags-1), p)];
+      [y, ss] = mfvar_test.generateVAR(p, lags, 1);
       
-      phiRaw = 0.2*randn(p, p*lags) + [.5*eye(p) zeros(p)];
-      phi = phiRaw - ...
-        [eye(p)*(max(abs(eig(phi2T(phiRaw))))-1) zeros(p, p*(lags-1))];
-      const = randn(p,1);
-      sigmaRaw = randn(p);
-      sigma = eye(p) + 0.5 * (sigmaRaw + sigmaRaw');
-      
-      ss = StateSpace([eye(p) zeros(p,p*(lags-1))], zeros(p), ...
-        phi2T(phi), sigma, 'c', [const; zeros(p*(lags-1),1)], ...
-        'R', [eye(p); zeros(p*(lags-1),p)]);
-      y = generateData(ss, 1);
       ss = ss.setDefaultInitial;
       
       [~, sOut, fOut] = ss.smooth(y);      
       ss = ss.setDefaultInitial();
-      ss = ss.prepareFilter(y, [], []);
+      [ss, yPrep] = ss.prepareFilter(y, [], []);
       sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
-      [ssV, ssJ] = ss.getErrorVariances(y, fOut, sOut);
+      [ssV, ssJ] = ss.getErrorVariances(yPrep, fOut, sOut);
       
       % Compute in multivariate for simplicity
       P1 = ss.T * ss.P0 * ss.T' + ss.R * ss.Q * ss.R';
@@ -103,8 +92,8 @@ classdef mfvar_test < matlab.unittest.TestCase
       L1 = ss.T - K1 * ss.Z;
       J = P1 * L1';
 
-      testCase.verifyEqual(ssV, V1, 'AbsTol', 5e-14);
-      testCase.verifyEqual(ssJ, J, 'AbsTol', 5e-14);
+      testCase.verifyEqual(ssV, V1, 'AbsTol', 5e-10);
+      testCase.verifyEqual(ssJ, J, 'AbsTol', 5e-10);
     end
     
     %% Integration tests of MFVAR
@@ -135,5 +124,53 @@ classdef mfvar_test < matlab.unittest.TestCase
       testCase.verifyEqual(llEM, llOpt, 'AbsTol', 1e-2);
     end
     
+    %% Gibbs sampler tests
+    function testGibbs_AR1(testCase)
+      nile = testCase.data.nile;
+      varE = MFVAR(nile, 1);
+      [~, paramSamples] = varE.sample(100, 1000);
+      
+      ssML = varE.estimate();
+      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 5e-3);
+    end
+    
+    function testGibbs_VAR2(testCase)
+      test_data = mfvar_test.generateVAR(2, 3, 100);
+      varE = MFVAR(test_data, 1);
+      [~, paramSamples] = varE.sample(100, 2000);
+      
+      ssML = varE.estimate();
+      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 5e-3);
+    end
+    
+  end
+  
+  methods (Static)    
+    function [y, ss] = generateVAR(p, lags, n)
+      % Generate a set of VAR parameters. 
+      % 
+      % Not intended for large systems (will be slow with many series)
+      
+      phi2T = @(phi) [phi; eye(p*(lags-1)) zeros(p*(lags-1), p)];
+      
+      phi = [2*eye(p) zeros(p,p*(lags-1))];
+      while max(abs(eig(phi2T(phi)))) > 1
+        phiRaw = 0.2*randn(p, p*lags) + [.5*eye(p) zeros(p,p*(lags-1))];
+        phi = phiRaw - ...
+          [eye(p)*(max(abs(eig(phi2T(phiRaw))))-1) zeros(p, p*(lags-1))];
+      end
+      const = randn(p,1);
+      sigma = 0;
+      while det(sigma) <= 0
+        sigmaRaw = randn(p);
+        sigma = eye(p) + 0.5 * (sigmaRaw + sigmaRaw');
+      end
+      
+      ss = StateSpace([eye(p) zeros(p,p*(lags-1))], zeros(p), ...
+        phi2T(phi), sigma, 'c', [const; zeros(p*(lags-1),1)], ...
+        'R', [eye(p); zeros(p*(lags-1),p)]);
+      
+      y = generateData(ss, n)';
+    end    
   end
 end

@@ -7,18 +7,26 @@ classdef MFVAR
     Y
     accumulator
     
-    nLags
     constant = true;
     verbose = false;
     
     tol = 1e-7;
     maxIter = 20000;
+    stationaryTol = 1.0001;
     
     diagnosticPlot = true;
   end
   
-  properties (Hidden)
-    p  % Number of series
+  properties (Access = protected)
+    % Number of lags in VAR
+    nLags
+  end
+
+  properties (Dependent, Hidden)
+    % Number of series in VAR
+    p
+    % Sample length
+    n
   end
   
   methods
@@ -39,7 +47,16 @@ classdef MFVAR
       else 
         obj.accumulator = Accumulator([], [], []);
       end
-      obj.p = size(obj.Y, 2);
+    end
+    
+    function p = get.p(obj)
+      % Getter for p
+      p = size(obj.Y, 2);
+    end
+    
+    function n = get.n(obj)
+      % Getter for n
+      n = size(obj.Y, 1);
     end
     
     function ssML = estimate(obj)
@@ -59,14 +76,13 @@ classdef MFVAR
         tolLvl = num2str(abs(floor(log10(obj.tol)))+1);
         screenOutFormat = ['%11.0d | %16.8f | %12.' tolLvl 'f\n'];
       end
+      
+      tm = generateTM(obj);
 
-      % Initialize with simple interpolation
-      interpY = obj.interpolateData(obj.Y, obj.accumulator);
-      alpha0 = lagmatrix(interpY, 0:obj.nLags-1);
-      alpha0(any(isnan(alpha0),2),:) = [];
+      alpha = obj.initializeState();
+      alpha0 = alpha;
+
       zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
-
-      alpha = alpha0;
       V = zeroMats;
       J = zeroMats;
       a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
@@ -74,22 +90,6 @@ classdef MFVAR
       
       params = obj.estimateOLS_VJ(alpha, V, J);
      
-      % Generate ThetaMap for progress window
-      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
-      H = zeros(obj.p);
-      T = [nan(size(params.phi)); ...
-        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
-      c = [nan(size(params.cons)); zeros(obj.p * (obj.nLags - 1), 1)];
-      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
-      Q = nan(size(params.sigma));
-      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
-      if ~isempty(obj.accumulator.index)
-        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
-        tm = ssEA.ThetaMapping;
-      else
-        tm = ssE.ThetaMapping;
-      end
-      
       % Set up progress window
       [ssVAR, theta] = obj.params2system(params, tm);
       progress = EstimationProgress(theta, obj.diagnosticPlot, size(alpha0,2), ssVAR);
@@ -162,6 +162,79 @@ classdef MFVAR
         otherwise
           error('Unknown error.');
       end
+    end
+    
+    function [sampleStates, paramSamples, ssMedian] = sample(obj, nBurn, nKeep)
+      % Take samples of the parameters and states
+      %
+      % Arguments: 
+      %   nBurn (integer): samples to discard in warmup
+      %   nKeep (integer): samples to keep
+      % 
+      % Returns: 
+      %   sampleStates (float, 3D): stacked samples of alphaHat
+      %   ssMedian (StateSpace): median parameters of the sampled state spaces
+
+      if nargin < 3
+        nKeep = 500;
+      end
+      if nargin < 2
+        nBurn = 500;
+      end
+      
+      nTotal = nBurn + nKeep;
+      iSamp = 1;
+      phiSample = nan(obj.p, obj.p*obj.nLags, nKeep);
+      consSample = nan(obj.p, nKeep);
+      sigmaSample = nan(obj.p, obj.p, nKeep);
+      sampleStates = nan(obj.n, obj.p, nKeep);
+      
+      % TODO: Add a few iterations of the EM to get near HPD region
+      tempMdl = obj;
+      tempMdl.maxIter = 50;
+      ssML = tempMdl.estimate(); 
+      alphaFull0 = ssML.smooth(obj.Y);
+      
+      alpha0 = alphaFull0(:,1:obj.p*obj.nLags);
+      paramSample = obj.sampleParameters(alpha0);
+      
+      % Set up progress window
+      theta = [0 0]';
+      progress = EstimationProgress(theta, obj.diagnosticPlot, ...
+        obj.p*obj.nLags, obj.params2system(paramSample));
+      stop = false;
+      
+      while iSamp < nTotal+1 && ~stop
+        
+        [alphaDraw, ssLogli] = obj.sampleState(paramSample);
+        stateSample = alphaDraw(:,1:obj.p);
+        
+        [paramSample, paramLogML] = obj.sampleParameters(alphaDraw);
+        
+        % Update progress window
+        progress.alpha = alphaDraw';  
+        progress.ss = obj.params2system(paramSample);
+        oVals.fval = -(ssLogli + paramLogML);
+        stop = progress.update(theta, oVals);
+
+        if iSamp > nBurn
+          sampleStates(:,:,iSamp-nBurn) = stateSample;
+          phiSample(:,:,iSamp-nBurn) = paramSample.phi;
+          consSample(:,iSamp-nBurn) = paramSample.cons;
+          sigmaSample(:,:,iSamp-nBurn) = paramSample.sigma;
+        end
+        if ~all(all(isnan(paramSample.phi)))
+          iSamp = iSamp + 1;
+        end
+      end
+      
+      paramSamples = struct('phi', phiSample, 'cons', consSample, 'sigma', sigmaSample);
+      
+      phiMedian = median(phiSample, 3);
+      consMedian = median(consSample, 2);
+      sigmaMedian = median(sigmaSample, 3);
+      ssMedian = obj.params2system(struct('phi', phiMedian', ...
+        'cons', consMedian, 'sigma', sigmaMedian));
     end
   end
   
@@ -250,15 +323,283 @@ classdef MFVAR
     end
   end
   
+  %% Gibbs sampler
+  methods (Hidden)
+    function [paramsDraw, logML] = sampleParameters(obj, alphaDraw)
+      
+      % Generate Lags and Regressor matrix X
+      Ydraw = alphaDraw(2:end, 1:obj.p);
+      constVec = ones(size(alphaDraw, 1)-1,1);
+      Xdraw = [alphaDraw(1:end-1, :) constVec];
+
+      % TODO: Add dumm data priors
+%       if isempty(YDum)==false
+%         Ydraw=[YDum; Ydraw];
+%         Xdraw=[XDum; Xdraw];
+%       end
+      
+      [vl,d,vr] = svd(Xdraw,0);
+      di = 1 ./ diag(d);
+      Btemp = vl' * Ydraw;
+      B = (vr .* repmat(di', obj.p * obj.nLags + obj.constant, 1)) * Btemp;
+      PcholTranspose = vr .* repmat(di', obj.p * obj.nLags + obj.constant, 1);
+
+      % Matrix of residuals
+      u = Ydraw - Xdraw * B;
+      S = u' * u;
+      degf = size(Ydraw,1) - size(Xdraw,2);
+      Sinv = S \ eye(obj.p);
+      
+      % Storage Matrix for the draws
+      maxAttempt = 1000;
+      flagContinue = 0;
+      countIter = 0;
+      while  flagContinue < 1
+        [Btemp, sigmaDraw] = obj.MNIWDraw(B, PcholTranspose', Sinv, degf);
+        T = [Btemp(1:end-obj.constant,:)'; ...
+          eye(obj.p*(obj.nLags-1)) zeros(obj.p*(obj.nLags-1),obj.p)];
+        maxEig = max(abs(eig(T))); 
+        flagContinue = maxEig < obj.stationaryTol;
+        
+        countIter = countIter + 1;
+        assert(countIter < maxAttempt, 'Maximum number of iterations inside MCMC');
+      end
+      
+      phiDraw = Btemp(1:obj.p*obj.nLags,:)';
+      consDraw = Btemp(end,:)';
+      
+      paramsDraw = struct('phi', phiDraw, 'cons', consDraw, 'sigma', sigmaDraw);
+      
+      SChol = chol(S);
+      SDetLog = 2 * sum(log(diag(SChol)));
+      XXInv = PcholTranspose * PcholTranspose';
+      XXInvChol = chol(XXInv);
+      XXInvDetLog = 2 * sum(log(diag(XXInvChol)));
+      k = size(XXInv,1);
+      nS = size(S,1);
+
+      logML = -0.5 * (obj.n - k) * nS * log(pi) ...
+        - 0.5 * (obj.n - k) * SDetLog ...
+        + 0.5 * nS * XXInvDetLog + obj.mvgamma(nS,(obj.n - k)/2); 
+    end
+    
+    function [alphaTilde, ssLogli] = sampleState(obj, params)
+      % Take a draw of the state
+      % 
+      
+      % TODO: add compact 
+      ss = obj.params2system(params);
+      [alphaTilde, ssLogli] = ss.smoothSample(obj.Y);
+    end
+    
+    %{
+    function alpha = smooth_compact(obj, params, data)
+      % Compact smoother for VAR 
+      
+    end
+    
+    function [ssFull, ssCompact] = generateCompact(phi, cons, sigma)
+      
+      % number of y variables, and number of obs
+      nyvars = size(Yt, 1);
+      % number of x variables, and number of obs
+      [nxvars,n] = size(Xt);
+      % Number of coefficients for each variable
+      p  = size(phi,2);
+      
+      % Take Cholesky and Construct C Submatrices
+      C = chol(sigma, 'lower');
+      Cqq = C(1:nyvars, 1:nyvars);
+      Cmq = C(nyvars+1:end, 1:nyvars);
+      Cmm = C(nyvars+1:end, nyvars+1:end);
+      invCqq = eye(nyvars) / Cqq;
+      
+      % Build Lag Xt Data Matrix
+      X0_lag =  [X0 Xt];
+      
+      XtLags = zeros(nxvars*obj.nLags,n+1);
+      % Loop over through number of lags to input "lagged" data from Xt
+      for ii=1:obj.nLags
+        XtLags((ii-1)*nxvars+1:ii*nxvars,:) = X0_lag(:,end-n+1-ii:end-ii+1);
+      end
+      
+      % Construct coly,colx Indices
+      coefColumns = reshape(1:p,nyvars+nxvars,obj.nLags);
+      colY = reshape(coefColumns(1:nyvars,:),1,[]);
+      colX = reshape(coefColumns(nyvars+1:end,:),1,[]);
+      
+      % Rip Out Sub Beta/Constant Matrices
+      betaYY = phi(1:nyvars,colY);
+      betaYX = phi(1:nyvars,colX);
+      betaXX = phi(nyvars+1:end,colX);
+      betaXY = phi(nyvars+1:end,colY);
+      
+      constantY = cons(1:nyvars);
+      constantX = cons(nyvars+1:end);
+      
+      % Create Compact System Matrices
+      Z = [eye(nyvars) zeros(nyvars,nyvars*obj.nLags);
+        Cmq*invCqq betaXY-Cmq*invCqq*betaYY];
+      d = [zeros(nyvars,n);
+        repmat(constantX,1,n)-Cmq*invCqq*repmat(constantY,1,n)+...
+        (betaXX-Cmq*invCqq*betaYX)*XtLags(:,1:n)];
+      H = [zeros(nyvars,nyvars+nxvars); zeros(nxvars,nyvars) Cmm*Cmm'];
+      
+      T = [betaYY zeros(nyvars,nyvars); ...
+        eye(nyvars*obj.nLags) zeros(nyvars*obj.nLags,nyvars)];
+      c = [repmat(constantY,1,n+1)+betaYX*XtLags;
+        zeros(nyvars*obj.nLags,n+1)];
+      R = [eye(nyvars);
+        zeros(nyvars*obj.nLags,nyvars)];
+      Q =  Cqq*Cqq';
+      
+      ssCompact = StateSpace(Z, H, T, Q, 'd', d, 'c', c, 'R', R);
+      
+      % Augment Original "Full" State Space System Matrices w/ Additional Lag
+      nVar = nxvars + nyvars;
+      numQ = nyvars;
+      
+      Zfull = [matStru.Z zeros(nVar,numQ)];
+      dfull =  matStru.d;
+      Hfull =  matStru.H;
+      
+      numCoefs = size(matStru.T,1);
+      numLags = numCoefs / nVar;
+      
+      Tfull = [matStru.T zeros(numCoefs,numQ); zeros(numQ,nVar*(numLags-1)) eye(numQ) zeros(numQ,nVar)];
+      cfull = [matStru.c; zeros(numQ,1)];
+      Rfull = [matStru.R; zeros(numQ,nVar)];
+      Qfull =  matStru.Q;
+      
+      fullSS = struct('Z', Zfull, 'd', dfull, 'H', Hfull, ...
+        'T', Tfull, 'c', cfull, 'R', Rfull, 'Q', Qfull);
+      ssFull = StateSpace(Z, H, T, Q);
+    end
+    %}    
+  end  
+    
   %% Utility methods
+  methods (Hidden)
+    function alpha = initializeState(obj)
+      % Initialize with simple interpolation
+      interpY = obj.interpolateData(obj.Y, obj.accumulator);
+      alpha = lagmatrix(interpY, 0:obj.nLags-1);
+      alpha(isnan(alpha)) = 0;
+    end
+    
+    function tm = generateTM(obj)
+      % Generate ThetaMap for VAR
+      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
+      H = zeros(obj.p);
+      T = [nan(obj.p, obj.p*obj.nLags); ...
+        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
+      c = [nan(obj.p,1); zeros(obj.p * (obj.nLags - 1), 1)];
+      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
+      Q = nan(obj.p);
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
+      if ~isempty(obj.accumulator.index)
+        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
+        tm = ssEA.ThetaMapping;
+      else
+        tm = ssE.ThetaMapping;
+      end
+    end
+    
+  end
+  
   methods (Static, Hidden)
     function interpY = interpolateData(Y, accum)
       % Interpolate any low-frequency data in Y. 
       interpY = Y;
       for iS = accum.index
-        interpY(:,iS) = interp1(find(~isnan(Y(:,iS))), Y(~isnan(Y(:,iS)), iS), 1:size(Y,1));
+        interpY(:,iS) = interp1(find(~isnan(Y(:,iS))), Y(~isnan(Y(:,iS)), iS), ...
+          1:size(Y,1), 'linear', 'extrap');
       end
     end
+    
+    function [X,W,WInv,WChol,WLogDet] = MNIWDraw(muMat, PChol, SInv, v)
+      % Generates a draw of (X,W)~MNIW(muMat,P,S,v) such that
+      %   X|W ~ MN( muMat, W   kron P )
+      %   W ~ IW( v    , S          )
+      %
+      % *Notes*
+      % 1. *Pchol=chol(P)*
+      % 2. *Sinv=inv(S)*
+      %
+      % Input
+      % muMat: [p,q] matrix with Mean
+      % PCol:  [p,p] matrix with *PChol=Chol(P)*, i.e. P=PChol'*PChol
+      % SInv:  [q,q] INVERSE matrix for IW, Sinv=Inv(S)
+      % v:     (scalar) degrees of Freedom for IW
+      %
+      % Output
+      %
+      % X  [p,q] draw from  X|W ~ MN( muMat, W   kron P )
+      % W  [q,q] draw from  IW( v , S )   S=inv(SInv)
+      % WInv  [q,q] inverse of W through SVD if Nargout > 2
+      % WChol [q,q] chol    of W s.t. W=WChol'*WChol
+      %             NOTE: this is A Cholesky factor, but not the
+      %                   upper triangular cholesky factor obtained by calling
+      %                   Chol
+      % WLogDet           Log determinant
+      % Alejandro Justiniano February 4 2014 (C)
+      
+      [Nr,Nc] = size(muMat);
+      
+      % 1. Obtain draw of W ~ IW(v,S)
+      drMat = mvnrnd(zeros(1,Nc), SInv, v);
+      Wtemp = (drMat' * drMat) \ eye(Nc);
+      % This is more robust but probably slower than inv(W) for n small
+      W = 0.5*(Wtemp + Wtemp');
+      
+      % 2. Obtain chol(W) and inv(W) using the SVD      
+      
+      % 2.a SVD
+      % PP*DD*PPinv'=W  Notice the transpose
+      % PPinv=inv(PP)'
+      % PPinv'=inv(PP);
+      [WChol,flagNotPD]=chol(W);
+      if flagNotPD~=0
+        [PP,DD,PPinv]=svd(W);
+        % 2.b Truncate small singular values
+        tolZero=eps;
+        firstZero = find(diag(DD) < tolZero, 'first');
+        if isempty(firstZero)==false
+          PP=PP(:,1:firstZero-1);
+          PPinv=PPinv(:,1:firstZero-1);
+          DD=DD(1:firstZero-1,1:firstZero-1);
+        end
+        WChol=sqrt(DD)*PPinv';
+      end
+      
+      % 3. Inverse and Cholesky
+      if nargout > 2
+        WInv =PP*(DD\eye(Nc))*PPinv';
+        WLogDet=sum(log(diag(DD)));
+      end
+      
+      % 4. Draw from MN( mu, W kron P )
+      X=(PChol')*(randn(Nr,Nc))*WChol+muMat;
+    end
+    
+    function logGamma = mvgamma(n,degf)
+      % =====================================
+      % mvgamma
+      %
+      % function logGamma=mvgamma(n,degf)
+      %
+      % Multivariate Gamma Function of dimension *n* with *degf*
+      % degrees of freedom.
+      %
+      % Output is log(gamma^n(degf)) *including the constant*
+      %
+      % Alejandro Justiniano February 13 2014
+      if degf <= (n-1)/2
+        disp('logGamma is infinite!')
+      end
+      vecArg=(degf+.5*(0:-1:1-n));
+      logGamma=sum(gammaln(vecArg))+0.25*n*(n-1)*log(pi);
+    end    
   end
 end
 
