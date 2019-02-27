@@ -17,7 +17,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function obj = set.a0(obj, newa0)
-      assert(isvector(newa0));
+      assert(isvector(newa0) || isempty(newa0));
       obj.a0Private = newa0;
     end
     
@@ -26,7 +26,7 @@ classdef StateSpace < AbstractStateSpace
     end
     
     function obj = set.P0(obj, newP0)
-      assert(ismatrix(newP0));
+      assert(ismatrix(newP0)|| isempty(newP0));
       obj.P0Private = newP0;
     end
   end
@@ -341,33 +341,31 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    %{
-    function [alphaTilde, ssLogli] = smoothSample(obj, y, x, w)
-      % Take a draw of the state
-      %
-      % See "A note on implementing the Durbin and Koopman simulation smoother" by Marek
-      % Jarocinski (2015) for notation.
-      %
-      % Simulation smoothing by mean corrections:
-      % Step 0 - Run the smoother on y to get alphaHat.
-      % Step 1 - Simulate alpha+ and y+ from draws of epsilon & eta using system parameters.
-      % Step 2 - Construct y* = y - y+.
-      % Step 3 - Compute alpha* from Kalman smoother on y*
-      % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state.
+    function alphaTilde = stateSample(obj, y, x, w, tm, nSamples)
+      % Get samples of the state taking into account parameter uncertainty around MLE
       
-      % Step 1 - Generate alpha+ and y+ (alpha and y from simulated shocks)
-      [yPlus, alphaPlus] = obj.generateData(params);
+      % Handle inputs
+      if nargin < 6
+        nSamples = 1;
+      end
+      assert(isa(tm, 'ThetaMap'), 'tm must be a ThetaMap.');
+      theta = tm.system2theta(obj);
+      assert(all(size(theta) == [tm.nTheta 1]), ...
+        'theta must be a nTheta x 1 vector.');
+         
+      % Get smoothed state
+      alphaHat = obj.smooth(y, x, w);
+      fisherInformation = -obj.gradFinDiffSecond(y, x, w, tm, theta);
+      mleVariance = inv(fisherInformation * obj.n);
+      alphaTilde = nan([size(alphaHat), nSamples]);
       
-      % Step 2 - Construct y* = y - y+ and alpha* from Kalman smoother on y*
-      yStar = obj.Y - yPlus;
-      % alphaStar = obj.smooth_compact(params, yStar);
-      [alphaStar, sOut] = obj.smooth(yStar);
-      ssLogli = sOut.logli;
-      
-      % Step 3 - Comute alphaTilde = alphaHat + alpha+, a draw of the state.
-      alphaTilde = alphaStar(:,1:obj.p*obj.nLags) + alphaPlus;
+      thetaSamples = mvnrnd(theta, mleVariance, nSamples)';
+      iThetaSS = cell(nSamples, 1);
+      for iSample = 1:nSamples
+        iThetaSS{iSample} = tm.theta2system(thetaSamples(:,iSample));
+        alphaTilde(:,:,iSample) = iThetaSS{iSample}.smoothSample(y, x, w, alphaHat');        
+      end
     end
-    %}
     
     function [alphaTilde, ssLogli] = smoothSample(obj, y, x, w, alphaHat, nSamples)
       % Durbin & Koopman simulation smoother for draws of the smoothed state
@@ -412,7 +410,7 @@ classdef StateSpace < AbstractStateSpace
         ssLogli(iS) = sOut.logli;
         
         % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state.
-        alphaTilde(:,:,iS) = alphaPlus + alphaStar;
+        alphaTilde(:,:,iS) = alphaStar + alphaPlus;
       end
       if size(alphaTilde, 2) ~= obj.p
         alphaTilde = permute(alphaTilde, [2 1 3]);
@@ -720,6 +718,54 @@ classdef StateSpace < AbstractStateSpace
         'obsPattern', obsPatternH);
     end
     
+    %% General utilities
+    function [stationary, nonstationary] = findStationaryStates(obj)
+      % Find which states have stationary distributions given the T matrix.
+      
+      [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
+      bigEigs = abs(diag(D)) >= 1;
+      
+      nonstationary = find(any(V(:, bigEigs), 2));
+      
+      % I think we don't need a loop here to find other states that have
+      % loadings on the nonstationary states (the eigendecomposition does this
+      % for us) but I'm not sure.
+      stationary = setdiff(1:obj.m, nonstationary);
+      
+      assert(all(abs(eig(obj.T(stationary,stationary,1))) < 1), ...
+        ['Stationary section of T isn''t actually stationary. \n' ...
+        'Likely development error.']);
+    end
+    
+    function [Z, H, T, Q, d, beta, c, gamma, R] = getInputParameters(obj)
+      % Helper function to get parameters for constructor
+      
+      if ~isempty(obj.tau)
+        Z = struct('Tt', obj.Z, 'tauT', obj.tau.Z);
+        d = struct('dt', obj.d, 'taud', obj.tau.d);
+        beta = struct('betat', obj.beta, 'taubeta', obj.tau.beta);
+        H = struct('Rt', obj.H, 'tauR', obj.tau.H);
+        
+        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
+        c = struct('ct', obj.c, 'tauc', obj.tau.c);
+        gamma = struct('gammat', obj.gamma, 'taugamma', obj.tau.gamma);
+        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
+        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
+      else
+        Z = obj.Z;
+        d = obj.d;
+        beta = obj.beta;
+        H = obj.H;
+        
+        T = obj.T;
+        c = obj.c;
+        gamma = obj.gamma;
+        R = obj.R;
+        Q = obj.Q;
+      end
+    end
+  
+    %% Derivative functions
     function [ll, grad, fOut] = gradFinDiff(obj, y, x, w, tm, theta)
       % Compute numeric gradient using central differences
       
@@ -796,52 +842,52 @@ classdef StateSpace < AbstractStateSpace
       grad(imag(grad) ~= 0 | isnan(grad)) = -Inf;
     end
     
-    %% General utilities
-    function [stationary, nonstationary] = findStationaryStates(obj)
-      % Find which states have stationary distributions given the T matrix.
+    function hessian = gradFinDiffSecond(obj, y, x, w, tm, theta)
+      % Get the matrix of 2nd derivatives
       
-      [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
-      bigEigs = abs(diag(D)) >= 1;
+      nTheta = tm.nTheta;
+      hessian = nan(nTheta);
       
-      nonstationary = find(any(V(:, bigEigs), 2));
+      stepSize = 0.5 * sqrt(obj.delta);
+      stepMat = stepSize * eye(nTheta);
       
-      % I think we don't need a loop here to find other states that have
-      % loadings on the nonstationary states (the eigendecomposition does this
-      % for us) but I'm not sure.
-      stationary = setdiff(1:obj.m, nonstationary);
+      for iTheta = 1:nTheta
+        for jTheta = 1:nTheta
+          % For each element of theta, compute finite differences derivative
+          try
+            thetaUpUp = theta + stepMat(:,iTheta) + stepMat(:,jTheta);
+            ssUpUp = tm.theta2system(thetaUpUp);
+            [~, llUpUp] = ssUpUp.filter(y, x, w);
+            
+            thetaUpDown = theta + stepMat(:,iTheta) - stepMat(:,jTheta);
+            ssUpDown = tm.theta2system(thetaUpDown);
+            [~, llUpDown] = ssUpDown.filter(y, x, w);
+            
+            thetaDownUp = theta - stepMat(:,iTheta) + stepMat(:,jTheta);
+            ssDownUp = tm.theta2system(thetaDownUp);
+            [~, llDownUp] = ssDownUp.filter(y, x, w);
+            
+            thetaDownDown = theta - stepMat(:,iTheta) - stepMat(:,jTheta);
+            ssDownDown = tm.theta2system(thetaDownDown);
+            [~, llDownDown] = ssDownDown.filter(y, x, w);
+            
+            hessian(iTheta, jTheta) = (llUpUp - llUpDown - llDownUp + llDownDown) / ...
+              (4 * stepSize * stepSize);
+            
+          catch ex
+            % We might get a bad model. If we do, ignore it and move on - it'll
+            % get a -Inf gradient. Other errors may be of concern though.
+            if ~strcmp(ex.identifier, 'StateSpace:filter:degenerate')
+              rethrow(ex);
+            end
+          end
+        end
+      end
       
-      assert(all(abs(eig(obj.T(stationary,stationary,1))) < 1), ...
-        ['Stationary section of T isn''t actually stationary. \n' ...
-        'Likely development error.']);
+      % Handle bad evaluations
+      hessian(imag(hessian) ~= 0 | isnan(hessian)) = -Inf;
     end
     
-    function [Z, H, T, Q, d, beta, c, gamma, R] = getInputParameters(obj)
-      % Helper function to get parameters for constructor
-      
-      if ~isempty(obj.tau)
-        Z = struct('Tt', obj.Z, 'tauT', obj.tau.Z);
-        d = struct('dt', obj.d, 'taud', obj.tau.d);
-        beta = struct('betat', obj.beta, 'taubeta', obj.tau.beta);
-        H = struct('Rt', obj.H, 'tauR', obj.tau.H);
-        
-        T = struct('Tt', obj.T, 'tauT', obj.tau.T);
-        c = struct('ct', obj.c, 'tauc', obj.tau.c);
-        gamma = struct('gammat', obj.gamma, 'taugamma', obj.tau.gamma);
-        R = struct('Rt', obj.R, 'tauR', obj.tau.R);
-        Q = struct('Qt', obj.Q, 'tauQ', obj.tau.Q);
-      else
-        Z = obj.Z;
-        d = obj.d;
-        beta = obj.beta;
-        H = obj.H;
-        
-        T = obj.T;
-        c = obj.c;
-        gamma = obj.gamma;
-        R = obj.R;
-        Q = obj.Q;
-      end
-    end    
   end
   
   methods (Hidden)
@@ -1981,7 +2027,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    %% 
+    %% Simulation smoother helpers
     function [yPlus, alphaPlus] = generateSimulationData(obj)
       % Used in simulation smoother. Returns generated data yPlus and alphaPlus.
       
@@ -1998,20 +2044,26 @@ classdef StateSpace < AbstractStateSpace
         obj = obj.setDefaultInitial();
       end
       
-      Hsqrt = nan(size(obj.H));
+      Hsqrt = zeros(size(obj.H));
       for iH = 1:size(Hsqrt,3)
-        Hsqrt(:,:,iH) = obj.H(:,:,iH)^(1/2);
+        nonZero = diag(obj.H(:,:,iH)) ~= 0;
+        Hsqrt(nonZero,nonZero,iH) = chol(obj.H(nonZero,nonZero,iH));
       end
-      Qsqrt = nan(size(obj.Q));
+      
+      Qsqrt = zeros(size(obj.Q));
       for iQ = 1:size(Qsqrt,3)
-        Qsqrt(:,:,iQ) = obj.Q(:,:,iQ)^(1/2);
+        nonZero = diag(obj.Q(:,:,iH)) ~= 0;
+        Qsqrt(nonZero,nonZero,iQ) = chol(obj.Q(nonZero,nonZero,iQ));
       end
       
       % alpha0 ~ N(0, P0). If any elements use the diffuse initialization, it doesn't
       % matter how we initialize them, so just replace those elements of P0 with 0 here.
       P0_temp = obj.P0;
       P0_temp(isinf(P0_temp)) = 0;
-      a0Draw = P0_temp^(1/2) * randn(obj.m, 1); 
+      nonZero = diag(P0_temp) ~= 0;
+      P0_temp_chol = zeros(size(P0_temp));
+      P0_temp_chol(nonZero,nonZero) = chol(P0_temp(nonZero,nonZero));
+      a0Draw = P0_temp_chol * randn(obj.m, 1); 
       
       % Generate state 
       eta = nan(obj.g, obj.n);
@@ -2034,33 +2086,6 @@ classdef StateSpace < AbstractStateSpace
         yPlus(:,iT) = obj.Z(:,:,obj.tau.Z(iT)) * alphaPlus(:,iT) + epsilon(:,iT);
       end
     end
-    
-    %{
-    function [y, alpha] = generateData(obj, params, a0)
-      % Generate data from a random set of shocks in the VAR
-      if nargin < 3
-        a0 = zeros(obj.p*obj.nLags, 1);
-      end
-      
-      T = [params.phi; eye(obj.p*(obj.nLags-1)) zeros(obj.p*(obj.nLags-1),obj.p)];
-      c = [params.cons; zeros(obj.p*(obj.nLags-1),1)];
-      R = [eye(obj.p); zeros(obj.p*(obj.nLags-1), obj.p)];
-      rootSigma = params.sigma^(1/2);
-      
-      eta = nan(obj.p, obj.n);
-      rawEta = randn(obj.p, obj.n);
-
-      alpha = nan(obj.p * obj.nLags, obj.n);
-      eta(:,1) = rootSigma * rawEta(:,1);
-      alpha(:,1) = T * a0 + c + R * eta(:,1);      
-      for iT = 2:obj.n
-        eta(:,iT) = rootSigma * rawEta(:, iT);
-        alpha(:,iT) = T * alpha(:,iT-1) + c + R * eta(:,iT);   
-      end
-      y = alpha(1:obj.p,:)';
-      alpha = alpha';
-    end
-    %}
     
   end
   
