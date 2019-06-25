@@ -170,8 +170,7 @@ classdef Accumulator < AbstractSystem
       % Returns:
       %     accum (Accumulator): accumulator
       %
-      % The first period of the data must be the first period for each
-      % accumulator.
+      % Automatically detects the alignment of each low-frequency series. 
       
       nPer = size(data, 1);
       nSeries = size(data, 2);
@@ -195,11 +194,11 @@ classdef Accumulator < AbstractSystem
         % Create calendars
         if strcmpi(types{iSer}, 'avg')
           % Average accumulators: repeated counting from 1 to frequency
-          tempCal = repmat((1:dataFreq)', [ceil(nPer/dataFreq)+1 1]);
+          tempCal = repmat((1:dataFreq)', [ceil(nPer/dataFreq)+2 1]);
           
         else
-          % Sum accumulator: zeros with a one at the end of each period
-          tempCal = repmat([zeros(dataFreq-1, 1); 1], [ceil(nPer/dataFreq)+1 1]);
+          % Sum accumulator: all ones except for a zero in the first period
+          tempCal = repmat([0; ones(dataFreq-1, 1)], [ceil(nPer/dataFreq)+1 1]);
           if dataFreq ~= horizons(iSer)
             % There really isn't a horizon for the sum accumulators, but let the
             % user know if the data doesn't match what they expected.
@@ -209,7 +208,9 @@ classdef Accumulator < AbstractSystem
         end
         
         % Assign outputs
-        cal(:, iSer) = tempCal(1:nPer+1);
+        firstObsPer = find(~isnan(data(:, iSer)), 1, 'first');
+        calStart = dataFreq - mod(firstObsPer, dataFreq) + 1;
+        cal(:, iSer) = tempCal(calStart + (0:nPer));
         hor(:, iSer) = horizons(iSer);
       end
       
@@ -263,6 +264,7 @@ classdef Accumulator < AbstractSystem
       [used, Zinx, Zend] = obj.computeUsed(ss);
       augSpec.baseFreqState = used.state;
       
+      % Types of accumulators: 0 for averages, 1 for sums
       augSpec.accumulatorTypes = used.Types;
       
       [augSpec.addLagsFrom, LagRowPos, m.withLag] = ...
@@ -615,9 +617,6 @@ classdef Accumulator < AbstractSystem
         
         % We have (nLags+1) avaliable lags since we get one for free in the
         % transition equation.
-        % max(S) is different from the GeneralizedKFilterSmoother. Test this.
-        
-        % Do we need H + S - 1 or H - 1?
         needLags = iHorizon - 1;
         haveLags = nLags + 1;
         addLags = max(needLags - haveLags, 0);
@@ -730,7 +729,7 @@ classdef Accumulator < AbstractSystem
       % Construct new T matrix
       mNew = aug.m.withLag + aug.nAccumulatorStates;
       
-      states = unique(aug.baseFreqState); 
+      statesForAvg = unique(aug.baseFreqState(~aug.accumulatorTypes)); 
       
       % Add accumulator elements
       Tslices = size(aug.T.oldtau, 1);
@@ -761,7 +760,7 @@ classdef Accumulator < AbstractSystem
               % Triangle accumulator - we need to add 1/cal to each accumulated
               % state element's loading on the high-frequency component to account for the
               % lags that need to be added for the average.
-              iCols = aug.T.LagRowPos(aug.baseFreqState(iAccum) == states, 1:iHor - 1);
+              iCols = aug.T.LagRowPos(aug.baseFreqState(iAccum) == statesForAvg, 1:iHor - 1);
               
               newT(iState, iCols, iT) = newT(iState, iCols, iT) + (1/iCal);
             end

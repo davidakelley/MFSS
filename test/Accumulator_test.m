@@ -236,7 +236,7 @@ classdef Accumulator_test < matlab.unittest.TestCase
     end
     
     %% Utilities
-    function testGenerateRegular(testCase)
+    function testGenerateRegularStandard(testCase)
       data = testCase.Y;
       data(:, 2) = Accumulator_test.aggregateY(data(:, 2), 12, 'sum');
       data(:, 3) = Accumulator_test.aggregateY(data(:, 3), 3, 'avg');
@@ -247,13 +247,39 @@ classdef Accumulator_test < matlab.unittest.TestCase
       testCase.verifyEqual(accum.index, [2 3]);
       
       % First calendar: all zeros with ones every 12 places
-      testCase.verifyEqual(accum.calendar(setdiff(1:599, 12:12:599), 1), zeros(550, 1));
-      testCase.verifyEqual(accum.calendar(12:12:end, 1), ones(50, 1));
+      testCase.verifyEqual(accum.calendar(setdiff(1:599, 1:12:599), 1), ones(549, 1));
+      testCase.verifyEqual(accum.calendar(1:12:end, 1), zeros(50, 1));
       
       % Second calendar: cycling 1:3
       testCase.verifyEqual(accum.calendar(1:3:end, 2), ones(200, 1));
       testCase.verifyEqual(accum.calendar(2:3:end, 2), 2 * ones(200, 1));
       testCase.verifyEqual(accum.calendar(3:3:end, 2), 3 * ones(200, 1));
+
+      % Horizons: all 12s and 1s
+      testCase.verifyEqual(accum.horizon(:, 1), 12 * ones(600, 1));
+      testCase.verifyEqual(accum.horizon(:, 2), 1 * ones(600, 1));
+    end
+    
+    function testGenerateRegularShifted(testCase)
+      data = testCase.Y;
+      agg2 = Accumulator_test.aggregateY(data(:, 2), 12, 'sum');
+      data(:, 2) = [agg2(4:end); nan(3,1)];
+      agg3 = Accumulator_test.aggregateY(data(:, 3), 3, 'avg');
+      data(:, 3) = [agg3(2:end); nan];
+
+      accum = Accumulator.GenerateRegular(data, {'', 'sum', 'avg'}, [1 12 1]);
+
+      % There should be 2 accumulated series
+      testCase.verifyEqual(accum.index, [2 3]);
+      
+      % First calendar: all zeros with ones every 12 places
+      testCase.verifyEqual(accum.calendar(setdiff(1:599, 10:12:599), 1), ones(549, 1));
+      testCase.verifyEqual(accum.calendar(10:12:end, 1), zeros(50, 1));
+      
+      % Second calendar: cycling 1:3
+      testCase.verifyEqual(accum.calendar(1:3:end, 2), 2 * ones(200, 1));
+      testCase.verifyEqual(accum.calendar(2:3:end, 2), 3 * ones(200, 1));
+      testCase.verifyEqual(accum.calendar(3:3:end, 2), 1 * ones(200, 1));
 
       % Horizons: all 12s and 1s
       testCase.verifyEqual(accum.horizon(:, 1), 12 * ones(600, 1));
