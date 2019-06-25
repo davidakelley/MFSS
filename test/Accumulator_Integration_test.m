@@ -71,7 +71,7 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssA.T(4, 1:2, 3), ssGen.T(1,1:2));
       % Make sure 0 and 1 elements in the right places
       testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2, 2));
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 2), [1 0; 0 0]);
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 2), [0 0; 0 1]);
       testCase.verifyEqual(ssA.T(3:4, 3:4, 3), eye(2));
       
       % c vector 
@@ -272,6 +272,14 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssA.R(6,1,:), reshape(1 ./ (1:6), [1 1 6]));
     end
     
+    function testAccumExistingTVP(testCase)
+      % Check to make sure we can add an accumulator to a StateSpace that's got
+      % slices of T, c or R. Easiest way to test this is to add 2 accumulators
+      % to a StateSpace separately.
+      
+      assumeFail(testCase); % Write full test
+    end
+        
     function testSameStateSumParameters(testCase)
       % Test that accumlators for the first and third observations work. This is really
       % testing the ordering of the accumulator variables. We should order them by
@@ -309,10 +317,10 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       
       % T Matrix - Make sure 0 and 1 elements in the right places
       testCase.verifyEqual(ssA.T(:, 1:2, :), repmat(ss.T, [3 1 3]));
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2));
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 2:3), repmat(eye(2), [1 1 2]));
-      testCase.verifyEqual(ssA.T(5:6, 5:6, 1:2), zeros(2, 2, 2));
-      testCase.verifyEqual(ssA.T(5:6, 5:6, 3), eye(2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1:2), zeros(2,2,2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 3), eye(2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 1), zeros(2, 2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 2:3), repmat(eye(2), [1 1 2]));
       
       % c vector 
       testCase.verifyEqual(ssA.c, zeros(6,1));
@@ -357,16 +365,16 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       
       % T Matrix - Make sure 0 and 1 elements in the right places
       testCase.verifyEqual(ssA.T(:, 1:2, :), repmat(ss.T, [3 1 3]));
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 1:2), zeros(2,2,2));
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 3), eye(2));
-      testCase.verifyEqual(ssA.T(5:6, 5:6, 1), zeros(2, 2));
-      testCase.verifyEqual(ssA.T(5:6, 5:6, 2:3), repmat(eye(2), [1 1 2]));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2,2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 2:3), repmat(eye(2), [1 1 2]));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 1:2), zeros(2, 2, 2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 3), eye(2));
       
       % c vector 
       testCase.verifyEqual(ssA.c, zeros(6,1));
       
       % R matrix
-      testCase.verifyEqual(ssA.R, repmat(ss.R, [3 1]));  
+      testCase.verifyEqual(ssA.R, repmat(ss.R, [3 1]));
     end
     
     function testSameStateAvgAccumulators(testCase)
@@ -444,10 +452,10 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssA.T(3:4, 1:2, :), repmat(ss.T, [1 1 3]));
       testCase.verifyEqual(ssA.T(5:6, 1:2, :), repmat(ss.T, [1 1 3]));
       % Make sure s_t is correct
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 1), zeros(2));
-      testCase.verifyEqual(ssA.T(3:4, 3:4, 2:3), repmat(eye(2), [1 1 2]));
-      testCase.verifyEqual(ssA.T(5:6, 5:6, 1:2), zeros(2,2,2));
-      testCase.verifyEqual(ssA.T(5:6, 5:6, 3), eye(2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 1:2), zeros(2,2,2));
+      testCase.verifyEqual(ssA.T(3:4, 3:4, 3), eye(2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 1), zeros(2));
+      testCase.verifyEqual(ssA.T(5:6, 5:6, 2:3), repmat(eye(2), [1 1 2]));
       
       % c vector 
       testCase.verifyEqual(ssA.c, zeros(6,1));
@@ -507,6 +515,31 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssA.R(5,1:2,:), repmat(ssGen.R(2,:), [1 1 3]) ./ reshape(1:3, [1 1 3]))
       testCase.verifyEqual(ssA.R(6:7,1:2,:), repmat(ssGen.R, [1 1 3]) ./ reshape(1:3, [1 1 3]))
     end
+    
+    function testAddLagSumAndAvg(testCase)
+      nSeries = 3;
+      nLags = 2;
+      
+      % One series that's a annual sum, one that's a quarterly average
+      y = [randn(264, 1), reshape([randn(1,22); nan(11,22)], [], 1) ...
+        reshape([randn(1,88); nan(2,88)], [], 1)] ;
+      accum = Accumulator.GenerateRegular(y, {'', 'avg', 'avg'}, [0 12 3]);
+      
+      % Factor model with AR(1) errors 
+      Z = [ones(nSeries,1) zeros(nSeries,1) eye(nSeries)];
+      H = eye(nSeries);
+      
+      T = blkdiag([.6 ./ nLags * ones(1, nLags); 1 0], .4 * eye(nSeries));
+      R = blkdiag([1; zeros(2-1, 1)], eye(nSeries));
+      Q = blkdiag(1, .3 * eye(nSeries));
+      
+      ss0 = StateSpace(Z, H, T, Q, 'R', R);
+      ss0A = accum.augmentStateSpace(ss0);
+      
+      [~, ll] = ss0A.filter(y);
+      testCase.verifyThat(ll, matlab.unittest.constraints.IsReal);
+    end
+    
     
     %% Tests that accumlated states equal the data
     function testSumSmoother(testCase)
@@ -618,7 +651,7 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
     function testNotOneStart(testCase)
       p = 2; m = 0; timeDim = 599;
       ssGen = generateARmodel(p, m, false);
-      ssGen.T(1,:) = 0.5; %[0.5 0.3];
+      ssGen.T(1,:) = 0.5; 
       ssGen.Z(:,1) = [1; 1];
       ssGen.H = diag([1 0]);
 
@@ -630,16 +663,12 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       accum = Accumulator.GenerateRegular(Y, {'', 'avg'}, [1 3]);
       ssA = accum.augmentStateSpace(ssGen);
       
-      accumNot1 = accum;
-      accumNot1.calendar = [3; accumNot1.calendar(1:end-1)];
-      ssAnot1 = accumNot1.augmentStateSpace(ssGen);
-      
       % Make sure we can run the filter
-      [~, ll] = ssAnot1.filter(Y');
+      [~, ll] = ssA.filter(Y');
       testCase.verifyThat(ll, matlab.unittest.constraints.IsFinite)
       
       % Test smoother
-      alpha = ssAnot1.smooth(Y);
+      alpha = ssA.smooth(Y);
       testCase.verifyEqual(alpha(4:3:end,end), Y(4:3:end,2), 'AbsTol', 1e-10);
       
       % We can only test starting when we have enough high-frequency obs to aggregate

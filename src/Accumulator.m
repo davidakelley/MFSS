@@ -198,7 +198,7 @@ classdef Accumulator < AbstractSystem
           
         else
           % Sum accumulator: all ones except for a zero in the first period
-          tempCal = repmat([0; ones(dataFreq-1, 1)], [ceil(nPer/dataFreq)+1 1]);
+          tempCal = repmat([0; ones(dataFreq-1, 1)], [ceil(nPer/dataFreq)+2 1]);
           if dataFreq ~= horizons(iSer)
             % There really isn't a horizon for the sum accumulators, but let the
             % user know if the data doesn't match what they expected.
