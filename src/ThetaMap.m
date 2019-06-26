@@ -1033,12 +1033,14 @@ classdef ThetaMap < AbstractSystem
       newTrans = cell(1, numel(newLBmat));
       newInver = cell(1, numel(newLBmat));
       
+      nTransforms = length(obj.transformations);
+      
       additionalTrans = 0;
       for iElem = 1:numel(newLBmat)
         if newLBmat(iElem) ~= oldLBmat(iElem) || newUBmat(iElem) ~= oldUBmat(iElem)
           additionalTrans = additionalTrans + 1;
           [trans, inver] = ThetaMap.boundedTransform(newLBmat(iElem), newUBmat(iElem));
-          transInx(iElem) = length(obj.transformations) + additionalTrans;
+          transInx(iElem) = nTransforms + additionalTrans;
           
           newTrans{iElem} = trans;
           newInver{iElem} = inver;
