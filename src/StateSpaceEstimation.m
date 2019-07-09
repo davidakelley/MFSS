@@ -250,14 +250,6 @@ classdef StateSpaceEstimation < AbstractStateSpace
         'StepTolerance', obj.stepTol, ...
         'OutputFcn', outputFcn);
       
-      optSimulanneal = optimoptions(@simulannealbnd, ...
-        'OutputFcn', @outputFcnSimanneal);
-      
-      optSwarm = optimoptions(@particleswarm, ...
-        'OutputFcn', @outputFcnSwarm, ...
-        'InitialSwarmSpan', 4, ...
-        'UseParallel', obj.useParallel);
-      
       if all(strcmpi(obj.solver, 'fminsearch')) && ...
           (ischar(obj.fminsearchMaxIter) && ...
           strcmpi(obj.fminsearchMaxIter, 'default'))
@@ -319,6 +311,9 @@ classdef StateSpaceEstimation < AbstractStateSpace
             
             gradient = [];
           case 'sa'
+            optSimulanneal = optimoptions(@simulannealbnd, ...
+              'OutputFcn', @outputFcnSimanneal);
+            
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, false);
             
             [thetaUHat, logli, outflag] = simulannealbnd(...
@@ -328,6 +323,12 @@ classdef StateSpaceEstimation < AbstractStateSpace
             
           case 'swarm'
             % This does not work all that well currently.
+            
+            optSwarm = optimoptions(@particleswarm, ...
+              'OutputFcn', @outputFcnSwarm, ...
+              'InitialSwarmSpan', 4, ...
+              'UseParallel', obj.useParallel);
+            
             minfunc = @(thetaU) obj.minimizeFun(thetaU, y, x, w, progress, false);
             
             [thetaUHat, logli, outflag] = particleswarm(...
@@ -450,7 +451,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         progress.a = a;  
         progress.ss = ss1;
         
-      catch 
+      catch ex
         % Set output to nan to indicate the likelihood evaluation failed
         rawLogli = nan;
         rawGradient = nan(obj.ThetaMapping.nTheta, 1);
