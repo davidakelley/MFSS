@@ -723,7 +723,7 @@ classdef StateSpace < AbstractStateSpace
       % Find which states have stationary distributions given the T matrix.
       
       [V, D] = eig(obj.T(:,:,obj.tau.T(1)));
-      bigEigs = abs(diag(D)) >= 1;
+      bigEigs = abs(diag(D)) >= 1 - 10 * eps; % Fudge factor of 10 * eps
       
       nonstationary = find(any(V(:, bigEigs), 2));
       

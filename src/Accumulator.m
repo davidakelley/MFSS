@@ -66,6 +66,11 @@ classdef Accumulator < AbstractSystem
       %
       % Note that augmenting a system removes initial values.
       
+      if isempty(obj.index)
+        ssNew = ss;
+        return
+      end
+      
       obj.checkConformingSystem(ss);
       aug = obj.computeAugSpecification(ss);
       ssNew = obj.buildAccumulatorStateSpace(ss, aug);
@@ -80,6 +85,11 @@ classdef Accumulator < AbstractSystem
       %     tmNew (ThetaMap): augmented ThetaMap
       %
       % The size of the theta vector will stay the same.
+      
+      if isempty(obj.index)
+        tmNew = tm;
+        return
+      end
       
       obj.checkConformingSystem(tm);
       aug = obj.comptueThetaMapAugSpecification(tm);
@@ -132,6 +142,11 @@ classdef Accumulator < AbstractSystem
       
       % This is actually simple: augment the system matricies (and let the nans
       % propogate) and augment the ThetaMap.
+      
+      if isempty(obj.index)
+        sseNew = sse;
+        return
+      end
       
       % Agument the ThetaMap
       newTM = obj.augmentThetaMap(sse.ThetaMapping);
