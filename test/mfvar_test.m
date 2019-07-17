@@ -124,6 +124,19 @@ classdef mfvar_test < matlab.unittest.TestCase
       testCase.verifyEqual(llEM, llOpt, 'AbsTol', 1e-2);
     end
     
+    function testEM_VAR2_accum(testCase)
+      p = 3; 
+      lags = 2;
+      
+      [y, ss] = mfvar_test.generateVAR(p, lags, 51);
+      aggY = y;
+      aggY(:, 2) = Accumulator_test.aggregateY(y(:, 2), 3, 'avg');
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
+
+      varE = MFVAR(aggY, lags, accum);
+      testCase.verifyWarningFree(@varE.estimate);
+    end
+    
     %% Gibbs sampler tests
     function testGibbs_AR1(testCase)
       nile = testCase.data.nile;
@@ -131,7 +144,7 @@ classdef mfvar_test < matlab.unittest.TestCase
       [~, paramSamples] = varE.sample(100, 1000);
       
       ssML = varE.estimate();
-      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 5e-3);
+      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 1e-2);
     end
     
     function testGibbs_VAR2(testCase)
@@ -140,7 +153,7 @@ classdef mfvar_test < matlab.unittest.TestCase
       [~, paramSamples] = varE.sample(100, 2000);
       
       ssML = varE.estimate();
-      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 5e-3);
+      testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 1e-2);
     end
     
   end

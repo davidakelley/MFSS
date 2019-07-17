@@ -10,7 +10,7 @@ classdef MFVAR
     constant = true;
     verbose = false;
     
-    tol = 1e-7;
+    tol = 1e-6;
     maxIter = 20000;
     stationaryTol = 1.0001;
     
@@ -85,14 +85,16 @@ classdef MFVAR
       zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
       V = zeroMats;
       J = zeroMats;
-      a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
+      % a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
+      % Initial state estimate: put the high-frequency values in for the accumulators
+      a0 = [alpha(1,:)'; alpha(1,obj.accumulator.index)'];
       P0 = 1000 * eye(size(alpha0, 2) + length(obj.accumulator.index));
       
       params = obj.estimateOLS_VJ(alpha, V, J);
      
       % Set up progress window
       [ssVAR, theta] = obj.params2system(params, tm);
-      progress = EstimationProgress(theta, obj.diagnosticPlot, size(alpha0,2), ssVAR);
+      progress = EstimationProgress([theta; a0], obj.diagnosticPlot, size(alpha0,2), ssVAR);
       stop = false;
       errorIndicator = '';
       
@@ -106,6 +108,7 @@ classdef MFVAR
        
         % E-step: Get state conditional on parameters
         [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
+        %[alpha, logli, V, J, ~, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -117,7 +120,7 @@ classdef MFVAR
           oVals.fval = -logli;
         end
         progress.totalEvaluations = progress.totalEvaluations + 1;
-        stop = progress.update(theta, oVals);
+        stop = progress.update([theta; a0], oVals);
 
         % Compute improvement
         improvement = logli - logli0;
@@ -128,8 +131,14 @@ classdef MFVAR
           errorIndicator = 'nanlogli';
           stop = true;
         end
-        if improvement < 0
-          errorIndicator = 'backup';
+        if improvement < 0 
+          % If we get a small negative change in the likelihood, call it good enough and
+          % stop. If we get a large change in the likelihood, throw the warning.
+          if abs(improvement) > 10 * obj.tol
+            errorIndicator = 'backup';
+          else
+            errorIndicator = '';
+          end
           stop = true;
         end
         
@@ -154,11 +163,11 @@ classdef MFVAR
       progress.nextSolver();
 
       switch errorIndicator
+        case ''
         case 'nanlogli'
           warning('Error in evaluation of log-likelihood.');
         case 'backup'
-          warning('EM algorithm did not improve likelihood.');
-        case ''
+          warning('EM algorithm decreased likelihood by %3.2g.', abs(improvement));
         otherwise
           error('Unknown error.');
       end
@@ -355,7 +364,7 @@ classdef MFVAR
       flagContinue = 0;
       countIter = 0;
       while  flagContinue < 1
-        [Btemp, sigmaDraw] = obj.MNIWDraw(B, PcholTranspose', Sinv, degf);
+        [Btemp, sigmaDraw] = obj.drawMNIW(B, PcholTranspose', Sinv, degf);
         T = [Btemp(1:end-obj.constant,:)'; ...
           eye(obj.p*(obj.nLags-1)) zeros(obj.p*(obj.nLags-1),obj.p)];
         maxEig = max(abs(eig(T))); 
@@ -517,88 +526,66 @@ classdef MFVAR
       end
     end
     
-    function [X,W,WInv,WChol,WLogDet] = MNIWDraw(muMat, PChol, SInv, v)
+    function [X, W] = drawMNIW(muMat, PChol, SInv, v)
       % Generates a draw of (X,W)~MNIW(muMat,P,S,v) such that
-      %   X|W ~ MN( muMat, W   kron P )
-      %   W ~ IW( v    , S          )
-      %
-      % *Notes*
-      % 1. *Pchol=chol(P)*
-      % 2. *Sinv=inv(S)*
+      %   X|W ~ MN(muMat, W kron P)
+      %   W ~ IW(v, S)
       %
       % Input
-      % muMat: [p,q] matrix with Mean
-      % PCol:  [p,p] matrix with *PChol=Chol(P)*, i.e. P=PChol'*PChol
-      % SInv:  [q,q] INVERSE matrix for IW, Sinv=Inv(S)
-      % v:     (scalar) degrees of Freedom for IW
+      %   muMat: [p,q] matrix with Mean
+      %   PCol:  [p,p] matrix with *PChol=Chol(P)*, i.e. P=PChol'*PChol
+      %   SInv:  [q,q] INVERSE matrix for IW, Sinv=Inv(S)
+      %   v:     (scalar) degrees of Freedom for IW
       %
       % Output
+      %   X:  [p,q] draw from  X|W ~ MN(muMat, W kron P)
+      %   W:  [q,q] draw from  IW(v, S);   S=inv(SInv)
       %
-      % X  [p,q] draw from  X|W ~ MN( muMat, W   kron P )
-      % W  [q,q] draw from  IW( v , S )   S=inv(SInv)
-      % WInv  [q,q] inverse of W through SVD if Nargout > 2
-      % WChol [q,q] chol    of W s.t. W=WChol'*WChol
-      %             NOTE: this is A Cholesky factor, but not the
-      %                   upper triangular cholesky factor obtained by calling
-      %                   Chol
-      % WLogDet           Log determinant
-      % Alejandro Justiniano February 4 2014 (C)
+      % Alejandro Justiniano, February 2014
       
       [Nr,Nc] = size(muMat);
       
-      % 1. Obtain draw of W ~ IW(v,S)
+      % Obtain draw of W ~ IW(v,S)
+      % This is more robust but probably slower than inv(W) for n small
       drMat = mvnrnd(zeros(1,Nc), SInv, v);
       Wtemp = (drMat' * drMat) \ eye(Nc);
-      % This is more robust but probably slower than inv(W) for n small
-      W = 0.5*(Wtemp + Wtemp');
+      W = 0.5 * (Wtemp + Wtemp');
       
-      % 2. Obtain chol(W) and inv(W) using the SVD      
-      
-      % 2.a SVD
+      % Obtain chol(W) and inv(W) using the SVD      
       % PP*DD*PPinv'=W  Notice the transpose
       % PPinv=inv(PP)'
       % PPinv'=inv(PP);
-      [WChol,flagNotPD]=chol(W);
-      if flagNotPD~=0
-        [PP,DD,PPinv]=svd(W);
-        % 2.b Truncate small singular values
-        tolZero=eps;
-        firstZero = find(diag(DD) < tolZero, 'first');
-        if isempty(firstZero)==false
-          PP=PP(:,1:firstZero-1);
-          PPinv=PPinv(:,1:firstZero-1);
-          DD=DD(1:firstZero-1,1:firstZero-1);
+      [WChol, flagNotPD] = chol(W);
+      if flagNotPD ~= 0
+        [~, DD, PPinv] = svd(W);
+        
+        % Truncate small singular values
+        firstZero = find(diag(DD) < eps, 'first');
+        if ~isempty(firstZero)
+          PPinv = PPinv(:,1:firstZero-1);
+          DD = DD(1:firstZero-1,1:firstZero-1);
         end
-        WChol=sqrt(DD)*PPinv';
+        
+        WChol = sqrt(DD) * PPinv';
       end
       
-      % 3. Inverse and Cholesky
-      if nargout > 2
-        WInv =PP*(DD\eye(Nc))*PPinv';
-        WLogDet=sum(log(diag(DD)));
-      end
-      
-      % 4. Draw from MN( mu, W kron P )
-      X=(PChol')*(randn(Nr,Nc))*WChol+muMat;
+      % Draw from MN(mu, W kron P)
+      X = PChol' * randn(Nr,Nc) * WChol + muMat;
     end
     
-    function logGamma = mvgamma(n,degf)
-      % =====================================
-      % mvgamma
-      %
-      % function logGamma=mvgamma(n,degf)
-      %
-      % Multivariate Gamma Function of dimension *n* with *degf*
-      % degrees of freedom.
+    function logGamma = mvgamma(n, degf)
+      % Multivariate Gamma Function of dimension *n* with *degf* degrees of freedom.
       %
       % Output is log(gamma^n(degf)) *including the constant*
       %
-      % Alejandro Justiniano February 13 2014
+      % Alejandro Justiniano, February 2014
+      
       if degf <= (n-1)/2
-        disp('logGamma is infinite!')
+        warning('logGamma is infinite!')
       end
-      vecArg=(degf+.5*(0:-1:1-n));
-      logGamma=sum(gammaln(vecArg))+0.25*n*(n-1)*log(pi);
+      
+      vecArg = degf + 0.5 * (0:-1:1-n);
+      logGamma = sum(gammaln(vecArg)) + 0.25 * n * (n-1) * log(pi);
     end    
   end
 end
