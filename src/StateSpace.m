@@ -477,6 +477,15 @@ classdef StateSpace < AbstractStateSpace
           'Size of state doesn''t match time dimension of StateSpace.');
       end
       
+      % We need to index by time on the second dimension of x and w, so make sure they're
+      % the right size.
+      if isempty(x)
+        x = zeros(0, obj.n);
+      end
+      if isempty(w)
+        w = zeros(0, obj.n+1);
+      end
+      
       % Iterate through observations
       obsErr = nan(obj.p, obj.n);
       for iT = 1:obj.n
@@ -528,6 +537,9 @@ classdef StateSpace < AbstractStateSpace
       I = eye(obj.m);
       V = nan(obj.m, obj.m, obj.n);
       J = nan(obj.m, obj.m, obj.n);
+      
+      sOut.N(:,:,obj.n+1) = 0;
+      
       for iT = obj.n:-1:1
         iP = fOut.P(:,:,iT);
         V(:,:,iT) = iP - iP * sOut.N(:,:,iT) * iP;   

@@ -451,6 +451,10 @@ classdef StateSpaceEstimation < AbstractStateSpace
         progress.a = a;  
         progress.ss = ss1;
         
+        if isnan(rawLogli)
+          progress.nanIterations = progress.nanIterations + 1;
+        end
+        
       catch ex
         % Set output to nan to indicate the likelihood evaluation failed
         rawLogli = nan;
