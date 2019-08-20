@@ -9,6 +9,7 @@ function make_toolbox(major, minor, build)
 %   toolbox and running a model.
 
 buildDir = fileparts(mfilename('fullpath'));
+rootDir = fileparts(buildDir);
 
 %% Get prj file
 % Edit .prj file to update version numbers
@@ -30,7 +31,7 @@ addpath(fullfile(baseDir, 'src'));
 
 %% Create toolbox file
 matlab.addons.toolbox.packageToolbox(...
-  fullfile(buildDir, '..', 'toolbox.prj'), ...
-  fullfile(buildDir, '..', 'MFSS.mltbx'))
+  fullfile(rootDir, 'toolbox.prj'), ...
+  fullfile(rootDir, 'MFSS.mltbx'))
 
 fprintf('Completed build of MFSS v%d.%d.%d\n', major, minor, build);
