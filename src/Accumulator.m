@@ -596,7 +596,7 @@ classdef Accumulator < AbstractSystem
       statesToAggregate = reshape(statesToAggregate, [], 1);
     end
     
-    function [lagsColPos, lagRowPos, mWLag] = determineNeededLags(obj, ...
+    function [lagsColPosOut, lagRowPos, mWLag] = determineNeededLags(obj, ...
         ss, hiFreqStates, augHorizon)
       % Checking we have the correct number of lags of the states that need
       % accumulation to be compatible with Horizon
@@ -661,7 +661,8 @@ classdef Accumulator < AbstractSystem
         mWLag = mWLag + addLags;
       end
       
-      lagsColPos = reshape(lagsColPos(lagsColPos ~= 0), [], 1);
+      lagsColPosT = lagsColPos';      
+      lagsColPosOut = reshape(lagsColPosT(lagsColPosT ~= 0), [], 1);
     end
     
     function returnFlag = checkConformingSystem(obj, sys)

@@ -272,6 +272,44 @@ classdef Accumulator_Integration_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssA.R(6,1,:), reshape(1 ./ (1:6), [1 1 6]));
     end
     
+    function testAvgAddLagsMultipleParameters(testCase)
+      % Test adding lags for a multiple observation, multiple state process
+      timeDim = 599;
+      p = 4;
+      Z = [1 0 1 0; 1 0 1 0; 1 0 0 0; 0 0 1 0];
+      H = 0.2 * eye(4);
+      T = [0.69 0.29 0 0; 1 0 0 0; 0 0 .35 .64; 0 0 1 0];
+      Q = eye(2);
+      R = [1 0; 0 0; 0 1; 0 0];
+      ssGen = StateSpace(Z, H, T, Q, 'R', R);
+      
+      Y = generateData(ssGen, timeDim)';
+      
+      aggY = Y;
+      aggY(:, 3) = Accumulator_test.aggregateY(Y(:, 3), 6, 'avg');
+      aggY(:, 4) = Accumulator_test.aggregateY(Y(:, 4), 6, 'avg');
+
+      % Not really the right horizon for this data, but we need a test for lags
+      accum = Accumulator.GenerateRegular(aggY, {'', '', 'avg', 'avg'}, [1 1 6 6]);
+      ssA = accum.augmentStateSpace(ssGen);
+            
+      % Sizes
+      testCase.verifyEqual(ssA.m, 12);
+      
+      % Make sure Z elements got moved
+      testCase.verifyEqual(ssA.Z(3:4,11:12), eye(2));
+      
+      % T Matrix - Make sure the lag elements got put in the right places
+      % State 2 -> state 5, state 5 -> state 6 & state 6 -> state 7 for lags of state 1
+      testCase.verifyEqual(ssA.T(5,2), 1); 
+      testCase.verifyEqual(ssA.T(6,5), 1); 
+      testCase.verifyEqual(ssA.T(7,6), 1); 
+      % State 4 -> state 8, state 8 -> state 9 & state 9 -> state 10 for lags of state 2
+      testCase.verifyEqual(ssA.T(8,4), 1); 
+      testCase.verifyEqual(ssA.T(9,8), 1); 
+      testCase.verifyEqual(ssA.T(10,9), 1);
+    end
+    
     function testAccumExistingTVP(testCase)
       % Check to make sure we can add an accumulator to a StateSpace that's got
       % slices of T, c or R. Easiest way to test this is to add 2 accumulators
