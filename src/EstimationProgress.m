@@ -78,7 +78,12 @@ classdef EstimationProgress < handle
         ~isempty(ss.gamma) true(1,2) ~isempty(ss.a0) ~isempty(ss.P0)]);
       
       maxPossibleIters = 10000;
-      obj.thetaHist = nan(maxPossibleIters, length(obj.theta0));
+      if isnumeric(obj.theta0)
+        obj.thetaHist = nan(maxPossibleIters, length(obj.theta0));
+      else
+        obj.thetaHist = [];
+      end
+      
       obj.likelihoodHist = nan(maxPossibleIters, 1);
       obj.solverHist = nan(maxPossibleIters, 1);
       
@@ -133,7 +138,9 @@ classdef EstimationProgress < handle
       
       % Update tracking values
       obj.thetaIter = obj.thetaIter + 1;
-      obj.thetaHist(obj.thetaIter, :) = x';
+      if ~isempty(obj.thetaHist)
+        obj.thetaHist(obj.thetaIter, :) = x';
+      end
       obj.likelihoodHist(obj.thetaIter) = -optimValues.fval;
       obj.solverHist(obj.thetaIter) = obj.solverIter;
       
@@ -249,7 +256,7 @@ classdef EstimationProgress < handle
       
       newwin = figure('Color', ones(1,3), ...
         'Position', positionVec, ...
-        'Name', 'StateSpaceEstimation Progress', ...
+        'Name', 'Estimation Progress', ...
         'NumberTitle', 'off', 'Resize', 'off', ...
         'MenuBar', 'none', 'DockControls', 'off', ...
         'HandleVisibility', 'off');
@@ -301,7 +308,12 @@ classdef EstimationProgress < handle
       % Create plot of current theta
       axH = axes(newwin);
       obj.axPt = subplot(3, 2, 1, axH);
-      obj.plotPt = bar(obj.axPt, 1:length(obj.theta0), obj.theta0, 0.65);
+      if isnumeric(obj.theta0)
+        obj.plotPt = bar(obj.axPt, 1:length(obj.theta0), obj.theta0, 0.65);
+      else
+        text(obj.axPt, 0.5, 0.5, [obj.theta0 ' estimation'], 'HorizontalAlignment', 'center');
+        obj.axPt.Visible = false;
+      end
       
       % Plot of likelihood improvement
       obj.axVal = subplot(3, 2, 2, copyobj(axH, newwin));
@@ -367,12 +379,14 @@ classdef EstimationProgress < handle
       title(obj.axPt, 'Current Theta Value');
       xlabel(obj.axPt, sprintf('Parameters: %d', length(obj.theta0)));
       set(obj.plotPt, 'edgecolor', 'none')
-      set(obj.axPt, 'xlim', [0,1 + length(obj.theta0)])
+      set(obj.axPt, 'xlim', [0,1 + isnumeric(obj.theta0) * length(obj.theta0)])
       % Initial point outline
-      hold(obj.axPt, 'on');
-      outline = bar(obj.axPt, 1:length(obj.theta0), obj.theta0, 0.8);
-      outline.EdgeColor = zeros(1,3);
-      outline.FaceColor = 'none';
+      if isnumeric(obj.theta0)
+        hold(obj.axPt, 'on');
+        outline = bar(obj.axPt, 1:length(obj.theta0), obj.theta0, 0.8);
+        outline.EdgeColor = zeros(1,3);
+        outline.FaceColor = 'none';
+      end
       
       % Plot of likelihood improvement
       box(obj.axVal, 'off');

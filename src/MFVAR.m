@@ -1,20 +1,11 @@
-classdef MFVAR
+classdef MFVAR < AbstractModel
   % Mixed-frequency VAR estimated via maximum likelihood
   
   % David Kelley, 2018
   
   properties
-    Y
-    accumulator
-    
     constant = true;
-    verbose = false;
-    
-    tol = 1e-6;
-    maxIter = 20000;
     stationaryTol = 1.0001;
-    
-    diagnosticPlot = true;
   end
   
   properties (Access = protected)
@@ -22,13 +13,6 @@ classdef MFVAR
     nLags
   end
 
-  properties (Dependent, Hidden)
-    % Number of series in VAR
-    p
-    % Sample length
-    n
-  end
-  
   methods
     function obj = MFVAR(data, lags, accumulator)
       % MFVAR Constructor
@@ -47,236 +31,13 @@ classdef MFVAR
       else 
         obj.accumulator = Accumulator([], [], []);
       end
-    end
-    
-    function p = get.p(obj)
-      % Getter for p
-      p = size(obj.Y, 2);
-    end
-    
-    function n = get.n(obj)
-      % Getter for n
-      n = size(obj.Y, 1);
-    end
-    
-    function ssML = estimate(obj)
-      % Estimate maximum likelihood parameters via EM algorithm
-      % 
-      % Arguments:
-      %     [none]
-      % Returns: 
-      %     ssML: StateSpace of estimated MF-VAR
-      
-      if obj.verbose
-        algoTitle = 'Mixed-Frequency VAR EM Estimation';
-        line = @(char) repmat(char, [1 46]);
-        fprintf('\n%s\n', algoTitle);
-        fprintf('%s\n  Iteration  |  Log-likelihood |  Improvement\n%s\n', ...
-          line('='), line('-'));
-        tolLvl = num2str(abs(floor(log10(obj.tol)))+1);
-        screenOutFormat = ['%11.0d | %16.8f | %12.' tolLvl 'f\n'];
-      end
-      
-      tm = generateTM(obj);
-
-      alpha = obj.initializeState();
-      alpha0 = alpha;
-
-      zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
-      V = zeroMats;
-      J = zeroMats;
-      % a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
-      % Initial state estimate: put the high-frequency values in for the accumulators
-      a0 = [alpha(1,:)'; alpha(1,obj.accumulator.index)'];
-      P0 = 1000 * eye(size(alpha0, 2) + length(obj.accumulator.index));
-      
-      params = obj.estimateOLS_VJ(alpha, V, J);
-     
-      % Set up progress window
-      [ssVAR, theta] = obj.params2system(params, tm);
-      progress = EstimationProgress([theta; a0], obj.diagnosticPlot, size(alpha0,2), ssVAR);
-      stop = false;
-      errorIndicator = '';
-      
-      % EM algorithm
-      iter = 0;
-      logli0 = -Inf;
-      improvement = -Inf;
-      while ~stop && abs(improvement) > obj.tol && iter < obj.maxIter
-        % M-step: Get parameters conditional on state
-        params = obj.estimateOLS_VJ(alpha, V, J);
-       
-        % E-step: Get state conditional on parameters
-        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
-        %[alpha, logli, V, J, ~, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
-        
-        % Put filtered state in figure for plotting
-        progress.alpha = alpha';  
-        progress.ss = ssVAR;
-        if iter < 2
-          % Initialization has low likelihood - makes plot uninformative
-          oVals.fval = nan;
-        else
-          oVals.fval = -logli;
-        end
-        progress.totalEvaluations = progress.totalEvaluations + 1;
-        stop = progress.update([theta; a0], oVals);
-
-        % Compute improvement
-        improvement = logli - logli0;
-        logli0 = logli;
-        iter = iter + 1;
-
-        if ~isfinite(logli)
-          errorIndicator = 'nanlogli';
-          stop = true;
-        end
-        if improvement < 0 
-          % If we get a small negative change in the likelihood, call it good enough and
-          % stop. If we get a large change in the likelihood, throw the warning.
-          if abs(improvement) > 10 * obj.tol
-            errorIndicator = 'backup';
-          else
-            errorIndicator = '';
-          end
-          stop = true;
-        end
-        
-        if obj.verbose
-          if iter <=2 || improvement < 0 || ~isempty(errorIndicator)
-            bspace = [];
-          else
-            bspace = repmat('\b', [1 length(screenOut)]);
-          end
-          screenOut = sprintf(screenOutFormat, iter, logli, improvement);
-          fprintf([bspace screenOut]);
-        end
-      end
-      
-      ssML = obj.params2system(params);
-      ssML.a0 = a0;
-      ssML.P0 = P0;
-      if obj.verbose
-        fprintf('%s\n', line('-'));
-      end
-      
-      progress.nextSolver();
-
-      switch errorIndicator
-        case ''
-        case 'nanlogli'
-          warning('Error in evaluation of log-likelihood.');
-        case 'backup'
-          warning('EM algorithm decreased likelihood by %3.2g.', abs(improvement));
-        otherwise
-          error('Unknown error.');
-      end
-    end
-    
-    function [sampleStates, paramSamples, ssMedian] = sample(obj, nBurn, nKeep)
-      % Take samples of the parameters and states
-      %
-      % Arguments: 
-      %   nBurn (integer): samples to discard in warmup
-      %   nKeep (integer): samples to keep
-      % 
-      % Returns: 
-      %   sampleStates (float, 3D): stacked samples of alphaHat
-      %   ssMedian (StateSpace): median parameters of the sampled state spaces
-
-      if nargin < 3
-        nKeep = 500;
-      end
-      if nargin < 2
-        nBurn = 500;
-      end
-      
-      nTotal = nBurn + nKeep;
-      iSamp = 1;
-      phiSample = nan(obj.p, obj.p*obj.nLags, nKeep);
-      consSample = nan(obj.p, nKeep);
-      sigmaSample = nan(obj.p, obj.p, nKeep);
-      sampleStates = nan(obj.n, obj.p, nKeep);
-      
-      % TODO: Add a few iterations of the EM to get near HPD region
-      tempMdl = obj;
-      tempMdl.maxIter = 50;
-      ssML = tempMdl.estimate(); 
-      alphaFull0 = ssML.smooth(obj.Y);
-      
-      alpha0 = alphaFull0(:,1:obj.p*obj.nLags);
-      paramSample = obj.sampleParameters(alpha0);
-      
-      % Set up progress window
-      theta = [0 0]';
-      progress = EstimationProgress(theta, obj.diagnosticPlot, ...
-        obj.p*obj.nLags, obj.params2system(paramSample));
-      stop = false;
-      
-      while iSamp < nTotal+1 && ~stop
-        
-        [alphaDraw, ssLogli] = obj.sampleState(paramSample);
-        stateSample = alphaDraw(:,1:obj.p);
-        
-        [paramSample, paramLogML] = obj.sampleParameters(alphaDraw);
-        
-        % Update progress window
-        progress.alpha = alphaDraw';  
-        progress.ss = obj.params2system(paramSample);
-        oVals.fval = -(ssLogli + paramLogML);
-        stop = progress.update(theta, oVals);
-
-        if iSamp > nBurn
-          sampleStates(:,:,iSamp-nBurn) = stateSample;
-          phiSample(:,:,iSamp-nBurn) = paramSample.phi;
-          consSample(:,iSamp-nBurn) = paramSample.cons;
-          sigmaSample(:,:,iSamp-nBurn) = paramSample.sigma;
-        end
-        if ~all(all(isnan(paramSample.phi)))
-          iSamp = iSamp + 1;
-        end
-      end
-      
-      paramSamples = struct('phi', phiSample, 'cons', consSample, 'sigma', sigmaSample);
-      
-      phiMedian = median(phiSample, 3);
-      consMedian = median(consSample, 2);
-      sigmaMedian = median(sigmaSample, 3);
-      ssMedian = obj.params2system(struct('phi', phiMedian', ...
-        'cons', consMedian, 'sigma', sigmaMedian));
+      obj.modelName = 'VAR';
     end
   end
   
   %% EM algorithm
   methods (Hidden)
-    function [state, logli, V, J, a0tilde, ssVAR, theta] = stateEstimate(obj, params, a0, P0, tm)
-      % Estimate latent state and variances
-      
-      [ssVAR, theta] = obj.params2system(params, tm);
-      ssVAR.a0 = a0;
-      ssVAR.P0 = P0;
-      
-      [state, sOut, fOut] = ssVAR.smooth(obj.Y);
-      logli = sOut.logli;
-            
-      % No observed data in period 0, L_0 = T_1.
-      if isempty(ssVAR.tau)
-        L0 = ssVAR.T;
-      else
-        L0 = ssVAR.T(:,:,ssVAR.tau.T(1));
-      end
-      r0 = L0' * sOut.r(:,1);
-      a0tilde = ssVAR.a0 + ssVAR.P0 * r0;
-      
-      if nargout > 2
-        ssVAR = ssVAR.setDefaultInitial();
-        ssVAR = ssVAR.prepareFilter(obj.Y, [], []);
-        sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
-        [V, J] = ssVAR.getErrorVariances(obj.Y', fOut, sOut);
-      end
-    end
-    
-    function [ssA, theta] = params2system(obj, params, tm)
+    function ssA = params2system(obj, params)
       % Convert VAR parameters into state space object.
       
       Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
@@ -293,12 +54,9 @@ classdef MFVAR
       else
         ssA = ss;
       end
-      if nargout > 1
-        theta = tm.system2theta(ssA);
-      end
     end
     
-    function params = estimateOLS_VJ(obj, alpha, V, J)
+    function params = estimateParameters(obj, alpha, V, J)
       % Estimate the OLS VAR taking the uncertainty of the state into account. 
       %
       % Everything here is in the companion VAR(1) form from the smoother. 
@@ -324,12 +82,25 @@ classdef MFVAR
       yyT = addVy + yvals' * yvals;
       
       OLS = yxT/xxT;
-      Sigma = (yyT-OLS*yxT') ./ (size(alpha,1) - 1);
-      Sigma = (Sigma + Sigma') ./ 2;
+      SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1));
+%       SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1) - 1);
+%       SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1));
+      Sigma = (SigmaRaw + SigmaRaw') ./ 2;
       
       params = struct('phi', OLS(:, 1:obj.p*obj.nLags), 'cons', OLS(:,end), ...
         'sigma', Sigma);
     end
+    
+    function params = initializeParameters(obj)
+      % Initialize parameters from a static factor model
+      [~, ~, ~, Yhat] = StockWatsonMF(obj.Y, ...
+        'factors', 1, 'accum', obj.accumulator, 'verbose', obj.verbose);
+      alpha = lagmatrix(Yhat, 0:obj.nLags-1);
+      alpha(isnan(alpha)) = 0;
+      
+      zeroMats = zeros([obj.p * obj.nLags, obj.p * obj.nLags, obj.n]);
+      params = obj.estimateParameters(alpha, zeroMats, zeroMats);
+    end    
   end
   
   %% Gibbs sampler
@@ -486,107 +257,5 @@ classdef MFVAR
     end
     %}    
   end  
-    
-  %% Utility methods
-  methods (Hidden)
-    function alpha = initializeState(obj)
-      % Initialize with simple interpolation
-      interpY = obj.interpolateData(obj.Y, obj.accumulator);
-      alpha = lagmatrix(interpY, 0:obj.nLags-1);
-      alpha(isnan(alpha)) = 0;
-    end
-    
-    function tm = generateTM(obj)
-      % Generate ThetaMap for VAR
-      Z = [eye(obj.p) zeros(obj.p, obj.p * (obj.nLags - 1))];
-      H = zeros(obj.p);
-      T = [nan(obj.p, obj.p*obj.nLags); ...
-        [eye(obj.p * (obj.nLags - 1)) zeros(obj.p * (obj.nLags - 1), obj.p)]];
-      c = [nan(obj.p,1); zeros(obj.p * (obj.nLags - 1), 1)];
-      R = [eye(obj.p); zeros(obj.p * (obj.nLags - 1), obj.p)];
-      Q = nan(obj.p);
-      ssE = StateSpaceEstimation(Z, H, T, Q, 'c', c, 'R', R);
-      if ~isempty(obj.accumulator.index)
-        ssEA = obj.accumulator.augmentStateSpaceEstimation(ssE);
-        tm = ssEA.ThetaMapping;
-      else
-        tm = ssE.ThetaMapping;
-      end
-    end
-    
-  end
-  
-  methods (Static, Hidden)
-    function interpY = interpolateData(Y, accum)
-      % Interpolate any low-frequency data in Y. 
-      interpY = Y;
-      for iS = accum.index
-        interpY(:,iS) = interp1(find(~isnan(Y(:,iS))), Y(~isnan(Y(:,iS)), iS), ...
-          1:size(Y,1), 'linear', 'extrap');
-      end
-    end
-    
-    function [X, W] = drawMNIW(muMat, PChol, SInv, v)
-      % Generates a draw of (X,W)~MNIW(muMat,P,S,v) such that
-      %   X|W ~ MN(muMat, W kron P)
-      %   W ~ IW(v, S)
-      %
-      % Input
-      %   muMat: [p,q] matrix with Mean
-      %   PCol:  [p,p] matrix with *PChol=Chol(P)*, i.e. P=PChol'*PChol
-      %   SInv:  [q,q] INVERSE matrix for IW, Sinv=Inv(S)
-      %   v:     (scalar) degrees of Freedom for IW
-      %
-      % Output
-      %   X:  [p,q] draw from  X|W ~ MN(muMat, W kron P)
-      %   W:  [q,q] draw from  IW(v, S);   S=inv(SInv)
-      %
-      % Alejandro Justiniano, February 2014
-      
-      [Nr,Nc] = size(muMat);
-      
-      % Obtain draw of W ~ IW(v,S)
-      % This is more robust but probably slower than inv(W) for n small
-      drMat = mvnrnd(zeros(1,Nc), SInv, v);
-      Wtemp = (drMat' * drMat) \ eye(Nc);
-      W = 0.5 * (Wtemp + Wtemp');
-      
-      % Obtain chol(W) and inv(W) using the SVD      
-      % PP*DD*PPinv'=W  Notice the transpose
-      % PPinv=inv(PP)'
-      % PPinv'=inv(PP);
-      [WChol, flagNotPD] = chol(W);
-      if flagNotPD ~= 0
-        [~, DD, PPinv] = svd(W);
-        
-        % Truncate small singular values
-        firstZero = find(diag(DD) < eps, 'first');
-        if ~isempty(firstZero)
-          PPinv = PPinv(:,1:firstZero-1);
-          DD = DD(1:firstZero-1,1:firstZero-1);
-        end
-        
-        WChol = sqrt(DD) * PPinv';
-      end
-      
-      % Draw from MN(mu, W kron P)
-      X = PChol' * randn(Nr,Nc) * WChol + muMat;
-    end
-    
-    function logGamma = mvgamma(n, degf)
-      % Multivariate Gamma Function of dimension *n* with *degf* degrees of freedom.
-      %
-      % Output is log(gamma^n(degf)) *including the constant*
-      %
-      % Alejandro Justiniano, February 2014
-      
-      if degf <= (n-1)/2
-        warning('logGamma is infinite!')
-      end
-      
-      vecArg = degf + 0.5 * (0:-1:1-n);
-      logGamma = sum(gammaln(vecArg)) + 0.25 * n * (n-1) * log(pi);
-    end    
-  end
 end
 

@@ -1,10 +1,8 @@
-% Test univariate mex filter with an AR model.
-% Assumes that the Matlab version of the univariate filter/smoother are
-% correct.
+% Test MFVAR
 
 % David Kelley, 2018
 
-classdef mfvar_test < matlab.unittest.TestCase
+classdef MFVAR_test < matlab.unittest.TestCase
   
   properties
     data = struct;
@@ -24,78 +22,11 @@ classdef mfvar_test < matlab.unittest.TestCase
   
   methods(TestClassTeardown)
     function closeFigs(testCase) %#ok<MANU>
-      close all force;
+%       close all force;
     end
   end
   
   methods (Test)
-    %% Test that the V and J computation from StateSpace is accurate
-    function testVJ_noT(testCase)
-      ss = StateSpace([1; 1; 1], eye(3), 0, 1);
-      y = generateData(ss, 100);
-      
-      [~, sOut, fOut] = ss.smooth(y);      
-      ss = ss.setDefaultInitial();
-      ss = ss.prepareFilter(y, [], []);
-      sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
-      [V, J] = ss.getErrorVariances(y, fOut, sOut);
-      
-      testCase.verifyEqual(V, 0.25*ones(1,1,100));
-      testCase.verifyEqual(J, zeros(1,1,100));
-    end
-    
-    function testVJ_AR1(testCase)
-      ss = StateSpace(1, 1, 0.5, 1);
-      y = generateData(ss, 1);
-      ss.a0 = 0;
-      ss.P0 = 1;
-      
-      [~, sOut, fOut] = ss.smooth(y);      
-      ss = ss.setDefaultInitial();
-      ss = ss.prepareFilter(y, [], []);
-      sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
-      [ssV, ssJ] = ss.getErrorVariances(y, fOut, sOut);
-      
-      % Compute in multivariate for simplicity
-      P1 = ss.T^2 * ss.P0 + ss.Q;
-      F1 = P1 + ss.Q;
-      N1 = 1./F1;
-      V1 = P1 - P1 * N1 * P1;
-      K1 = ss.T * P1 * ss.Z' / F1;
-      L1 = ss.T - K1 * ss.Z;
-      J = P1 * L1'; 
-      
-      testCase.verifyEqual(ssV, V1);
-      testCase.verifyEqual(ssJ, J);
-    end
-    
-    function testVJ_VAR2(testCase)
-      p = 2; 
-      lags = 2;
-      
-      [y, ss] = mfvar_test.generateVAR(p, lags, 1);
-      
-      ss = ss.setDefaultInitial;
-      
-      [~, sOut, fOut] = ss.smooth(y);      
-      ss = ss.setDefaultInitial();
-      [ss, yPrep] = ss.prepareFilter(y, [], []);
-      sOut.N = cat(3, sOut.N, zeros(size(sOut.N, 1)));
-      [ssV, ssJ] = ss.getErrorVariances(yPrep, fOut, sOut);
-      
-      % Compute in multivariate for simplicity
-      P1 = ss.T * ss.P0 * ss.T' + ss.R * ss.Q * ss.R';
-      F1 = ss.Z * P1 * ss.Z' + ss.H;
-      N1 = ss.Z' / F1 * ss.Z;
-      V1 = P1 - P1 * N1 * P1;
-      K1 = ss.T * P1 * ss.Z' / F1;
-      L1 = ss.T - K1 * ss.Z;
-      J = P1 * L1';
-
-      testCase.verifyEqual(ssV, V1, 'AbsTol', 5e-10);
-      testCase.verifyEqual(ssJ, J, 'AbsTol', 5e-10);
-    end
-    
     %% Integration tests of MFVAR
     function testEM_AR1_improve(testCase)
       % Test that the the EM always improved the likelihood
@@ -124,11 +55,22 @@ classdef mfvar_test < matlab.unittest.TestCase
       testCase.verifyEqual(llEM, llOpt, 'AbsTol', 1e-2);
     end
     
+    function testEM_VAR2_missing(testCase)
+      p = 3; 
+      lags = 2;
+      
+      y = MFVAR_test.generateVAR(p, lags, 51);
+      y(1:45,2) = nan;
+
+      varE = MFVAR(y, lags);
+      testCase.verifyWarningFree(@varE.estimate);
+    end
+    
     function testEM_VAR2_accum(testCase)
       p = 3; 
       lags = 2;
       
-      [y, ss] = mfvar_test.generateVAR(p, lags, 51);
+      y = MFVAR_test.generateVAR(p, lags, 51);
       aggY = y;
       aggY(:, 2) = Accumulator_test.aggregateY(y(:, 2), 3, 'avg');
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
@@ -137,8 +79,26 @@ classdef mfvar_test < matlab.unittest.TestCase
       testCase.verifyWarningFree(@varE.estimate);
     end
     
+    function testEM_VAR2_accum_missing(testCase)
+      p = 3; 
+      lags = 2;
+      
+      y = MFVAR_test.generateVAR(p, lags, 51);
+      aggY = y;
+      aggY(:, 2) = Accumulator_test.aggregateY(y(:, 2), 3, 'avg');
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
+      aggY(1:35,2:3) = nan;
+
+      varE = MFVAR(aggY, lags, accum);
+      testCase.verifyWarningFree(@varE.estimate);
+    end
+    
     %% Gibbs sampler tests
+    % Not currently working after refactor with AbstractModel
+    
     function testGibbs_AR1(testCase)
+      testCase.assertFail();
+      
       nile = testCase.data.nile;
       varE = MFVAR(nile, 1);
       [~, paramSamples] = varE.sample(100, 1000);
@@ -148,7 +108,9 @@ classdef mfvar_test < matlab.unittest.TestCase
     end
     
     function testGibbs_VAR2(testCase)
-      test_data = mfvar_test.generateVAR(2, 3, 100);
+      testCase.assertFail();
+      
+      test_data = MFVAR_test.generateVAR(2, 3, 100);
       varE = MFVAR(test_data, 1);
       [~, paramSamples] = varE.sample(100, 2000);
       
@@ -159,7 +121,7 @@ classdef mfvar_test < matlab.unittest.TestCase
   end
   
   methods (Static)    
-    function [y, ss] = generateVAR(p, lags, n)
+    function [y, ss, phi] = generateVAR(p, lags, n)
       % Generate a set of VAR parameters. 
       % 
       % Not intended for large systems (will be slow with many series)
