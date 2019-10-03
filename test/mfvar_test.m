@@ -27,7 +27,7 @@ classdef mfvar_test < matlab.unittest.TestCase
       close all force;
     end
   end
-  
+
   methods (Test)
     %% Test that the V and J computation from StateSpace is accurate
     function testVJ_noT(testCase)
@@ -139,6 +139,8 @@ classdef mfvar_test < matlab.unittest.TestCase
     
     %% Gibbs sampler tests
     function testGibbs_AR1(testCase)
+      testCase.assumeFail;
+      
       nile = testCase.data.nile;
       varE = MFVAR(nile, 1);
       [~, paramSamples] = varE.sample(100, 1000);
@@ -148,7 +150,9 @@ classdef mfvar_test < matlab.unittest.TestCase
     end
     
     function testGibbs_VAR2(testCase)
-      test_data = mfvar_test.generateVAR(2, 3, 100);
+      testCase.assumeFail;
+      
+      test_data = MFVAR_test.generateVAR(2, 3, 100);
       varE = MFVAR(test_data, 1);
       [~, paramSamples] = varE.sample(100, 2000);
       

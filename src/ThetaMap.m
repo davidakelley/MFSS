@@ -736,6 +736,11 @@ classdef ThetaMap < AbstractSystem
       end
       
       % Remove duplicate and unused transformations
+      maxTransInx = max(ThetaMap.vectorizeStateSpace(...
+        obj.transformationIndex, ~obj.usingDefaulta0, ~obj.usingDefaultP0));
+      obj.transformations(maxTransInx+1:end) = [];
+      obj.inverses(maxTransInx+1:end) = [];
+      
       obj = obj.compressTransformations();      
       
       % Make sure the lower bound is actually below the upper bound and
@@ -1027,29 +1032,30 @@ classdef ThetaMap < AbstractSystem
       passedUBmat = ssUB.(iParam);
       newUBmat = min(oldUBmat, passedUBmat);
       
-      % Alter transformations - just add a new ones for now, we'll delete the 
-      % old ones later in checkThetaMap 
-      transInx = obj.transformationIndex.(iParam);
-      newTrans = cell(1, numel(newLBmat));
-      newInver = cell(1, numel(newLBmat));
-      
-      nTransforms = length(obj.transformations);
-      
-      additionalTrans = 0;
-      for iElem = 1:numel(newLBmat)
-        if newLBmat(iElem) ~= oldLBmat(iElem) || newUBmat(iElem) ~= oldUBmat(iElem)
-          additionalTrans = additionalTrans + 1;
-          [trans, inver] = ThetaMap.boundedTransform(newLBmat(iElem), newUBmat(iElem));
-          transInx(iElem) = nTransforms + additionalTrans;
-          
-          newTrans{iElem} = trans;
-          newInver{iElem} = inver;
-        end
+      needNewBound = newLBmat(:) ~= oldLBmat(:) | newUBmat(:) ~= oldUBmat(:);
+      if any(needNewBound)
+        % Find common new transformations and assign all changes to same function. 
+        % It's ok if a function is duplicated that already exists since it will be
+        % concentrated out in validateThetaMap.
+        allBounds = [newLBmat(needNewBound) newUBmat(needNewBound)];
+        [newBounds, ~, newBoundInds] = unique(allBounds, 'rows');
+        
+        [newTransT, newInverT] = arrayfun(@ThetaMap.boundedTransform, ...
+          newBounds(:,1), newBounds(:,2), 'Uniform', false);
+        newTrans = newTransT';
+        newInver = newInverT';
+        
+        transInx = obj.transformationIndex.(iParam);
+        nTransforms = length(obj.transformations);
+        transInx(needNewBound) = nTransforms + newBoundInds;
+      else
+        % No new transformations to add
+        transInx = obj.transformationIndex.(iParam);
+        newTrans = {};
+        newInver = {};
       end
-      
-      newTrans(cellfun(@isempty, newTrans)) = [];
-      newInver(cellfun(@isempty, newInver)) = [];
     end
+      
   end
   
   methods (Static, Hidden)
