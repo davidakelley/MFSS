@@ -2,7 +2,7 @@
 
 % David Kelley, 2018
 
-classdef MFVAR_test < matlab.unittest.TestCase
+classdef mfvar_test < matlab.unittest.TestCase
   
   properties
     data = struct;
@@ -25,7 +25,7 @@ classdef MFVAR_test < matlab.unittest.TestCase
 %       close all force;
     end
   end
-  
+
   methods (Test)
     %% Integration tests of MFVAR
     function testEM_AR1_improve(testCase)
