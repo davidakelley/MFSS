@@ -71,7 +71,7 @@ classdef StateSpace_test < matlab.unittest.TestCase
       p = 2; 
       lags = 2;
       
-      [y, ss] = MFVAR_test.generateVAR(p, lags, 1);
+      [y, ss] = mfvar_test.generateVAR(p, lags, 1);
       
       ss = ss.setDefaultInitial;
       

@@ -269,7 +269,9 @@ classdef (Abstract) AbstractModel
       % Getter for p
       p = size(obj.Y, 2);
     end
-    
+  end
+  
+  methods (Static)
     function [X, W] = drawMNIW(muMat, PChol, SInv, v)
       % Generates a draw of (X,W)~MNIW(muMat,P,S,v) such that
       %   X|W ~ MN(muMat, W kron P)

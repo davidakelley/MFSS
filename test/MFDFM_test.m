@@ -2,7 +2,7 @@
 
 % David Kelley, 2019
 
-classdef MFDFM_test < matlab.unittest.TestCase
+classdef mfdfm_test < matlab.unittest.TestCase
   properties
     data = struct;
   end
@@ -51,24 +51,43 @@ classdef MFDFM_test < matlab.unittest.TestCase
       nFac = 1;
       nLags = 2;
       
-      y = MFDFM_test.generateDFM(p, nFac, nLags, 250)';
+      y = mfdfm_test.generateDFM(p, nFac, nLags, 250, 1)';
       aggY = y;
       aggY(:, 2) = Accumulator_test.aggregateY(y(:, 2), 3, 'avg');
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
 
       varE = MFDFM(aggY, nFac, nLags, accum);
       testCase.verifyWarningFree(@varE.estimate);
-    end    
+    end   
+    
+    function testEM_VAR2_accum_missing(testCase)
+      % This test currently fails on the 7th iteration of the EM algorithm (by 1).
+      p = 3; 
+      lags = 2;
+      
+      y = mfdfm_test.generateDFM(p, p, lags, 51, 1);
+      aggY = y';
+      aggY(:, 2) = Accumulator_test.aggregateY(aggY(:, 2), 3, 'avg');
+      accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
+      aggY(1:45,3) = nan;
+
+      dfmEst = MFDFM(aggY, 1, lags, accum);
+      testCase.verifyWarningFree(@dfmEst.estimate);
+    end
   end
   
   methods (Static)    
-    function [y, ss] = generateDFM(p, nFac, nLags, n)
+    function [y, ss] = generateDFM(p, nFac, nLags, n, seed)
       % Generate a set of DFM parameters. 
       % Note that the system is not identified for estimation
       % 
       % Not intended for large systems (will be slow with many series)
+      if nargin < 5
+        seed = 0;
+      end
+      rng(seed);
       
-      [~, ~, phi] = MFVAR_test.generateVAR(nFac, nLags, 1);
+      [~, ~, phi] = mfvar_test.generateVAR(nFac, nLags, 1);
       phi2T = @(phi) [phi; eye(nFac*(nLags-1)) zeros(nFac*(nLags-1), nFac)];
       
       const = abs(randn(nFac,1));

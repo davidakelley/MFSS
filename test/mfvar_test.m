@@ -56,21 +56,26 @@ classdef mfvar_test < matlab.unittest.TestCase
     end
     
     function testEM_VAR2_missing(testCase)
+      % This test currently fails on the 244th iteration (by 0.14)
       p = 3; 
       lags = 2;
+      seed = 12;
       
-      y = MFVAR_test.generateVAR(p, lags, 51);
-      y(1:45,2) = nan;
+      y = mfvar_test.generateVAR(p, lags, 51, seed);
+      y(1:45, 3) = nan;
 
       varE = MFVAR(y, lags);
       testCase.verifyWarningFree(@varE.estimate);
     end
     
     function testEM_VAR2_accum(testCase)
+      % Thus currently works with T-1 and T! (but takes a long time).
       p = 3; 
       lags = 2;
+      seed = 10;
+      timeSteps = 51;
       
-      y = MFVAR_test.generateVAR(p, lags, 51);
+      y = mfvar_test.generateVAR(p, lags, timeSteps, seed); 
       aggY = y;
       aggY(:, 2) = Accumulator_test.aggregateY(y(:, 2), 3, 'avg');
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
@@ -80,24 +85,24 @@ classdef mfvar_test < matlab.unittest.TestCase
     end
     
     function testEM_VAR2_accum_missing(testCase)
+      % This test currently fails on the 7th iteration of the EM algorithm (by 1).
       p = 3; 
       lags = 2;
+      seed = 1e2;
       
-      y = MFVAR_test.generateVAR(p, lags, 51);
+      y = mfvar_test.generateVAR(p, lags, 51, seed);
       aggY = y;
       aggY(:, 2) = Accumulator_test.aggregateY(y(:, 2), 3, 'avg');
       accum = Accumulator.GenerateRegular(aggY, {'', 'avg'}, [1 3]);
-      aggY(1:35,2:3) = nan;
+      aggY(1:45,3) = nan;
 
       varE = MFVAR(aggY, lags, accum);
       testCase.verifyWarningFree(@varE.estimate);
     end
     
-    %% Gibbs sampler tests
-    % Not currently working after refactor with AbstractModel
-    
-    function testGibbs_AR1(testCase)
-      testCase.assertFail();
+    %% Gibbs sampler tests   
+    function testGibbs_AR1(testCase)      
+      testCase.assumeTrue()
       
       nile = testCase.data.nile;
       varE = MFVAR(nile, 1);
@@ -107,10 +112,10 @@ classdef mfvar_test < matlab.unittest.TestCase
       testCase.verifyEqual(ssML.T, median(paramSamples.phi,3), 'AbsTol', 1e-2);
     end
     
-    function testGibbs_VAR2(testCase)
-      testCase.assertFail();
+    function testGibbs_VAR2(testCase)     
+      testCase.assumeTrue()
       
-      test_data = MFVAR_test.generateVAR(2, 3, 100);
+      test_data = mfvar_test.generateVAR(2, 3, 100);
       varE = MFVAR(test_data, 1);
       [~, paramSamples] = varE.sample(100, 2000);
       
@@ -121,10 +126,14 @@ classdef mfvar_test < matlab.unittest.TestCase
   end
   
   methods (Static)    
-    function [y, ss, phi] = generateVAR(p, lags, n)
+    function [y, ss, phi] = generateVAR(p, lags, n, seed)
       % Generate a set of VAR parameters. 
       % 
       % Not intended for large systems (will be slow with many series)
+      if nargin < 4
+        seed = 0;
+      end
+      rng(seed);
       
       phi2T = @(phi) [phi; eye(p*(lags-1)) zeros(p*(lags-1), p)];
       

@@ -8,7 +8,7 @@ classdef MFVAR < AbstractModel
     stationaryTol = 1.0001;
   end
   
-  properties (Access = protected)
+  properties (SetAccess = protected)
     % Number of lags in VAR
     nLags
   end
@@ -72,19 +72,23 @@ classdef MFVAR < AbstractModel
       
       xvals = [alpha(lagInx, xInd), constants];
       yvals = alpha(coincInx, yInd);
-      addVx = sum(V(xInd, xInd, lagInx), 3);
-      addJ  = sum(J(xInd, yInd, lagInx), 3)';
+      addVx = blkdiag(sum(V(xInd, xInd, lagInx), 3), 0);
+      addJ  = [sum(J(xInd, yInd, lagInx), 3)' zeros(obj.p, 1)];
       addVy = sum(V(yInd, yInd, coincInx),3);
       
       % Restricted OLS Regression of errors
-      xxT =  blkdiag(addVx,0) + xvals' * xvals;
-      yxT = [addJ zeros(obj.p, 1)] + yvals' * xvals;
+      xxT = addVx + xvals' * xvals;
+      yxT = addJ + yvals' * xvals;
       yyT = addVy + yvals' * yvals;
       
       OLS = yxT/xxT;
-      SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1));
-%       SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1) - 1);
-%       SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1));
+      
+      % What is the right thing to divide by to get Sigma? 
+      % T - 1?
+      % T? I don't think this is right because the DFM case uses T-1
+      SigmaRaw = (yyT-OLS*yxT') ./ (size(alpha,1) - 1);
+      
+      % Ensure Sigma is symmetric
       Sigma = (SigmaRaw + SigmaRaw') ./ 2;
       
       params = struct('phi', OLS(:, 1:obj.p*obj.nLags), 'cons', OLS(:,end), ...
@@ -135,7 +139,7 @@ classdef MFVAR < AbstractModel
       flagContinue = 0;
       countIter = 0;
       while  flagContinue < 1
-        [Btemp, sigmaDraw] = obj.drawMNIW(B, PcholTranspose', Sinv, degf);
+        [Btemp, sigmaDraw] = AbstractModel.drawMNIW(B, PcholTranspose', Sinv, degf);
         T = [Btemp(1:end-obj.constant,:)'; ...
           eye(obj.p*(obj.nLags-1)) zeros(obj.p*(obj.nLags-1),obj.p)];
         maxEig = max(abs(eig(T))); 
