@@ -29,6 +29,7 @@ ssE = StateSpaceEstimation(Z, H, T, Q, 'd', d);
 
 LB = ssE.ThetaMapping.LowerBound;
 UB = ssE.ThetaMapping.UpperBound;
+LB.Z(2:5,1) = 0;
 LB.T(1,1) = -1;
 UB.T(1,1) = 1;
 ssE.ThetaMapping = ssE.ThetaMapping.addRestrictions(LB, UB);

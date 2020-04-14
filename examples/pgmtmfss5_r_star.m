@@ -18,8 +18,8 @@ lambda_g = 0.01183685;
 lambda_z = 0.04195394;
 
 %% Estimate the models
-pgmtmfss4_r_star_quarterly
-pgmtmfss4_r_star_monthly
+pgmtmfss5_r_star_quarterly
+pgmtmfss5_r_star_monthly
 
 %% Decompose r* by data series that determine it
 % Monthly model
