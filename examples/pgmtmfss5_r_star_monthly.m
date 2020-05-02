@@ -26,7 +26,7 @@ datesm = linspace((dates(8))-60, dates(end), size(YM,1))';
 % See Also:
 %   pgmtmfss_replication.m - Replication code runner script
 
-syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2Ystar sigma2IS sigma2PC
+syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2IS sigma2PC sigma2Ystar
 
 Z = [0 0 1 0 zeros(1,5); 
     -b3 0 b3 0 zeros(1,5)];

@@ -20,7 +20,7 @@ datesq = dates(9:end);
 % The exogenous series in the measurement equation are 
 %     [GDP_t-1 GDP_t-2 r_t-1 r_t-2 pi_t-1 avg1(pi)_t avg2(pi)_t oil_t-1 import_t]'
 
-syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2Ystar sigma2IS sigma2PC
+syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2IS sigma2PC sigma2Ystar
 
 Z = [ 1 -a1 -a2 -c*a3*2 -c*a3*2 -a3/2 -a3/2 0;
   0 -b3  0   0   0   0   0 0];
