@@ -234,6 +234,81 @@ classdef Accumulator < AbstractSystem
       accum = Accumulator(inx, cal(:,inx), hor(:,inx));
     end
     
+    function accum = GenerateFromDates(dates, index, frequencies, types)
+      % Generate object from a vector of dates and other properties
+      %
+      % Arguments: 
+      %     dates (datenum): vector of dates for each observation
+      %     index (double): index of series that need accumulators
+      %     frequencies (cell): cell array of strings for accumulated
+      %     series. 
+      %     types (cell): type of accumulator used
+      % Returns:       
+      %     accum (Accumulator): accumulator
+      %
+      % Automatically detects the alignment of each low-frequency series. 
+      
+      assert(issorted(dates), 'Date vector must be sorted');
+      if max(diff(dates)) > 3 && max(diff(dates)) < 27
+        warning(['This function was designed for daily data. ' ...
+          'If used for weekly data, ensure the end of year period classifications are correct.']);
+      elseif max(diff(dates)) >= 31
+        warning(['If using data at a monthly frequency or lower, ' ...
+          'Accumulator.GenerateRegular is likely the better way to create an accumulator object']);
+      end
+      
+      % Append one extra day to allow for filter timing. 
+      % This assumes that the last date is the end of a period, but that
+      % was effectively an assumption already. 
+      dates(end+1) = dates(end) + 1;
+      
+      % Create low-frequency period variables
+      [year, monthOfYear, dayOfMonth] = datevec(dates);
+      quarterOfYear = ceil(monthOfYear / 3);
+      semiannualOfYear = monthOfYear <= 6;
+
+      % Define periods by combinations of year and variable within year
+      nInx = length(index);
+      cals = nan(length(dates),nInx);
+      hors = nan(length(dates),nInx);
+      for iInx = 1:nInx
+        switch frequencies{iInx}
+          case 'Annual'
+            lowFDefinition = year;
+          case 'Semiannual'
+            lowFDefinition = [year semiannualOfYear];
+          case 'Quarter'
+            lowFDefinition = [year quarterOfYear];
+          case 'Month'
+            lowFDefinition = [year monthOfYear];
+          otherwise 
+            error(['Supported accumulation frequencies are ' ...
+              'Annual, Semiannual, Quarter, and Month']);
+        end
+        [~, ~, i_accumm] = unique(lowFDefinition, 'rows', 'stable');
+        % Create vector that tracks first high-freq period of each low-freq
+        % period, and the P1 index for each low-freq period. 
+        firstOfLowFPeriod = [true; diff(i_accumm)];
+        P1 = [find(firstOfLowFPeriod); length(dates)+1];
+        P1Reps = arrayfun(@(x) repmat(P1(x), P1(x+1)-P1(x), 1), 1:length(P1)-1, ...
+          'Uniform', false);
+        pt = cat(1, P1Reps{:});
+        
+        switch types{iInx}
+          case 'sum'
+            cals(:,iInx) = 1 - firstOfLowFPeriod;
+            hors(:,iInx) = ones(length(dates),1);
+          case 'avg'
+            cals(:,iInx) = (1:length(dates))' - pt + 1;
+            hors(:,iInx) = ones(length(dates),1);
+          otherwise
+            error('Unknown accumulator type');
+        end
+      end
+      
+      accum = Accumulator(index, cals, hors);
+    end
+    
     function calendar = group2calendar(group)
       % Utility method to generate average calendar from a group indicator.
       %
