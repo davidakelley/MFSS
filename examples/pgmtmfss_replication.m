@@ -1,9 +1,10 @@
-% Replication code for A Practitioner’s Guide and Matlab Toolbox for Mixed Frequency 
-% State Space Models by Scott A. Brave, R. Andrew Butters and David Kelley. 
+% Replication code for A Practitioner’s Guide and Matlab Toolbox for Mixed 
+% Frequency State Space Models by Scott A. Brave, R. Andrew Butters and
+% David Kelley. 
 %
 % To replicate the figures in the paper, run this file. 
 
-%% Install the toolbox 
+%% Check that the toolbox is installed
 assert(exist('StateSpaceEstimation.m', 'file') == 2, ...
   'MFSS toolbox not installed.');
 
@@ -12,10 +13,13 @@ clear
 pgmtmfss1_dfm
 
 clear
-pgmtmfss2_var
+pgmtmfss2_var_irf
 
 clear
-pgmtmfss3_trend_cycle
+pgmtmfss3_vol
 
 clear
-pgmtmfss4_r_star
+pgmtmfss4_trend_cycle
+
+clear
+pgmtmfss5_r_star

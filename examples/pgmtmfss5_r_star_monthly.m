@@ -2,16 +2,17 @@
 %
 % See Also:
 %   pgmtmfss_r_star.m - Mixed-frequency Laubach & Williams Natural Rate of Interest 
-
+%
 %% Data
-YM = [100*gdpM(27:end) inflationMA(27:end)];
-XM = [inflationMA(26:end-1) (inflationMA(25:end-2)+inflationMA(24:end-3)+inflationMA(23:end-4))/3 ...
-  (inflationMA(22:end-5)+inflationMA(21:end-6)+inflationMA(20:end-7)+inflationMA(19:end-8))/4 ...
-  oilMA(26:end-1) importMA(27:end)];
+endpos = 711;
+YM = [100*gdpM(25:endpos) inflationMA(25:endpos)];
+XM = [inflationMA(24:endpos-1) (inflationMA(23:endpos-2)+inflationMA(22:endpos-3)+inflationMA(21:endpos-4))/3 ...
+  (inflationMA(20:endpos-5)+inflationMA(19:endpos-6)+inflationMA(18:endpos-7)+inflationMA(17:endpos-8))/4 ...
+  oilMA(24:endpos-1) importMA(25:endpos)];
 XM(isnan(XM)) = 0;
-WM = [realrateM(26:end) realrateM(25:end-1)];
+WM = [realrateM(24:endpos) realrateM(23:endpos-1)];
 
-datesm = linspace((dates(8))-60, dates(end), size(YM,1))';
+datesm  = datenum([kron((1961:2017)',ones(12,1)); repmat(2018,3,1)],[repmat((1:12)',2017-1961+1,1); [1; 2; 3]],ones(size(YM,1),1)); 
 
 %% Model
 % The observed data is organized
@@ -26,7 +27,7 @@ datesm = linspace((dates(8))-60, dates(end), size(YM,1))';
 % See Also:
 %   pgmtmfss_replication.m - Replication code runner script
 
-syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2Ystar sigma2IS sigma2PC
+syms a1 a2 a3 b1 b2 b3 b4 b5 c sigma2IS sigma2PC sigma2Ystar
 
 Z = [0 0 1 0 zeros(1,5); 
     -b3 0 b3 0 zeros(1,5)];
@@ -41,8 +42,8 @@ T = [1 0 0 0 1 0 0 0 0; 1 zeros(1,8);
 gamma = [zeros(2); a3/2 a3/2; zeros(6,2)];
 R = [1 0 0 0; zeros(1,4);
      1 0 1 0 ; zeros(1,4); 
-     0 lambda_g/3 0 0; zeros(1,4);
-     0 0 0 lambda_z/(3*a3); zeros(1,4);
+     0 lambda_g 0 0; zeros(1,4);
+     0 0 0 lambda_z/a3; zeros(1,4);
      zeros(1,4)];
 Q = diag([sigma2Ystar sigma2Ystar sigma2IS sigma2IS]);
 
@@ -58,7 +59,7 @@ ssEA = accum.augmentStateSpaceEstimation(ssE);
 
 %% Initial state
 interpGDP = interp1(3:3:size(gdpM,1), gdpM(3:3:end), 1:size(gdpM))';
-lagGDP = 100*interpGDP(25:26)';
+lagGDP = 100*interpGDP(23:24)';
 gInit = 0.9394933/3;
 ystarInit = [809.7823659 809.7823659-gInit];
 rstarInit = 12*gInit;

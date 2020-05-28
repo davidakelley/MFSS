@@ -1,6 +1,6 @@
 \documentclass{article}
 \usepackage{amsmath}
-\usepackage{color,textcomp}
+\usepackage{color,textcomp,lmodern,listings}
 \setlength\topmargin{0pt}
 \addtolength\topmargin{-\headheight}
 \addtolength\topmargin{-\headsep}
@@ -16,11 +16,17 @@
 
 \begin{document}
 \maketitle
-\tableofcontents
+\tableofcontents 
+
+\section{Introduction}
+
+This document is designed to provide the technical details on how to use MFSS. It assumes that the reader is familiar with linear state space models and the mixed-frequency specification in  ``A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models''. 
+
+Code for each of the examples is included with MFSS in the \texttt{examples} folder. File names are provided with each example. 
 
 \section{Defining Accumulators}
 
-MFSS supports two types of accumulators: sum and averages. For details on how these are set up, see ``A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models''. 
+MFSS supports two types of accumulators: sums and averages. While ``triangle averages'' 
 
 This section describes how to implement these accumulators with a model. To do so, set up the model (likely a \texttt{StateSpaceEstimation} or \texttt{MFVAR} object, but possibly a \texttt{StateSpace} object if all parameters are known) as if the data were observed at the base frequency, define an \texttt{Accumulator} object, and use the accumulator to augment the model to respect the mixed-frequency nature of the observe data.
 
@@ -67,7 +73,7 @@ Each example should be self-contained and able to be run from the \texttt{exampl
 
 These examples hopefully show how to use the toolbox more fully. For details on how to 
 
-\subsection{Example 1: Dynamic Factor Model}
+\subsection{Dynamic Factor Model}
 
 See \texttt{examples/pgmtmfss1\_dfm.m}. 
 
@@ -81,7 +87,7 @@ We estimate a mixed-frequency dynamic factor model on a panel of 5 time series:
 \end{itemize}
 The monthly series are normalized have a mean of zero and a standard deviation of one. Data retreived from FRED as of August 2, 2018. Identification requires a sign and scale normalization which is accomplished through setting the loading on GDP (in the $Z$ matrix) to 1. 
 
-\subsection{Example 2: Vector Autoregression}
+\subsection{Vector Autoregression}
 
 See \texttt{examples/pgmtmfss2\_var.m}. 
 
@@ -94,7 +100,7 @@ We run 3 VAR models, each containing 4 series. In the quarterly and mixed-freque
 \end{itemize}
 For a monthly VAR, GDP is replaced by the log-level of All Employees: Total Nonfarm Payrolls. Data retrieved from FRED as of October 10, 2018. 
 
-\subsection{Example 3: Trend-Cycle Decomposition}
+\subsection{Trend-Cycle Decomposition}
 
 See \texttt{examples/pgmtmfss3\_trend\_cycle.m}. 
 
@@ -117,7 +123,7 @@ where $\xi_t$ is normally distributed and $\kappa_t$ and $\kappa_t^*$ are indepe
   \end{align*}
 
 
-\subsection{Example 4: Natural Rate of Interest}
+\subsection{Natural Rate of Interest}
 
 See \texttt{examples/pgmtmfss4\_r\_star.m}. 
 
@@ -179,5 +185,16 @@ Q &= \begin{bmatrix} \sigma_y^2 & 0 & 0 & 0 \\ 0 & \sigma_y^2 & 0 & 0 \\ 0 & 0 &
 \end{align*} 
 where $\lambda_g$ and $\lambda_z$ are the ratio of variances set according to the Stock \& Watson median-unbiased treatment estimated by Laubach \& Williams, available at \texttt{https://www.newyorkfed.org/research/policy/rstar/overview}. 
 
+ 
+\subsection{Related Series Disaggregation}\label{sec:RSDisagg}
+
+VARs can also be used in less structural applications. Here, we present an application where a related series may be used to interpolate the higher frequency movements of a series that is otherwise unavailable at a given frequency. This technique is particularly useful as a preparatory step in data analysis. For example, many price indexes for NIPA aggregates are only available at a quarterly frequency but relevant nominal activity indicators are available at a monthly frequency. To deflate the activity indicator, a related monthly price index can be used to disaggregate the quarterly price index and the estimated monthly price index can then be used to deflate the monthly activity variable. 
+
+For this application, we consider the weekly Freddie Mac Primary Mortgage Market Survey 30-year fixed rate. Each week, Freddie Mac collects a survey of the prevailing quoted rates of primary mortgage originators. This survey is circulated from Monday through Wednesday. Given the timing of when this survey is in the field, we consider the reported data to be the average of quoted rates on those three days. 
+
+To disaggregate this series into the equivalent daily series, we estimate a bivariate VAR(1) of the 10-year constant maturity Treasury yield the 30-year mortgage rate at a daily frequency. To handle the timing of the mortgage rate survey, observations of the mortgage rate are placed on the Wednesday and a nonstandard accumulator is defined such that each Wednesday observation is the average of the daily observations from Monday to Wednesday. The accumulator definition for Thursdays and Fridays is irrelevant since no data is ever observed on those days and is set to be the high-frequency estimate for simplicity. Since the VAR will be estimated in levels, the simple average accumulator is used and the horizon is set to one. 
+
+
+With the VAR coefficients estimated, the high frequency series can be obtained via the Kalman smoother. A comparison of the weekly series and estimated daily series over the course of the first quarter of 2020 are plotted in Figure \ref{fig:disagg}. The estimated daily series shows substantially more volatility than would be implied by univariate disaggregation methods while still respecting movements in the low frequency time series. 
 
 \end{document}

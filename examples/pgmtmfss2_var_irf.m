@@ -12,7 +12,7 @@
 % See Also:
 %   pgmtmfss_replication.m - Replication code runner script
 
-load('data_var');
+load('data_var_irf');
 
 nSeries = 4;
 varLagsQ = 2;
