@@ -65,7 +65,7 @@ plot(datesm(startPadM:end), plotDataM(startPadM:end,1), 'k', 'LineWidth', 2);
 plot(datesm(startPadM:end), plotDataM(startPadM:end,2:end), 'LineWidth', 1.5);
 plot([datesm(startPadM), datesm(end)], [0 0], 'k', 'LineWidth', 0.25);
 datetick('x');
-xlim([datesm(8+startPadM), datesm(end)]);
+xlim([datesm(startPadM), datesm(end)]);
 title('Contributions to Monthly r*');
 xticklabels([]);
 ylabel('percent');
@@ -76,8 +76,8 @@ l1 = plot(datesq(startPadQ:end), plotDataQ(startPadQ:end,1), 'k', 'LineWidth', 2
 l2 = plot(datesq(startPadQ:end), plotDataQ(startPadQ:end,2:end), 'LineWidth', 1.5);
 plot([datesq(startPadQ), datesq(end)], [0 0], 'k', 'LineWidth', 0.25);
 datetick('x');
-xlim([datesq(8+startPadQ), datesq(end)]);
+xlim([datesq(startPadQ), datesq(end)]);
 title('Contributions to Quarterly r*');
 ylabel('percent');
 
-print pgmtmfss4_rstar.png -dpng
+print pgmtmfss5_rstar.png -dpng
