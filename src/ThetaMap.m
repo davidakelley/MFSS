@@ -187,8 +187,13 @@ classdef ThetaMap < AbstractSystem
       obj.UpperBound = ssUB;      
       
       % Set diagonals of variance matricies to be positive
-      ssLB.H(1:obj.p+1:end) = eps * 10;
-      ssLB.Q(1:obj.g+1:end) = eps * 10;
+      diagHElems = reshape(repmat(logical(eye(ssLB.p)), ...
+        [1 1 size(ssLB.H, 3)]), [], 1);
+      ssLB.H(diagHElems) = eps * 10;
+      diagQElems = reshape(repmat(logical(eye(ssLB.g)), ...
+        [1 1 size(ssLB.Q, 3)]), [], 1);
+      ssLB.Q(diagQElems) = eps * 10;
+      
       if ~obj.usingDefaultP0
         P0LB = -Inf(obj.m);
         P0LB(1:obj.m+1:end) = eps * 10;
@@ -239,11 +244,17 @@ classdef ThetaMap < AbstractSystem
       explicita0 = ~isempty(ssE.a0);
       explicitP0 = ~isempty(ssE.P0);
       
-      nTheta = length(symTheta) + ...
-        sum(cellfun(@(paramName) sum(isnan(ssE.(paramName)(:))), ...
-        {'Z', 'd', 'beta', 'T', 'c', 'gamma', 'R'})) + ...
-        sum(cellfun(@(paramName) sum(isnan(reshape(tril(ssE.(paramName)), [], 1))), ...
+      nThetaGeneralParams = sum(cellfun(@(paramName) ...
+        sum(isnan(ssE.(paramName)(:))), ...
+        {'Z', 'd', 'beta', 'T', 'c', 'gamma', 'R'}));
+      lowerDiagElems = @(iParam) iParam(repmat(reshape(logical(...
+        tril(ones(size(iParam,1)))), [], 1), size(iParam, 3), 1));
+      nThetaSymParams = sum(cellfun(@(paramName) ...
+        sum(isnan(lowerDiagElems(ssE.(paramName)))), ...
         {'H', 'Q'}));
+      
+      nTheta = length(symTheta) + nThetaGeneralParams + nThetaSymParams;
+      
       if explicita0
         nTheta = nTheta + sum(isnan(ssE.a0));
       end
@@ -282,12 +293,8 @@ classdef ThetaMap < AbstractSystem
       
       % Get fixed elements as a StateSpace
       % Create a StateSpace with zeros (value doesn't matter) replacing nans.
-      
-      fixed = StateSpace(zeros(size(ssE.Z)), zeros(size(ssE.H)), ...
-        zeros(size(ssE.T)), zeros(size(ssE.Q)), ...
-        'd', zeros(size(ssE.d)), 'beta', zeros(size(ssE.beta)), ...
-        'c', zeros(size(ssE.c)), 'gamma', zeros(size(ssE.gamma)), 'R', zeros(size(ssE.R)));
-      
+      fixed = StateSpace.setAllParameters(ssE, 0);
+
       for iP = 1:length(fixed.systemParam)
         if isa(ssE.(ssE.systemParam{iP}), 'sym')
           fixedElems = isfinite(ssE.(ssE.systemParam{iP})) & ...
@@ -659,7 +666,8 @@ classdef ThetaMap < AbstractSystem
           obj.UpperBound.P0 = P0ub;      
         end
         
-        [trans, inver, transInx, lbMat, ubMat] = obj.restrictParamMat(ssLB, ssUB, 'Q0');
+        [trans, inver, transInx, lbMat, ubMat] = ...
+          obj.restrictParamMat(ssLB, ssUB, 'Q0');
         
         % Add transformations
         obj.transformations = [obj.transformations trans];
@@ -1014,7 +1022,8 @@ classdef ThetaMap < AbstractSystem
       thetaInv = cell(obj.nTheta, 1);
       thetaDeriv = cell(obj.nTheta, 1);
       for iTheta = 1:obj.nTheta
-        [thetaTrans{iTheta}, thetaInv{iTheta}, thetaDeriv{iTheta}] = obj.boundedTransform(...
+        [thetaTrans{iTheta}, thetaInv{iTheta}, thetaDeriv{iTheta}] = ...
+          obj.boundedTransform(...
           obj.thetaLowerBound(iTheta), obj.thetaUpperBound(iTheta));
       end
     end
@@ -1027,17 +1036,19 @@ classdef ThetaMap < AbstractSystem
       oldLBmat = obj.LowerBound.(iParam);
       passedLBmat = ssLB.(iParam);
       newLBmat = max(oldLBmat, passedLBmat);
+      newLBvec = reshape(newLBmat, [], 1);
       
       oldUBmat = obj.UpperBound.(iParam);
       passedUBmat = ssUB.(iParam);
       newUBmat = min(oldUBmat, passedUBmat);
+      newUBvec = reshape(newUBmat, [], 1);
       
-      needNewBound = newLBmat(:) ~= oldLBmat(:) | newUBmat(:) ~= oldUBmat(:);
+      needNewBound = newLBvec ~= oldLBmat(:) | newUBvec ~= oldUBmat(:);
       if any(needNewBound)
         % Find common new transformations and assign all changes to same function. 
         % It's ok if a function is duplicated that already exists since it will be
         % concentrated out in validateThetaMap.
-        allBounds = [newLBmat(needNewBound) newUBmat(needNewBound)];
+        allBounds = [newLBvec(needNewBound) newUBvec(needNewBound)];
         [newBounds, ~, newBoundInds] = unique(allBounds, 'rows');
         
         [newTransT, newInverT] = arrayfun(@ThetaMap.boundedTransform, ...
@@ -1173,21 +1184,38 @@ classdef ThetaMap < AbstractSystem
           % Symmetric variance matricies - H & Q. 
           % We only need as many elements of theta as there are missing elements
           % in the lower diagonal of these matricies. 
-          nRequiredPsi = sum(sum(sum(isnan(tril(iParam)))));
-          psiInds(isnan(tril(iParam))) = indexCounter:indexCounter + nRequiredPsi - 1;
-          psiInds = psiInds + psiInds' - diag(diag(psiInds));
+          lowerElemInds = repmat(reshape(logical(...
+            tril(ones(size(iParam,1)))), [], 1), size(iParam, 3), 1);
+          upperElemInds = repmat(reshape(logical(...
+            triu(ones(size(iParam,1)))), [], 1), size(iParam, 3), 1);
+
+          nRequiredPsi = sum(isnan(iParam(lowerElemInds)));
+          baseIndex = indexCounter:indexCounter + nRequiredPsi - 1;
+          
+          lowerPsiIndsElems = psiInds(lowerElemInds);
+          lowerPsiIndsElems(isnan(iParam(lowerElemInds))) = baseIndex;
+          psiInds(lowerElemInds) = lowerPsiIndsElems;
+          upperPsiIndsElems = psiInds(upperElemInds);
+          upperPsiIndsElems(isnan(iParam(upperElemInds))) = baseIndex;
+          psiInds(upperElemInds) = upperPsiIndsElems;
         end
+        indexCounter = indexCounter + nRequiredPsi;
         
         matchSym = arrayfun(@(iParamElem) any(iParamElem == symPsi), iParam);
-        psiInds(matchSym) = arrayfun(@(iParamElem) find(iParamElem == symPsi), iParam(matchSym));
+        psiInds(matchSym) = arrayfun(@(iParamElem) ...
+          find(iParamElem == symPsi), iParam(matchSym));
         
+        if size(iParam, 3) ~= 1
+          psiInds = struct([ssE.systemParam{iP} 't'], psiInds, ...
+            ['tau' ssE.systemParam{iP}], ssZeros.tau.(ssE.systemParam{iP}));
+        end
         paramEstimIndexes{iP} = psiInds;        
-        indexCounter = indexCounter + nRequiredPsi;
       end
       
       index = StateSpace(paramEstimIndexes{[1 4 5 9]}, ...
         'd', paramEstimIndexes{2}, 'beta', paramEstimIndexes{3}, ...
-        'c', paramEstimIndexes{6}, 'gamma', paramEstimIndexes{7}, 'R', paramEstimIndexes{8});
+        'c', paramEstimIndexes{6}, 'gamma', paramEstimIndexes{7}, ...
+        'R', paramEstimIndexes{8});
       if ~isempty(ssE.a0)
         a0 = zeros(size(ssE.a0));
         nRequiredPsi = sum(isnan(ssE.a0));
@@ -1240,7 +1268,13 @@ classdef ThetaMap < AbstractSystem
         
         indexes = ssZeros.(ssE.systemParam{iP});
         indexes(isnan(iParam)| symInx) = 1;
-        transIndParams{iP} = indexes;
+        if size(indexes,3) > 1
+          indexesParam = struct([ssE.systemParam{iP} 't'], indexes, ...
+            ['tau' ssE.systemParam{iP}], ssZeros.tau.(ssE.systemParam{iP}));
+        else
+          indexesParam = indexes;
+        end
+        transIndParams{iP} = indexesParam;
       end
       
       % Create StateSpace with system parameters
@@ -1335,13 +1369,12 @@ classdef ThetaMap < AbstractSystem
       result = strcmp(fn1Strs, fn2Strs) & cellfun(@isequal, fn1Workspace, fn2Workspace);      
     end
     
-    function ssNew = cellParams2ss(cellParams)
+    function ssNew = cellParams2ss(cellParams, tau)
       % Create StateSpace with system parameters passed in a cell array
       % 
       % Arguments:
       %   cellParams (cell): Cell array with 9 cells: Z, d, H, T, c, R, & Q
-      %   ssOld (StateSpace): StateSpace or ThetaMap with information on handling of
-      %     initial values
+      %   tau (struct): tau struct from a StateSpace with timing info
       % Returns:
       %   ssNew (StateSpace): StateSpace constructed with new parameters
       

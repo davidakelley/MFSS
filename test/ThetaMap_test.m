@@ -268,5 +268,36 @@ classdef ThetaMap_test < matlab.unittest.TestCase
       testCase.verifyEqual(theta, thetaTest, 'AbsTol', 1e-2);
     end
     
+    %% Test TVP inputs 
+    function tvpBoundCheck(testCase)
+      Z = [1; nan(4,1)];
+      d = [nan; zeros(4,1)];
+      H = diag(nan(5,1));
+      T = nan;
+      Q = struct('Qt', nan(1,1,2), 'tauQ', [ones(500,1); 2 .* ones(119+1,1)]);
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'd', d);
+
+      testCase.verifyEqual(diag(ssE.ThetaMapping.LowerBound.H), ...
+        repmat(10 * eps, 5, 1));
+      testCase.verifyEqual(ssE.ThetaMapping.LowerBound.Q, ...
+        repmat(10 * eps, [1 1 2]));
+    end
+    
+    function tvpTransformationCheck(testCase)
+      Z = [1; nan(4,1)];
+      d = [nan; zeros(4,1)];
+      H = diag(nan(5,1));
+      T = nan;
+      Q = struct('Qt', nan(1,1,2), 'tauQ', [ones(500,1); 2 .* ones(119+1,1)]);
+      
+      ssE = StateSpaceEstimation(Z, H, T, Q, 'd', d);
+
+      testCase.verifyEqual(ssE.ThetaMapping.transformationIndex.H, ...
+        2 * eye(5));
+      testCase.verifyEqual(ssE.ThetaMapping.transformationIndex.Q, ...
+        repmat(2, [1 1 2]));
+    end
+    
   end
 end

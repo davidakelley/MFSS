@@ -5,6 +5,8 @@ function [Y, alpha, x, w, eta, epsilon] = generateData(ss, timeDim)
 if isempty(ss.tau)
   ss.n = timeDim;
   ss = ss.setInvariantTau();
+else
+  timeDim = ss.n;
 end
 
 if isempty(ss.n) && ~isempty(ss.tau)
