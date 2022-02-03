@@ -5,6 +5,7 @@
 %   pgmtmfss_replication.m - Replication code runner script
 
 load('data_trade');
+rng(1); 
 
 %% Code Example 3: 
 Y = log(data_diffl.^2);
@@ -43,7 +44,7 @@ fill([dates(startInx:end); flipud(dates(startInx:end))], ...
   [sigmaHatBands(startInx:end,1); flipud(sigmaHatBands(startInx:end,2))], ...
   0.6 * ones(1,3), 'EdgeColor', 'none');
 plot(dates(startInx:end), sigmaHat(startInx:end), ...
-  'LineWidth', 2, 'Color', [0 0.4470 0.7410]);
+  'LineWidth', 2, 'Color', [0 0.447 0.741]);
 box off;
 datetick('x', 'keeplimits')
 ylabel('Estimated volatility');

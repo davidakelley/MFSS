@@ -266,6 +266,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
       loopContinue = true;
       iter = 0; logli = []; 
       warning off MATLAB:nearlySingularMatrix;
+      warning off MATLAB:singularMatrix;
       while loopContinue
         iter = iter + 1;
         logli0 = logli;
@@ -367,6 +368,7 @@ classdef StateSpaceEstimation < AbstractStateSpace
         theta0U = thetaUHat;
       end
       warning on MATLAB:nearlySingularMatrix;
+      warning on MATLAB:singularMatrix;
   
       % Save estimated system to current object
       thetaHat = obj.ThetaMapping.restrictTheta(thetaUHat);

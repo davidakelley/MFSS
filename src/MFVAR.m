@@ -85,9 +85,9 @@ classdef MFVAR
       zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
       V = zeroMats;
       J = zeroMats;
-      % a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
+      
       % Initial state estimate: put the high-frequency values in for the accumulators
-      a0 = [alpha(1,:)'; zeros(tm.m - size(alpha,2), 1)];
+      a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
       P0 = 1000 * eye(size(alpha0, 2) + tm.m - size(alpha,2));
       
       params = obj.estimateOLS_VJ(alpha, V, J);

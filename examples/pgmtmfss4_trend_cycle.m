@@ -43,11 +43,11 @@ figH = figure('Color', ones(1,3));
 lineWidth = 1.5;
 
 subplot(2,2,1);
-plot(dates(3:3:end), y(3:3:end), 'k', 'LineWidth', lineWidth);
+plot(dates(3:3:end), y(3:3:end), 'k', 'LineWidth', lineWidth, 'Color', [0 0 0]);
 hold on;
-plot(dates, alpha_m(:,1), 'LineWidth', lineWidth);
-plot(dates(3:3:end), alpha_q(:,1), 'LineWidth', lineWidth);
-plot(dates(3:3:end), alpha_hp(:,1), 'LineWidth', lineWidth);
+plot(dates, alpha_m(:,1), 'LineWidth', lineWidth, 'Color', [0 0.447 0.741]);
+plot(dates(3:3:end), alpha_q(:,1), 'LineWidth', lineWidth, 'Color', [0.85 0.325 0.098]);
+plot(dates(3:3:end), alpha_hp(:,1), 'LineWidth', lineWidth, 'Color', [0.929 0.694 0.125]);
 box off
 datetick('x');
 xticklabels([]);
@@ -57,24 +57,24 @@ ylabel('Log level');
 
 subplot(2,2,2);
 triAvgCycle = filter([1 2 3 2 1], 1, alpha_m(:,3)) ./ 3;
-plot(dates(5:end), triAvgCycle(5:end), 'LineWidth', lineWidth);
+plot(dates(5:end), triAvgCycle(5:end), 'LineWidth', lineWidth, 'Color', [0 0.447 0.741]);
 hold on;
-plot(dates(3:3:end), alpha_q(:,3), 'LineWidth', lineWidth);
-plot(dates(3:3:end), alpha_hp(:,3), 'LineWidth', lineWidth);
+plot(dates(3:3:end), alpha_q(:,3), 'LineWidth', lineWidth, 'Color', [0.85 0.325 0.098]);
+plot(dates(3:3:end), alpha_hp(:,3), 'LineWidth', lineWidth, 'Color', [0.929 0.694 0.125]);
 box off
 datetick('x');
-recessionplot();
 xlim(dates([1 end]));
-xticklabels([]);
 ylim([-.3 .2]);
+recessionplot();
+xticklabels([]);
 title('Cycle');
 
 subplot(2,2,3);
 triAvgTrend = filter([1 2 3 2 1], 1, alpha_m(:,2)) ./ 3;
-plot(dates(5:end), triAvgTrend(5:end), 'LineWidth', lineWidth);
+plot(dates(5:end), triAvgTrend(5:end), 'LineWidth', lineWidth, 'Color', [0 0.447 0.741]);
 hold on;
-plot(dates(3:3:end), alpha_q(:,2), 'LineWidth', lineWidth);
-plot(dates(3:3:end), alpha_hp(:,2), 'LineWidth', lineWidth);
+plot(dates(3:3:end), alpha_q(:,2), 'LineWidth', lineWidth, 'Color', [0.85 0.325 0.098]);
+plot(dates(3:3:end), alpha_hp(:,2), 'LineWidth', lineWidth, 'Color', [0.929 0.694 0.125]);
 box off
 datetick('x');
 xlim(dates([1 end]));
@@ -83,15 +83,15 @@ ylabel('Log change');
 
 subplot(2,2,4);
 triAvgCycle = filter([1 2 3 2 1], 1, alpha_m(:,3)) ./ 3;
-plot(dates(6:3:end), diff(triAvgCycle(3:3:end)), 'LineWidth', lineWidth);
+plot(dates(6:3:end), diff(triAvgCycle(3:3:end)), 'LineWidth', lineWidth, 'Color', [0 0.447 0.741]);
 hold on;
-plot(dates(6:3:end), diff(alpha_q(:,3)), 'LineWidth', lineWidth);
-plot(dates(6:3:end), diff(alpha_hp(:,3)), 'LineWidth', lineWidth);
+plot(dates(6:3:end), diff(alpha_q(:,3)), 'LineWidth', lineWidth, 'Color', [0.850 0.325 0.098]);
+plot(dates(6:3:end), diff(alpha_hp(:,3)), 'LineWidth', lineWidth, 'Color', [0.929 0.694 0.125]);
 box off
 datetick('x');
-recessionplot();
 xlim(dates([1 end]));
 ylim([-.1 .1]);
+recessionplot();
 title('Cycle growth rate');
 
-print pgmtmfss3_trend_cycle.png -dpng
+print pgmtmfss4_trend_cycle.png -dpng

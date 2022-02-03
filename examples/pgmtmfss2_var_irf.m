@@ -67,10 +67,10 @@ irfQ = ssQVAR.impulseState(16);
 % Response of activity (GDP or employment) to shock to funds rate
 figure('Color', ones(1,3));
 
-plot(1:48, squeeze(irfMF(1,:,nSeries)), 'LineWidth', 2);
+plot(1:48, squeeze(irfMF(1,:,nSeries)), 'LineWidth', 2, 'Color', [0 0.447 0.741]);
 hold on;
-plot(3:3:48, squeeze(irfQ(1,:,nSeries)), 'x', 'MarkerSize', 10);
-plot(1:48, squeeze(irfM(1,:,nSeries)), 'LineWidth', 2);
+plot(3:3:48, squeeze(irfQ(1,:,nSeries)), 'x', 'MarkerSize', 10, 'Color', [0.85 0.325 0.098]);
+plot(1:48, squeeze(irfM(1,:,nSeries)), 'LineWidth', 2, 'Color', [0.929 0.694 0.125]);
 box off;
 legend('Mixed-frequency (GDP)', 'Quarterly (GDP)', 'Monthly (Employment)', ...
   'Location', 'sw', 'Orientation', 'vertical');
@@ -79,4 +79,4 @@ xlim([1 48])
 xlabel('Months');
 ylabel('Log change');
 
-print 'pgmtmfss2_var.png' -dpng
+print 'pgmtmfss2_var_irf.png' -dpng
