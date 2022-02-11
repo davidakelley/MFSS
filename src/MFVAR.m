@@ -108,7 +108,6 @@ classdef MFVAR
        
         % E-step: Get state conditional on parameters
         [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
-        %[alpha, logli, V, J, ~, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -493,7 +492,7 @@ classdef MFVAR
       % Initialize with simple interpolation
       interpY = obj.interpolateData(obj.Y, obj.accumulator);
       alpha = lagmatrix(interpY, 0:obj.nLags-1);
-      alpha(isnan(alpha)) = 0;
+      alpha(any(isnan(alpha), 2), :) = [];
     end
     
     function tm = generateTM(obj)
