@@ -28,7 +28,7 @@ ssEA = accum.augmentStateSpaceEstimation(ssE);
 ssEA.ThetaMapping = ssEA.ThetaMapping.addStructuralRestriction(rho, 0, 1);
 ssEA.ThetaMapping = ssEA.ThetaMapping.addStructuralRestriction(lambda, pi/72, pi/9);
 
-% Estimate quarterly model - Initial values from estimated model of Jarvey & Jaeger
+% Estimate quarterly model - Initial values from estimated model of Harvey & Jaeger
 ssMLq = ssE.estimate(y(3:3:end), [pi/22.2; 0.92; log(625/1e7); log(8/1e7)]);
 alpha_q = ssMLq.smooth(y(3:3:end));
 % Estimate monthly model - Initial values frequency adjusted from quarterly initial values

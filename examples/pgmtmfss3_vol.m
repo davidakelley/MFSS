@@ -1,5 +1,6 @@
-% 
+% Stochastic volatility estimation 
 %
+% Data are daily trade weighted exchange rate, and the monthly trade volume of world trade. 
 
 % See Also:
 %   pgmtmfss_replication.m - Replication code runner script
