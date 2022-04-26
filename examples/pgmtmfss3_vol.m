@@ -26,8 +26,14 @@ mdl = StateSpaceEstimation(Z, H, T, Q, 'd', d);
 mdlA = accum.augmentStateSpaceEstimation(mdl);
 mdlA.P0 = diag(Inf(2,1));
 
+% Initial values
+initState = zscore(Y(~isnan(Y(:,2)), 2));
+phi = regress(initState(2:end), initState(1:end-1));
+theta0 = [nanmean(Y)'; log(nanvar(Y)'); ...
+  phi; log(nanvar(initState(2:end) - phi .* initState(1:end-1)))];
+
 % Estimate parameters
-mdlMLE = mdlA.estimate(Y);
+[mdlMLE, ~, thetaMLE] = mdlA.estimate(Y, theta0);
 
 % Get smoothed estimate of volatility parameter
 alpha = mdlMLE.smooth(Y);
