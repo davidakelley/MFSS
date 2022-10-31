@@ -2,7 +2,7 @@
 
 Estimation and inference on state space models that allow for mixed-frequency time series data.
 
-For an introduction to mixed-frequency state space modeling see "[A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models](A_Practitioners_Guide_and_Matlab_Toolbox_for_Mixed_Frequency_State_Space_Models.pdf)" by Scott Brave, Andrew Butters, and David Kelley.
+For an introduction to mixed-frequency state space modeling see "[A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models](https://doi.org/10.18637/jss.v104.i10)" by Scott Brave, Andrew Butters, and David Kelley.
 
 ## Installation
 
@@ -119,4 +119,8 @@ When updating the installed version of the toolbox, previous versions should be 
 
 This library uses [Armadillo](http://arma.sourceforge.net/).
 
-If you use this toolbox in preparing a publication, please cite "A Practitioner's Guide and Matlab Toolbox for Mixed Frequency State Space Models" by Scott Brave, Andrew Butters, and David Kelley. For details on any references in the code, see this publication. 
+If you use this toolbox in preparing a publication, please cite 
+
+Scott A. Brave, R. Andrew Butters, David Kelley (2022). A Practitioner's Guide and MATLAB Toolbox for Mixed Frequency State Space Models, _Journal of Statistical Software_, 104(10). doi:10.18637/jss.v104.i10
+
+For details on any references in the code, see this publication. 
