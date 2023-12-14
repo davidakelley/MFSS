@@ -341,7 +341,7 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
-    function alphaTilde = stateSample(obj, y, x, w, tm, nSamples)
+    function [alphaTilde, mleVariance] = stateSample(obj, y, x, w, tm, nSamples)
       % Get samples of the state taking into account parameter uncertainty around MLE
       
       % Handle inputs
@@ -352,17 +352,27 @@ classdef StateSpace < AbstractStateSpace
       theta = tm.system2theta(obj);
       assert(all(size(theta) == [tm.nTheta 1]), ...
         'theta must be a nTheta x 1 vector.');
-         
+
       % Get smoothed state
       alphaHat = obj.smooth(y, x, w);
       fisherInformation = -obj.gradFinDiffSecond(y, x, w, tm, theta);
       mleVariance = inv(fisherInformation * obj.n);
       alphaTilde = nan([size(alphaHat), nSamples]);
-      
-      thetaSamples = mvnrnd(theta, mleVariance, nSamples)';
+
+      % Check if outer product of gradients is positive semi-definite
+      try
+          chol(mleVariance);
+      catch
+          [q,D] = eig(mleVariance);
+          d= diag(D);
+          d(d <= eps) = 1e-10;
+          mleVariance = q*diag(d)*q';
+      end
+
+      thetaSamples = mvnrnd(theta, mleVariance, nSamples)'; 
       iThetaSS = cell(nSamples, 1);
-      for iSample = 1:nSamples
-        iThetaSS{iSample} = tm.theta2system(thetaSamples(:,iSample));
+      parfor iSample = 1:nSamples
+        iThetaSS{iSample} = tm.theta2system(thetaSamples(:,iSample)); %#ok<PFOUS,PFBNS> 
         alphaTilde(:,:,iSample) = iThetaSS{iSample}.smoothSample(y, x, w, alphaHat');        
       end
     end
@@ -435,7 +445,6 @@ classdef StateSpace < AbstractStateSpace
         irfTau = 1:nPeriods;
       end
       
-      eyeMat = eye(obj.g);
       if obj.timeInvariant
         obj.n = nPeriods;
         obj = obj.setInvariantTau();
@@ -443,7 +452,7 @@ classdef StateSpace < AbstractStateSpace
       
       irf = nan(obj.m, nPeriods, obj.g);
       for iShock = 1:obj.g
-        irf(:,1,iShock) = obj.R(:,:,obj.tau.R(irfTau(1))) * eyeMat(:,iShock);
+        irf(:,1,iShock) = obj.R(:,:,obj.tau.R(irfTau(1))) * obj.Q(:,iShock);
         for iPeriod = 2:nPeriods
           irf(:,iPeriod,iShock) = obj.T(:,:,obj.tau.T(irfTau(iPeriod))) * ...
             irf(:,iPeriod-1,iShock);
@@ -451,6 +460,35 @@ classdef StateSpace < AbstractStateSpace
       end
     end
     
+    function [stateErr, hd] = decompState(obj, y, x, w, state, a0)
+      % Historical decompositions for the states to the structural shocks.
+      %
+      % Arguments:
+      %   y (double): observed data (p x T)
+      %   x (double): exogenous measreument data (k x T)
+      %   w (double): exogenous state data (l x T)
+      %   state (double): state estimate (either a or alphaHat)
+      %   a0 (double): initial state estimate
+      %
+      % Returns:
+      %   stateErr (double): state errors, estimate of eta
+      %   hd (double): historical decomposition, ordered by (period, state, shock)
+
+      [~, stateErr] = getErrors(obj, y, x, w, state, a0);
+
+      hd = zeros(obj.n,obj.m,obj.g);
+      for iShock=1:obj.g
+        vtilde = [stateErr; zeros(obj.m-obj.g,obj.n)];
+        vtilde(iShock,:) = zeros(1,obj.n);
+        xi_tilde = obj.c(:,obj.tau.c(1)) + obj.T(:,:,obj.tau.T(1))*a0+vtilde(:,1);
+        hd(1,:,iShock) = xi_tilde(1:obj.m);
+        for iPeriod=2:obj.n
+            xi_tilde = obj.c(:,obj.tau.c(iPeriod)) + obj.T(:,:,obj.tau.T(iPeriod))*xi_tilde + vtilde(:,iPeriod);
+            hd(iPeriod,:,iShock) = xi_tilde(1:obj.m);
+        end
+      end
+    end
+
     function [obsErr, stateErr] = getErrors(obj, y, x, w, state, a0)
       % Get the errors epsilon & eta given an estimate of the state. 
       % Either the filtered or smoothed estimates can be calculated by passing
@@ -863,12 +901,12 @@ classdef StateSpace < AbstractStateSpace
       stepSize = 0.5 * sqrt(obj.delta);
       stepMat = stepSize * eye(nTheta);
       
-      for iTheta = 1:nTheta
+      parfor iTheta = 1:nTheta
         for jTheta = 1:nTheta
           % For each element of theta, compute finite differences derivative
           try
-            thetaUpUp = theta + stepMat(:,iTheta) + stepMat(:,jTheta);
-            ssUpUp = tm.theta2system(thetaUpUp);
+            thetaUpUp = theta + stepMat(:,iTheta) + stepMat(:,jTheta); %#ok<PFBNS> 
+            ssUpUp = tm.theta2system(thetaUpUp); %#ok<PFBNS> 
             [~, llUpUp] = ssUpUp.filter(y, x, w);
             
             thetaUpDown = theta + stepMat(:,iTheta) - stepMat(:,jTheta);
@@ -2075,13 +2113,13 @@ classdef StateSpace < AbstractStateSpace
       nonZero = diag(P0_temp) ~= 0;
       P0_temp_chol = zeros(size(P0_temp));
       P0_temp_chol(nonZero,nonZero) = chol(P0_temp(nonZero,nonZero));
-      a0Draw = P0_temp_chol * randn(obj.m, 1); 
+      a0Draw = P0_temp_chol * randn(obj.m, 1);
       
       % Generate state 
       eta = nan(obj.g, obj.n);
       rawEta = randn(obj.g, obj.n);
+
       alphaPlus = nan(obj.m, obj.n);
-      
       alphaPlus(:,1) = obj.T(:,:,obj.tau.T(1)) * a0Draw;
       for iT = 2:obj.n
         eta(:,iT) = Qsqrt(:,:,obj.tau.Q(iT)) * rawEta(:, iT);
@@ -2090,8 +2128,9 @@ classdef StateSpace < AbstractStateSpace
       end
       
       % Generate observed data
-      rawEpsilon = randn(obj.p, obj.n);
       epsilon = nan(obj.p, obj.n);
+      rawEpsilon = randn(obj.p, obj.n);
+
       yPlus = nan(obj.p, obj.n);
       for iT = 1:obj.n
         epsilon(:,iT) = Hsqrt(:,:,obj.tau.H(iT)) * rawEpsilon(:,iT);
