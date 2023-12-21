@@ -6,13 +6,15 @@ classdef MFVAR
   properties
     Y
     accumulator
+    a0
+    P0
     
     constant = true;
     verbose = false;
     
     tol = 1e-6;
-    maxIter = 20000;
-    stationaryTol = 1.0001;
+    maxIter = 1000;
+    stationaryTol = 1;
     
     diagnosticPlot = true;
   end
@@ -30,7 +32,7 @@ classdef MFVAR
   end
   
   methods
-    function obj = MFVAR(data, lags, accumulator)
+    function obj = MFVAR(data, lags, accumulator, a0, P0)
       % MFVAR Constructor
       % 
       % Arguments: 
@@ -47,8 +49,12 @@ classdef MFVAR
       else 
         obj.accumulator = Accumulator([], [], []);
       end
+      if nargin > 3
+          obj.a0 = a0;
+          obj.P0 = P0;
+      end
     end
-    
+      
     function p = get.p(obj)
       % Getter for p
       p = size(obj.Y, 2);
@@ -85,16 +91,17 @@ classdef MFVAR
       zeroMats = zeros([obj.p*obj.nLags, obj.p*obj.nLags, size(alpha0,1)]);
       V = zeroMats;
       J = zeroMats;
-      % a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
+
       % Initial state estimate: put the high-frequency values in for the accumulators
-      a0 = [alpha(1,:)'; zeros(tm.m - size(alpha,2), 1)];
-      P0 = 1000 * eye(size(alpha0, 2) + tm.m - size(alpha,2));
+      %obj.a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
+      %obj.a0 = [alpha(1,:)'; zeros(tm.m - size(alpha,2), 1)];
+      %obj.P0 = eye(size(alpha0, 2) + tm.m - size(alpha,2));
       
       params = obj.estimateOLS_VJ(alpha, V, J);
      
       % Set up progress window
       [ssVAR, theta] = obj.params2system(params, tm);
-      progress = EstimationProgress([theta; a0], obj.diagnosticPlot, size(alpha0,2), ssVAR);
+      progress = EstimationProgress([theta; obj.a0], obj.diagnosticPlot, size(alpha0,2), ssVAR);
       stop = false;
       errorIndicator = '';
       
@@ -107,8 +114,8 @@ classdef MFVAR
         params = obj.estimateOLS_VJ(alpha, V, J);
        
         % E-step: Get state conditional on parameters
-        [alpha, logli, V, J, a0, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
-        %[alpha, logli, V, J, ~, ssVAR, theta] = obj.stateEstimate(params, a0, P0, tm);
+        %[alpha, logli, V, J, a0tilde, ssVAR, theta] = obj.stateEstimate(params, a0tilde, obj.P0, tm);
+        [alpha, logli, V, J, ~, ssVAR, theta] = obj.stateEstimate(params, obj.a0, obj.P0, tm);
         
         % Put filtered state in figure for plotting
         progress.alpha = alpha';  
@@ -120,7 +127,7 @@ classdef MFVAR
           oVals.fval = -logli;
         end
         progress.totalEvaluations = progress.totalEvaluations + 1;
-        stop = progress.update([theta; a0], oVals);
+        stop = progress.update([theta; obj.a0], oVals);
 
         % Compute improvement
         improvement = logli - logli0;
@@ -154,8 +161,8 @@ classdef MFVAR
       end
       
       ssML = obj.params2system(params);
-      ssML.a0 = a0;
-      ssML.P0 = P0;
+      ssML.a0 = obj.a0;
+      ssML.P0 = obj.P0;
       if obj.verbose
         fprintf('%s\n', line('-'));
       end

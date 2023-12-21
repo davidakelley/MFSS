@@ -416,7 +416,7 @@ classdef StateSpace < AbstractStateSpace
         yStar = y - yPlus;
         
         % Step 3 - Compute alpha* from Kalman smoother on y*
-        [alphaStar, sOut] = obj.smooth(yStar, zeros(size(x)));
+        [alphaStar, sOut] = obj.smooth(yStar, x, w);
         ssLogli(iS) = sOut.logli;
         
         % Step 4 - Comute alphaTilde = alphaHat + alpha+ - alpha*, a draw of the state.
