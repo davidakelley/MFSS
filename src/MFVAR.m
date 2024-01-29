@@ -93,10 +93,18 @@ classdef MFVAR
       J = zeroMats;
 
       % Initial state estimate: put the high-frequency values in for the accumulators
-      %obj.a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
-      %obj.a0 = [alpha(1,:)'; zeros(tm.m - size(alpha,2), 1)];
-      %obj.P0 = eye(size(alpha0, 2) + tm.m - size(alpha,2));
+      % if they don't already exist.
       
+
+      if isempty(obj.a0)
+        obj.a0 = [alpha(1,:)'; zeros(tm.m - size(alpha,2), 1)];
+        %obj.a0 = zeros(size(alpha0, 2) + length(obj.accumulator.index), 1);
+      end
+
+      if isempty(obj.P0)
+        obj.P0 = 1000 * eye(size(alpha0, 2) + tm.m - size(alpha,2));
+      end
+
       params = obj.estimateOLS_VJ(alpha, V, J);
      
       % Set up progress window
