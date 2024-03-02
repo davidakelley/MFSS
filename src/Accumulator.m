@@ -21,7 +21,7 @@ classdef Accumulator < AbstractSystem
     horizon
   end
   
-  properties (Hidden, Access = protected)
+  properties (Hidden, Access = public)
     % There are 2 accumulator "types": sum and average. A sum accumulator is
     % type == 1, an average accumulator is type == 0 (for both simple and
     % triangle averages).
